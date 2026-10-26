@@ -55,6 +55,20 @@ async function playedMatch(relay: MemoryRelay, a: LocalSigner, b: LocalSigner, a
   return { pa, pb };
 }
 
+describe('syncRatings across seasons', () => {
+  test('a snapshot from the previous season starts the current season from zero and keeps the summaries', async () => {
+    const s2 = 1_798_729_200; // 2027-01-01 JST
+    const base = initialState(def, 1, s2);
+    const final = { ...base, seasonSummaries: { '1': { ['a'.repeat(64)]: { finalRating: 1600, peakRating: 1650, matches: 3, wins: 2, losses: 1 } } } };
+    const text = serializeSnapshot(stateToSnapshot(final, { game: 'smash_sp', previous: null, previousSha256: null, eventIds: [], configSha256: 'x', kind: 'final' }));
+    const path = 'snapshots/season_1/final.json';
+    const files = { [`${BASE}snapshots/latest.json`]: JSON.stringify({ path, sha256: sha256Hex(text) }), [`${BASE}${path}`]: text };
+    const { state } = await syncRatings({ def, relay: new MemoryRelay(() => s2 + 100), store: new MemoryEventStore(), fetchFn: fakeFetch(files), base: BASE, now: () => s2 + 100 });
+    expect([state.season, state.cutoff, state.players]).toEqual([2, s2 + 100, {}]);
+    expect(state.seasonSummaries).toEqual(final.seasonSummaries);
+  });
+});
+
 describe('syncRatings', () => {
   test('rejects a snapshot whose sha256 does not match latest.json', async () => {
     await expect(

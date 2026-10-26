@@ -33,7 +33,16 @@ export interface Snapshot {
   players: Record<Pubkey, SnapshotPlayer>;
   recent_pairs: { a: Pubkey; b: Pubkey; settled_at: number }[];
   migrations: unknown[];
-  season_summaries: Record<string, unknown>;
+  /** シーズン id → 公開鍵 → 成績 */
+  season_summaries: Record<string, Record<Pubkey, SnapshotSeasonSummary>>;
+}
+
+export interface SnapshotSeasonSummary {
+  final_rating: number;
+  peak_rating: number;
+  matches: number;
+  wins: number;
+  losses: number;
 }
 
 export interface LatestPointer {
@@ -51,7 +60,14 @@ export function eventIdsHash(ids: string[]): string {
 
 export function stateToSnapshot(
   state: RatingState,
-  meta: { game: string; previous: string | null; previousSha256: string | null; eventIds: string[]; configSha256: string },
+  meta: {
+    game: string;
+    previous: string | null;
+    previousSha256: string | null;
+    eventIds: string[];
+    configSha256: string;
+    kind?: Snapshot['kind'];
+  },
 ): Snapshot {
   const players: Record<Pubkey, SnapshotPlayer> = {};
   for (const [pk, p] of Object.entries(state.players)) {
@@ -73,7 +89,7 @@ export function stateToSnapshot(
     schema_version: 1,
     game: meta.game,
     season: state.season,
-    kind: 'rolling',
+    kind: meta.kind ?? 'rolling',
     cutoff: state.cutoff,
     previous: meta.previous,
     previous_sha256: meta.previousSha256,
@@ -82,7 +98,17 @@ export function stateToSnapshot(
     players,
     recent_pairs: state.recentPairs.map((p) => ({ a: p.a, b: p.b, settled_at: p.settledAt })),
     migrations: [],
-    season_summaries: {},
+    season_summaries: Object.fromEntries(
+      Object.entries(state.seasonSummaries).map(([season, players]) => [
+        season,
+        Object.fromEntries(
+          Object.entries(players).map(([pk, x]) => [
+            pk,
+            { final_rating: x.finalRating, peak_rating: x.peakRating, matches: x.matches, wins: x.wins, losses: x.losses },
+          ]),
+        ),
+      ]),
+    ),
   };
 }
 
@@ -107,6 +133,17 @@ export function snapshotToState(s: Snapshot): RatingState {
     cutoff: s.cutoff,
     players,
     recentPairs: s.recent_pairs.map((p) => ({ a: p.a, b: p.b, settledAt: p.settled_at })),
+    seasonSummaries: Object.fromEntries(
+      Object.entries(s.season_summaries ?? {}).map(([season, players]) => [
+        season,
+        Object.fromEntries(
+          Object.entries(players).map(([pk, x]) => [
+            pk,
+            { finalRating: x.final_rating, peakRating: x.peak_rating, matches: x.matches, wins: x.wins, losses: x.losses },
+          ]),
+        ),
+      ]),
+    ),
   };
 }
 

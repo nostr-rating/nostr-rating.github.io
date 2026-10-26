@@ -128,9 +128,49 @@ describe('runSnapshot', () => {
     );
   });
 
+  test('the first run after a season ends writes only the final snapshot with summaries', async () => {
+    const relay = await relaysWith(await seededEvents());
+    await runSnapshot({ root, cutoff: T0 + DAY, relay });
+    const s2 = 1_798_729_200; // シーズン2の開始（2027-01-01 JST）
+    const out = await runSnapshot({ root, cutoff: s2 + DAY, relay, now: () => s2 + 2 * DAY });
+    expect(out.path).toBe('snapshots/season_1/final.json');
+    const final = JSON.parse(read(out.path));
+    expect([final.kind, final.season, final.cutoff, final.previous]).toEqual(['final', 1, s2, 'snapshots/season_1/2026-10-02.json']);
+    expect(Object.values(final.season_summaries['1']).map((x: any) => [x.matches, x.wins, x.losses]).sort()).toEqual([[1, 0, 1], [1, 1, 0]]);
+    expect(JSON.parse(read('snapshots/latest.json')).path).toBe('snapshots/season_1/final.json');
+  });
+
+  test('the next run starts the new season from zero and keeps the summaries', async () => {
+    const relay = await relaysWith(await seededEvents());
+    await runSnapshot({ root, cutoff: T0 + DAY, relay });
+    const s2 = 1_798_729_200;
+    await runSnapshot({ root, cutoff: s2 + DAY, relay, now: () => s2 + 2 * DAY });
+    const out = await runSnapshot({ root, cutoff: s2 + DAY, relay, now: () => s2 + 2 * DAY });
+    expect(out.path).toBe('snapshots/season_2/2027-01-02.json');
+    const next = JSON.parse(read(out.path));
+    expect([next.season, next.previous, next.players]).toEqual([2, 'snapshots/season_1/final.json', {}]);
+    expect(next.season_summaries).toEqual(JSON.parse(read('snapshots/season_1/final.json')).season_summaries);
+  });
+
+  test('rating settings may change between the final snapshot and the new season, but not later', async () => {
+    const relay = await relaysWith(await seededEvents());
+    await runSnapshot({ root, cutoff: T0 + DAY, relay });
+    const s2 = 1_798_729_200;
+    await runSnapshot({ root, cutoff: s2 + DAY, relay, now: () => s2 + 2 * DAY });
+    const cfg = JSON.parse(read('configs/smash_sp.json'));
+    cfg.rating.tau = 0.6;
+    writeFileSync(join(root, 'configs/smash_sp.json'), JSON.stringify(cfg));
+    await runSnapshot({ root, cutoff: s2 + DAY, relay, now: () => s2 + 2 * DAY });
+    cfg.rating.tau = 0.7;
+    writeFileSync(join(root, 'configs/smash_sp.json'), JSON.stringify(cfg));
+    await expect(runSnapshot({ root, cutoff: s2 + 3 * DAY, relay, now: () => s2 + 4 * DAY })).rejects.toThrow(
+      'rating settings in configs changed since the previous snapshot; change them only at a season boundary',
+    );
+  });
+
   test('cutoff outside any season is rejected', async () => {
     await expect(runSnapshot({ root, cutoff: 1_700_000_000, relay: new MemoryRelay(() => 0) })).rejects.toThrow(
-      'cutoff 1700000000 is not inside any season',
+      'cutoff 1700000000 is before the first season',
     );
   });
 });

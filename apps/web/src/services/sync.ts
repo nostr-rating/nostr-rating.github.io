@@ -2,6 +2,8 @@ import {
   advanceRatings,
   currentSeason,
   fetchRatingEvents,
+  initialState,
+  seasonById,
   KIND,
   provisionalRatings,
   sha256Hex,
@@ -44,9 +46,15 @@ export async function syncRatings(
   const text = await fetchText(fetchFn, `${base}${pointer.path}`);
   if (sha256Hex(text) !== pointer.sha256) throw new Error(`sha256 mismatch: ${pointer.path}`);
   const snapshot = JSON.parse(text) as Snapshot;
-  const start = snapshotToState(snapshot);
-
   const t = now();
+  const fromSnapshot = snapshotToState(snapshot);
+  // スナップショットが前のシーズンのものなら、今のシーズンを初期値から始める（成績のサマリーだけ引き継ぐ）
+  const season = currentSeason(def, t);
+  const start =
+    season && fromSnapshot.season < season.id
+      ? initialState(def, season.id, season.startsAt, fromSnapshot.seasonSummaries)
+      : fromSnapshot;
+
   const since = start.cutoff - def.report.deadlineSec;
   let fresh: Awaited<ReturnType<typeof fetchRatingEvents>> = [];
   try {
@@ -64,10 +72,10 @@ export async function syncRatings(
   const shown = provisionalRatings(def, state, cached, t);
 
   // 現在と直前のシーズンの生イベントだけを残す
-  const season = currentSeason(def, t);
-  const prevSeason = season ? def.seasons.find((s) => s.id === season.id - 1) : undefined;
-  const keepFrom = prevSeason?.startsAt ?? season?.startsAt;
-  if (keepFrom !== undefined) await store.purgeBefore(keepFrom, [KIND.match, KIND.report, KIND.application]);
+  if (season) {
+    const keepFrom = seasonById(def, Math.max(1, season.id - 1)).startsAt;
+    await store.purgeBefore(keepFrom, [KIND.match, KIND.report, KIND.application]);
+  }
 
-  return { state, shown, snapshotCutoff: start.cutoff };
+  return { state, shown, snapshotCutoff: fromSnapshot.cutoff };
 }

@@ -73,6 +73,19 @@ describe('Lobby', () => {
   });
 });
 
+describe('Lobby near the season end', () => {
+  test('does not start matches whose report deadline would fall after the season end', async () => {
+    const end = 1_798_729_200; // シーズン1の終わり（2027-01-01 JST）
+    const now = () => end - 3600;
+    const relay = new MemoryRelay(now);
+    const signer = new LocalSigner(generateSecretKey());
+    await relay.publish(await signer.signEvent(buildIdentities([{ platform: 'github', identity: 'u', proof: 'abc' }], now() - 100)));
+    renderWithApp(<Lobby />, { deps: makeDeps({ relay, now }), signer: { signer, kind: 'local' }, backedUp: true });
+    expect(await screen.findByText('シーズン 1 は 1/1 0:00 に終わります。結果報告の締め切りがシーズン内に収まらないため、新しい対戦はシーズン 2 から受け付けます。')).toBeTruthy();
+    expect((screen.getByRole('button', { name: '対戦相手を探す' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
 describe('Ranking', () => {
   test('shows an empty state without rated players', async () => {
     renderWithApp(<Ranking />);

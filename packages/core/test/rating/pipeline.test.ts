@@ -1,6 +1,7 @@
 import type { NostrEvent } from 'nostr-tools/pure';
 import { beforeAll, describe, expect, test } from 'vitest';
 import { buildMatch, buildReport } from '../../src/events/codec.js';
+import { seasonById } from '../../src/game/definition.js';
 import { advanceRatings, initialState, provisionalRatings, toLocalView } from '../../src/rating/pipeline.js';
 import { def } from '../helpers/def.js';
 import { newUser } from '../helpers/keys.js';
@@ -159,10 +160,19 @@ describe('advanceRatings', () => {
   });
 
   test('match created before the season start is not counted', async () => {
-    const start = def.seasons[0]!.startsAt;
+    const start = seasonById(def, 1).startsAt;
     const evs = [...ids, ...(await p1Wins(alice, bob, start - 10))];
     const { state } = advanceRatings(def, initialState(def, 1, start - 10 - DAY), evs, after(start));
     expect(state.players[alice.pk]!.matches).toBe(0);
+  });
+
+  test('match whose deadline would fall after the season end is not counted', async () => {
+    const end = seasonById(def, 1).endsAt;
+    const inside = await p1Wins(alice, bob, end - DAY - 10);
+    const straddling = await p1Wins(alice, carol, end - DAY + 10);
+    const { state } = advanceRatings(def, s0(), [...ids, ...inside, ...straddling], end + 2 * DAY);
+    expect(state.players[alice.pk]!.matches).toBe(1);
+    expect(state.players[carol.pk]?.matches ?? 0).toBe(0);
   });
 
   test('player without identity claim is not rated', async () => {

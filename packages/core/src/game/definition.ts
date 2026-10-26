@@ -46,7 +46,8 @@ export interface GameDefinition {
     applicationTimeoutSec: number;
   };
   report: { deadlineSec: number };
-  seasons: Season[];
+  /** 起点から months か月ごとに区切る。一覧ではないので、誰も更新しなくてもシーズンは続く */
+  seasons: { firstStartsAt: number; months: number; utcOffsetMinutes: number };
 }
 
 function fail(path: string, reason: string): never {
@@ -166,10 +167,42 @@ export function parseGameDefinition(json: unknown): GameDefinition {
       ] as const),
     },
     report: numObj(root.report, 'report', ['deadlineSec'] as const),
-    seasons: arr(root.seasons, 'seasons').map((s, i) =>
-      numObj(s, `seasons[${i}]`, ['id', 'startsAt', 'endsAt'] as const),
-    ),
+    seasons: parseSeasons(root.seasons),
   };
+}
+
+function parseSeasons(v: unknown): GameDefinition['seasons'] {
+  const s = numObj(v, 'seasons', ['firstStartsAt', 'months', 'utcOffsetMinutes'] as const);
+  if (!Number.isInteger(s.months) || s.months < 1) fail('seasons.months', 'must be a positive integer');
+  // 29〜31日を起点にすると、月によってその日がない
+  if (new Date((s.firstStartsAt + s.utcOffsetMinutes * 60) * 1000).getUTCDate() > 28) {
+    fail('seasons.firstStartsAt', 'must be on day 1-28 of the month');
+  }
+  return s;
+}
+
+/** 起点から k 区切り目の開始時刻（指定の時差での暦の月で数える） */
+function boundary(def: GameDefinition, k: number): number {
+  const { firstStartsAt, months, utcOffsetMinutes } = def.seasons;
+  const off = utcOffsetMinutes * 60;
+  const l = new Date((firstStartsAt + off) * 1000);
+  const t = Date.UTC(l.getUTCFullYear(), l.getUTCMonth() + months * k, l.getUTCDate(), l.getUTCHours(), l.getUTCMinutes(), l.getUTCSeconds());
+  return t / 1000 - off;
+}
+
+/**
+ * 今から始めた対戦の締め切りが、今のシーズンに収まるか（収まらない対戦はどのシーズンでも数えない）。
+ * 受け付けないときは理由に使うシーズンを返す。
+ */
+export function acceptsNewMatches(def: GameDefinition, now: number): { ok: true } | { ok: false; season: Season | null; next: Season } {
+  const season = currentSeason(def, now);
+  if (season && now + def.report.deadlineSec <= season.endsAt) return { ok: true };
+  return { ok: false, season, next: seasonById(def, season ? season.id + 1 : 1) };
+}
+
+/** シーズン id は 1 から */
+export function seasonById(def: GameDefinition, id: number): Season {
+  return { id, startsAt: boundary(def, id - 1), endsAt: boundary(def, id) };
 }
 
 /** 拒否ステージを共有するグループなら先頭のファイター、それ以外は自分自身 */
@@ -179,5 +212,14 @@ export function banGroupKey(def: GameDefinition, fighter: FighterId): FighterId 
 }
 
 export function currentSeason(def: GameDefinition, now: number): Season | null {
-  return def.seasons.find((s) => s.startsAt <= now && now < s.endsAt) ?? null;
+  if (now < def.seasons.firstStartsAt) return null;
+  const { firstStartsAt, months, utcOffsetMinutes } = def.seasons;
+  const off = utcOffsetMinutes * 60;
+  const a = new Date((firstStartsAt + off) * 1000);
+  const b = new Date((now + off) * 1000);
+  // 月の差から見当を付け、境目の前後を確かめる
+  let id = Math.floor(((b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth())) / months) + 1;
+  while (id > 1 && now < seasonById(def, id).startsAt) id--;
+  while (now >= seasonById(def, id).endsAt) id++;
+  return seasonById(def, id);
 }

@@ -9,7 +9,7 @@ import {
   type ResultReport,
 } from '../events/codec.js';
 import { isValidEvent } from '../events/kinds.js';
-import type { GameDefinition } from '../game/definition.js';
+import { seasonById, type GameDefinition } from '../game/definition.js';
 import type { LocalView } from '../match/conditions.js';
 import { mannersDelta, settleMatch, type MannersCount, type Settlement } from '../match/settle.js';
 import { dedupeById } from '../relay/client.js';
@@ -34,16 +34,42 @@ export interface RecentPair {
   settledAt: number;
 }
 
+/** 終わったシーズンの成績。生のイベントを消しても過去の成績を見せられるよう、スナップショットに残す */
+export interface SeasonSummary {
+  finalRating: number;
+  peakRating: number;
+  matches: number;
+  wins: number;
+  losses: number;
+}
+
 export interface RatingState {
   season: number;
   /** この時刻までに締め切りを迎えた対戦を処理済み */
   cutoff: number;
   players: Record<Pubkey, PlayerState>;
   recentPairs: RecentPair[];
+  /** シーズン id → 公開鍵 → 成績 */
+  seasonSummaries: Record<string, Record<Pubkey, SeasonSummary>>;
 }
 
-export function initialState(_def: GameDefinition, season: number, cutoff: number): RatingState {
-  return { season, cutoff, players: {}, recentPairs: [] };
+export function initialState(
+  _def: GameDefinition,
+  season: number,
+  cutoff: number,
+  seasonSummaries: RatingState['seasonSummaries'] = {},
+): RatingState {
+  return { season, cutoff, players: {}, recentPairs: [], seasonSummaries };
+}
+
+/** シーズンを締めくくり、レートを持つプレイヤーの成績をサマリーに加える */
+export function summarizeSeason(state: RatingState): RatingState['seasonSummaries'] {
+  const summary: Record<Pubkey, SeasonSummary> = {};
+  for (const [pk, p] of Object.entries(state.players)) {
+    if (p.matches === 0) continue;
+    summary[pk] = { finalRating: p.rating, peakRating: p.peakRating, matches: p.matches, wins: p.wins, losses: p.losses };
+  }
+  return { ...state.seasonSummaries, [String(state.season)]: summary };
 }
 
 function initialPlayer(def: GameDefinition): PlayerState {
@@ -108,7 +134,7 @@ interface Inputs {
  */
 function collect(def: GameDefinition, season: number, events: NostrEvent[]): Inputs {
   const unique = dedupeById(events.filter((e) => isValidEvent(e)));
-  const startsAt = def.seasons.find((s) => s.id === season)?.startsAt ?? -Infinity;
+  const { startsAt, endsAt } = seasonById(def, season);
 
   const identities = new Map<Pubkey, { id: string; createdAt: number }>();
   const applications = new Map<string, Application>();
@@ -141,7 +167,8 @@ function collect(def: GameDefinition, season: number, events: NostrEvent[]): Inp
   const byApplication = new Map<string, Linked>();
   for (const m of matches) {
     const app = applications.get(m.applicationId);
-    if (m.createdAt < startsAt || !isLinkedMatch(def, m, app)) continue;
+    // シーズンの境目をまたぐ対戦（締め切りが次のシーズンに入るもの）は、どちらのシーズンでも数えない
+    if (m.createdAt < startsAt || m.createdAt + def.report.deadlineSec > endsAt || !isLinkedMatch(def, m, app)) continue;
     const cur = byApplication.get(app.eventId);
     if (!cur || byId(m.id, cur.match.id) < 0) byApplication.set(app.eventId, { match: m, application: app, reports: reports.get(m.id) ?? [] });
   }
@@ -258,6 +285,7 @@ export function advanceRatings(
       cutoff,
       players: ap.players,
       recentPairs: ap.recentPairs.filter((p) => cutoff - p.settledAt < keep),
+      seasonSummaries: prev.seasonSummaries,
     },
     usedEventIds: [...ap.used].sort(byId),
   };

@@ -470,11 +470,9 @@
   "report": {
     "deadlineSec": 86400
   },
-  "seasons": [
-    {
-      "id": 1,
-      "startsAt": 1790780400,
-      "endsAt": 1798729200
-    }
-  ]
+  "seasons": {
+    "firstStartsAt": 1790780400,
+    "months": 3,
+    "utcOffsetMinutes": 540
+  }
 }

@@ -1,5 +1,7 @@
 import {
+  acceptsNewMatches,
   allowedRange,
+  currentSeason,
   buildSettings,
   isLinkedMatch,
   KIND,
@@ -18,6 +20,12 @@ import { displayName, useApp } from '../state/AppContext.js';
 import { rangeLabel } from './Settings.js';
 
 const FIGHTER_KEY = 'nostr-rating:firstFighter';
+
+/** シーズンの区切りは定義の時差で表示する（端末の時差に左右されない） */
+export function seasonTime(def: { seasons: { utcOffsetMinutes: number } }, t: number): string {
+  const d = new Date((t + def.seasons.utcOffsetMinutes * 60) * 1000);
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${d.getUTCHours()}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+}
 
 function rememberedFighter(): string {
   try {
@@ -143,6 +151,8 @@ export function Lobby() {
       ? allowedRange(def, { pubkey: me, rating: mine?.rating ?? def.rating.initialRating, rangeChoice: range, rematchHours: 0, waitingSince, mannersTotal: 0 }, app.now())
       : null;
   const settingsReady = app.settingsStatus === 'loaded';
+  const window_ = acceptsNewMatches(def, app.now());
+  const seasonNow = currentSeason(def, app.now());
 
   return (
     <section>
@@ -161,7 +171,10 @@ export function Lobby() {
         );
       })}
       <div className="card">
-        <p className="muted">{me ? displayName(app, me) : ''}</p>
+        <p className="muted">
+          {me ? displayName(app, me) : ''}
+          {seasonNow ? ` ・ シーズン ${seasonNow.id}（${seasonTime(def, seasonNow.endsAt)} まで）` : ''}
+        </p>
         <div className="muted">レート</div>
         <div className="big">{(mine?.rating ?? def.rating.initialRating).toFixed(0)}</div>
         <div className="muted">
@@ -193,11 +206,18 @@ export function Lobby() {
             <option key={String(c)} value={c === null ? '' : String(c)}>{rangeLabel(c)}</option>
           ))}
         </select>
+        {!window_.ok && (
+          <p className="notice">
+            {window_.season
+              ? `シーズン ${window_.season.id} は ${seasonTime(def, window_.season.endsAt)} に終わります。結果報告の締め切りがシーズン内に収まらないため、新しい対戦はシーズン ${window_.next.id} から受け付けます。`
+              : `シーズン ${window_.next.id} は ${seasonTime(def, window_.next.startsAt)} に始まります。`}
+          </p>
+        )}
         {!linked && <p className="error">対戦するには SNS アカウントの紐づけが必要です。</p>}
         {!linked && <a href="#/onboarding">紐づけに進む</a>}
         {app.settingsStatus === 'failed' && <p className="error" role="alert">対戦設定を読み込めませんでした。電波のよい場所で再読み込みしてください。</p>}
         {!app.search.busy ? (
-          <button type="button" className="primary" disabled={!linked || !app.signer || !settingsReady} onClick={() => void search()}>
+          <button type="button" className="primary" disabled={!linked || !app.signer || !settingsReady || !window_.ok} onClick={() => void search()}>
             対戦相手を探す
           </button>
         ) : (

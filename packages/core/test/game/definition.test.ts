@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { banGroupKey, currentSeason, parseGameDefinition } from '../../src/game/definition.js';
+import { banGroupKey, currentSeason, parseGameDefinition, seasonById } from '../../src/game/definition.js';
 
 const rawJson = JSON.parse(readFileSync(resolve(__dirname, '../../../../configs/smash_sp.json'), 'utf8'));
 const def = parseGameDefinition(rawJson);
@@ -71,10 +71,28 @@ describe('banGroupKey', () => {
   });
 });
 
-describe('currentSeason', () => {
-  test('includes startsAt and excludes endsAt', () => {
+describe('seasons', () => {
+  // 2026-10-01 00:00 JST から3か月ごと
+  test('season 1 is 2026-10-01 to 2027-01-01 JST', () => {
+    expect(seasonById(def, 1)).toEqual({ id: 1, startsAt: 1790780400, endsAt: 1798729200 });
+  });
+
+  test('later seasons follow calendar months without any list to update', () => {
+    expect(seasonById(def, 2)).toEqual({ id: 2, startsAt: 1798729200, endsAt: 1806505200 }); // 2027-01-01 → 2027-04-01
+    expect(seasonById(def, 5)).toEqual({ id: 5, startsAt: 1822316400, endsAt: 1830265200 }); // 2027-10-01 → 2028-01-01
+  });
+
+  test('currentSeason includes startsAt and excludes endsAt', () => {
     expect(currentSeason(def, 1790780400)?.id).toBe(1);
+    expect(currentSeason(def, 1798729199)?.id).toBe(1);
+    expect(currentSeason(def, 1798729200)?.id).toBe(2);
     expect(currentSeason(def, 1790780399)).toBeNull();
-    expect(currentSeason(def, 1798729200)).toBeNull();
+    expect(currentSeason(def, 2_000_000_000)?.id).toBe(27); // 2033-05-18 JST
+  });
+
+  test('rejects a season definition whose start day may not exist in every month', () => {
+    const bad = structuredClone(rawJson);
+    bad.seasons.firstStartsAt = 1793372400; // 2026-10-31 00:00 JST
+    expect(() => parseGameDefinition(bad)).toThrow('invalid game definition: seasons.firstStartsAt must be on day 1-28 of the month');
   });
 });

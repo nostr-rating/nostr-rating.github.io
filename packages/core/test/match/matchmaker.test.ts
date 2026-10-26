@@ -237,6 +237,16 @@ describe('Matchmaker', () => {
     expect(await Promise.all([pa, pb])).toEqual(['AbortError', 'AbortError']);
   });
 
+  test('refuses to search when the report deadline would fall after the season end', async () => {
+    vi.setSystemTime(new Date((1_798_729_200 - 3600) * 1000)); // シーズン1の終わりの1時間前
+    const relay = new MemoryRelay(now);
+    const a = maker(relay);
+    await expect(a.mm.search(params('mario'), new AbortController().signal)).rejects.toThrow(
+      'new matches are not accepted until the next season starts',
+    );
+    expect(relay.all().filter((e) => e.kind === KIND.recruitment)).toHaveLength(0);
+  });
+
   test('recruitment is refreshed every heartbeat', async () => {
     const relay = new MemoryRelay(now);
     const a = maker(relay);

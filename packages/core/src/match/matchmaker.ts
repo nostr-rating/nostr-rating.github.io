@@ -12,7 +12,7 @@ import {
   type Recruitment,
 } from '../events/codec.js';
 import { KIND } from '../events/kinds.js';
-import type { GameDefinition } from '../game/definition.js';
+import { acceptsNewMatches, type GameDefinition } from '../game/definition.js';
 import type { Signer } from '../identity/signer.js';
 import type { RelayClient } from '../relay/client.js';
 import type { FighterId, Pubkey } from '../types.js';
@@ -75,6 +75,8 @@ export class Matchmaker {
     const game = def.id;
     const me = await signer.getPublicKey();
     const waitingSince = now();
+    if (!acceptsNewMatches(def, waitingSince).ok) throw new Error('new matches are not accepted until the next season starts');
+
     const self = (): SeekerView => ({
       pubkey: me,
       rating: this.#d.view.ratingOf(me),

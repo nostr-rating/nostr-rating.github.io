@@ -6,6 +6,7 @@ import {
   parseIdentities,
   parseProfile,
   parseSettings,
+  seasonById,
   settingsD,
   toLocalView,
   type GameDefinition,
@@ -80,7 +81,7 @@ export function useApp(): AppValue {
 }
 
 function emptyState(def: GameDefinition, now: number): RatingState {
-  const season = currentSeason(def, now) ?? def.seasons.at(-1)!;
+  const season = currentSeason(def, now) ?? seasonById(def, 1);
   return initialState(def, season.id, season.startsAt);
 }
 

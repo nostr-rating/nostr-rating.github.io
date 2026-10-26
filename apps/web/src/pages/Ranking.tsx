@@ -72,6 +72,17 @@ export function Player({ pubkey }: { pubkey: string }) {
       ) : (
         <p>このシーズンの記録はありません。</p>
       )}
+      {Object.entries(app.ratings.seasonSummaries)
+        .filter(([, players]) => players[pubkey])
+        .sort(([a], [b]) => Number(b) - Number(a))
+        .map(([season, players]) => {
+          const x = players[pubkey]!;
+          return (
+            <p key={season} className="muted">
+              シーズン {season}: 最終レート {x.finalRating.toFixed(0)}（最高 {x.peakRating.toFixed(0)}）・{x.wins}勝 {x.losses}敗
+            </p>
+          );
+        })}
     </section>
   );
 }
