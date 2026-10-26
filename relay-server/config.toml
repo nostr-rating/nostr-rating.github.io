@@ -1,0 +1,16 @@
+[info]
+relay_url = "ws://localhost:7777/"
+name = "nostr-rating local relay"
+description = "Nostr-Rating の開発・動作確認用ローカルリレー"
+
+[database]
+data_directory = "/usr/src/app/db"
+
+[network]
+address = "0.0.0.0"
+port = 8080
+
+[limits]
+# 開発中は送信の制限をかけない
+messages_per_sec = 0
+max_event_bytes = 131072

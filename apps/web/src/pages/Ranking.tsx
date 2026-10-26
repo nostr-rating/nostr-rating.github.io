@@ -1,0 +1,77 @@
+import { useEffect } from 'react';
+import { IdentityBadge } from '../components/IdentityBadge.js';
+import { displayName, useApp } from '../state/AppContext.js';
+
+export function Ranking() {
+  const app = useApp();
+  useEffect(() => {
+    if (app.pubkey) void app.refresh();
+    // 画面を開いたときに最新のレートを読む
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.pubkey]);
+  const rows = Object.entries(app.ratings.players)
+    .filter(([, p]) => p.matches > 0)
+    .sort(([, a], [, b]) => b.rating - a.rating);
+
+  return (
+    <section className="card">
+      <h2>ランキング（シーズン {app.ratings.season}）</h2>
+      <p className="muted">締め切り（対戦から24時間）前の対戦は暫定値です。</p>
+      {rows.length === 0 ? (
+        <p>まだ対戦記録がありません。</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>名前</th>
+              <th>レート</th>
+              <th>勝敗</th>
+              <th>マナー</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(([pk, p], i) => (
+              <tr key={pk} className={pk === app.pubkey ? 'me' : undefined}>
+                <td>{i + 1}</td>
+                <td>
+                  <a href={`#/player/${pk}`}>{displayName(app, pk)}</a>
+                </td>
+                <td>{p.rating.toFixed(0)}</td>
+                <td>{p.wins}-{p.losses}</td>
+                <td>{p.manners.noReport + p.manners.cancel + p.manners.mismatch}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+export function Player({ pubkey }: { pubkey: string }) {
+  const app = useApp();
+  const p = app.ratings.players[pubkey];
+  return (
+    <section className="card stack">
+      <h2>{displayName(app, pubkey)}</h2>
+      <IdentityBadge claims={app.identities[pubkey]} pubkey={pubkey} fetchFn={app.fetchFn} />
+      <details>
+        <summary>ID</summary>
+        <p className="mono muted">{pubkey}</p>
+      </details>
+      {p ? (
+        <table>
+          <tbody>
+            <tr><th>レート</th><td>{p.rating.toFixed(1)}（RD {p.rd.toFixed(1)}）</td></tr>
+            <tr><th>最高レート</th><td>{p.peakRating.toFixed(1)}</td></tr>
+            <tr><th>勝敗</th><td>{p.wins}勝 {p.losses}敗（{p.matches}戦）</td></tr>
+            <tr><th>マナーの目安</th><td>未報告 {p.manners.noReport} / 中止 {p.manners.cancel} / 食い違い {p.manners.mismatch}</td></tr>
+          </tbody>
+        </table>
+      ) : (
+        <p>このシーズンの記録はありません。</p>
+      )}
+    </section>
+  );
+}

@@ -1,0 +1,217 @@
+import {
+  allowedRange,
+  buildSettings,
+  isLinkedMatch,
+  KIND,
+  parseApplication,
+  parseMatch,
+  parseReport,
+  parseSettings,
+  settleMatch,
+  type MatchRecord,
+  type ResultReport,
+  type Settings,
+} from '@nostr-rating/core';
+import { useEffect, useId, useState } from 'react';
+import { navigate } from '../router.js';
+import { displayName, useApp } from '../state/AppContext.js';
+import { rangeLabel } from './Settings.js';
+
+const FIGHTER_KEY = 'nostr-rating:firstFighter';
+
+function rememberedFighter(): string {
+  try {
+    return localStorage.getItem(FIGHTER_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function notifyMatched(): void {
+  try {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification('対戦相手が見つかりました');
+    navigator.vibrate?.(200);
+  } catch {
+    // Android Chrome などでは new Notification が使えない。通知は補助なので無視する
+  }
+}
+
+/** 締め切り前で、まだ確定も中止もしていない自分の対戦（再読み込みや画面移動のあとに戻れるように） */
+function useOpenMatches(): MatchRecord[] {
+  const app = useApp();
+  const [open, setOpen] = useState<MatchRecord[]>([]);
+  useEffect(() => {
+    const me = app.pubkey;
+    if (!me) return;
+    let alive = true;
+    const t = app.now();
+    void (async () => {
+      const evs = await app.relay.query([{ kinds: [KIND.match], '#p': [me], since: t - app.def.report.deadlineSec }]);
+      const candidates = evs.map((e) => parseMatch(app.def.id, e)).filter((m): m is MatchRecord => m !== null && (m.p1 === me || m.p2 === me));
+      if (candidates.length === 0) return;
+      // 第三者が勝手に作った対戦は、申し込みに結び付かないので出さない
+      const appEvs = await app.relay.query([{ kinds: [KIND.application], ids: candidates.map((m) => m.applicationId) }]);
+      const apps = new Map(appEvs.map((e) => parseApplication(app.def.id, e)).filter((a) => a !== null).map((a) => [a.eventId, a]));
+      const matches = candidates.filter((m) => isLinkedMatch(app.def, m, apps.get(m.applicationId)));
+      if (matches.length === 0) return;
+      const reps = await app.relay.query([{ kinds: [KIND.report], '#e': matches.map((m) => m.id) }]);
+      const reports = reps.map((e) => parseReport(app.def.id, e)).filter((r): r is ResultReport => r !== null);
+      const pending = matches
+        .filter((m) => settleMatch(m, reports.filter((r) => r.matchId === m.id), t, app.def.report.deadlineSec).status === 'pending')
+        .sort((a, b) => b.createdAt - a.createdAt);
+      if (!alive) return;
+      setOpen(pending);
+      await app.loadPeople(pending.map((m) => (m.p1 === me ? m.p2 : m.p1)));
+    })().catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.pubkey, app.relay]);
+  return open;
+}
+
+export function Lobby() {
+  const app = useApp();
+  const { def } = app;
+  const id = useId();
+  const [fighter, setFighter] = useState(rememberedFighter() || def.fighters[0]!.id);
+  const [range, setRange] = useState<number | null>(app.mySettings?.rangeChoice ?? null);
+  const [, setTick] = useState(0);
+  const open = useOpenMatches();
+
+  useEffect(() => {
+    if (app.mySettings) setRange(app.mySettings.rangeChoice);
+  }, [app.mySettings]);
+
+  useEffect(() => {
+    if (app.pubkey) void app.refresh();
+    // 画面を開いたときに最新のレートを読む
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.pubkey]);
+
+  useEffect(() => {
+    if (app.search.waitingSince === null) return;
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [app.search.waitingSince]);
+
+  const me = app.pubkey;
+  const mine = me ? app.ratings.players[me] : undefined;
+  const linked = me ? (app.identities[me]?.length ?? 0) > 0 : false;
+  const rank = me
+    ? Object.entries(app.ratings.players)
+        .filter(([, p]) => p.matches > 0)
+        .sort(([, a], [, b]) => b.rating - a.rating)
+        .findIndex(([pk]) => pk === me) + 1
+    : 0;
+
+  /** 保存済みの拒否ステージと連戦設定を残したまま、レート差だけを変える */
+  const ensureSettings = async (): Promise<Settings> => {
+    if (app.mySettings && app.mySettings.rangeChoice === range) return app.mySettings;
+    const base = app.mySettings ?? { stageBans: {}, rematchHours: 0 };
+    const ev = await app.signer!.signEvent(
+      buildSettings(def.id, { stageBans: base.stageBans, rangeChoice: range, rematchHours: base.rematchHours }, app.now()),
+    );
+    await app.relay.publish(ev);
+    const s = parseSettings(def.id, ev)!;
+    app.setMySettings(s);
+    return s;
+  };
+
+  const search = async () => {
+    try {
+      localStorage.setItem(FIGHTER_KEY, fighter);
+    } catch {
+      // 次回の初期値に使うだけ
+    }
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      void Notification.requestPermission().catch(() => undefined);
+    }
+    const m = await app.startSearch(async () => {
+      const settings = await ensureSettings();
+      return { firstFighter: fighter, rangeChoice: settings.rangeChoice, rematchHours: settings.rematchHours, settingsId: settings.eventId };
+    });
+    if (!m) return;
+    navigate({ name: 'match', id: m.id });
+    notifyMatched();
+  };
+
+  const waitingSince = app.search.waitingSince;
+  const waitingRange =
+    waitingSince !== null && me
+      ? allowedRange(def, { pubkey: me, rating: mine?.rating ?? def.rating.initialRating, rangeChoice: range, rematchHours: 0, waitingSince, mannersTotal: 0 }, app.now())
+      : null;
+  const settingsReady = app.settingsStatus === 'loaded';
+
+  return (
+    <section>
+      {app.signerKind === 'local' && !app.backedUp && (
+        <p className="notice">
+          引き継ぎコードをまだ保存していません。機種変更やブラウザのデータ削除で戦績が消えないよう、<a href="#/settings">設定画面</a>から保存してください。
+        </p>
+      )}
+      {open.map((m) => {
+        const opp = m.p1 === me ? m.p2 : m.p1;
+        return (
+          <div key={m.id} className="card stack">
+            <p>結果を報告していない対戦があります。</p>
+            <a href={`#/match/${m.id}`}>対戦ルームへ戻る（{displayName(app, opp)} さん）</a>
+          </div>
+        );
+      })}
+      <div className="card">
+        <p className="muted">{me ? displayName(app, me) : ''}</p>
+        <div className="muted">レート</div>
+        <div className="big">{(mine?.rating ?? def.rating.initialRating).toFixed(0)}</div>
+        <div className="muted">
+          {rank > 0 ? `${rank}位 ・ ` : ''}
+          {mine?.wins ?? 0}勝 {mine?.losses ?? 0}敗
+          {(mine?.matches ?? 0) < 10 ? '（対戦数が少ないうちは、レートが大きく動きます）' : ''}
+        </div>
+        <div className="muted">
+          マナーの目安: 未報告 {mine?.manners.noReport ?? 0} ／ 中止 {mine?.manners.cancel ?? 0} ／ 食い違い {mine?.manners.mismatch ?? 0}
+        </div>
+        {app.syncError && <p className="muted">ランキングの最新データを読み込めませんでした。表示が古い可能性があります。</p>}
+      </div>
+
+      <div className="card stack">
+        <label htmlFor={`${id}-fighter`}>1戦目に使うキャラ</label>
+        <select id={`${id}-fighter`} value={fighter} disabled={app.search.busy} onChange={(e) => setFighter(e.target.value)}>
+          {def.fighters.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
+        <label htmlFor={`${id}-range`}>マッチングするレート差</label>
+        <select
+          id={`${id}-range`}
+          value={range === null ? '' : String(range)}
+          disabled={app.search.busy}
+          onChange={(e) => setRange(e.target.value === '' ? null : Number(e.target.value))}
+        >
+          {def.matching.rangeChoices.map((c) => (
+            <option key={String(c)} value={c === null ? '' : String(c)}>{rangeLabel(c)}</option>
+          ))}
+        </select>
+        {!linked && <p className="error">対戦するには SNS アカウントの紐づけが必要です。</p>}
+        {!linked && <a href="#/onboarding">紐づけに進む</a>}
+        {app.settingsStatus === 'failed' && <p className="error" role="alert">対戦設定を読み込めませんでした。電波のよい場所で再読み込みしてください。</p>}
+        {!app.search.busy ? (
+          <button type="button" className="primary" disabled={!linked || !app.signer || !settingsReady} onClick={() => void search()}>
+            対戦相手を探す
+          </button>
+        ) : (
+          <div className="stack" role="status" aria-live="polite">
+            <p>
+              {waitingSince === null ? '準備中…' : `待機中… ${app.now() - waitingSince}秒`}
+              {waitingRange !== null ? `（レート差 ±${waitingRange} まで）` : ''}
+            </p>
+            <p className="muted">この画面を閉じると探すのをやめます。ほかの画面に移っても探し続けます。</p>
+            <button type="button" onClick={() => app.cancelSearch()}>やめる</button>
+          </div>
+        )}
+        {app.search.error && <p className="error" role="alert">{app.search.error}</p>}
+      </div>
+    </section>
+  );
+}

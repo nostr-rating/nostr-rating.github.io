@@ -1,0 +1,13 @@
+# 開発・動作確認用のローカル Nostr リレー（既存実装 nostr-rs-relay をそのまま使う）
+services:
+  relay:
+    image: scsibug/nostr-rs-relay:0.10.0
+    ports:
+      - "7777:8080"
+    volumes:
+      - ./config.toml:/usr/src/app/config.toml:ro
+      - relay-data:/usr/src/app/db
+    restart: unless-stopped
+
+volumes:
+  relay-data:

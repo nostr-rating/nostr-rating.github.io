@@ -1,0 +1,59 @@
+{
+  "config_sha256": "a343aa49573c8ad50d68594d2ecfd12a5b114481fa34b980f41a15f1f0d92cf8",
+  "cutoff": 1790886400,
+  "game": "smash_sp",
+  "inputs": {
+    "event_count": 6,
+    "event_ids_sha256": "685290cabe9b0fb190cc5cacd5a3df83a788eec4083f2b5a7f6fc16296ddea38"
+  },
+  "kind": "rolling",
+  "migrations": [],
+  "players": {
+    "1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f": {
+      "has_identity": true,
+      "last_match_at": 1790800000,
+      "losses": 0,
+      "manners": {
+        "cancel": 0,
+        "mismatch": 0,
+        "no_report": 0
+      },
+      "matches": 1,
+      "migrated_to": null,
+      "peak_rating": 1662.310894,
+      "rating": 1662.310894,
+      "rd": 290.318964,
+      "volatility": 0.06,
+      "wins": 1
+    },
+    "4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766": {
+      "has_identity": true,
+      "last_match_at": 1790800000,
+      "losses": 1,
+      "manners": {
+        "cancel": 0,
+        "mismatch": 0,
+        "no_report": 0
+      },
+      "matches": 1,
+      "migrated_to": null,
+      "peak_rating": 1500,
+      "rating": 1337.689106,
+      "rd": 290.318964,
+      "volatility": 0.06,
+      "wins": 0
+    }
+  },
+  "previous": null,
+  "previous_sha256": null,
+  "recent_pairs": [
+    {
+      "a": "1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+      "b": "4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766",
+      "settled_at": 1790800000
+    }
+  ],
+  "schema_version": 1,
+  "season": 1,
+  "season_summaries": {}
+}

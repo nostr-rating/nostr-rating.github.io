@@ -1,0 +1,28 @@
+{
+  "name": "nostr-rating",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "scripts/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "snapshot": "npm -w @nostr-rating/snapshot run snapshot --",
+    "relay:up": "docker compose -f relay-server/docker-compose.yml up -d",
+    "relay:down": "docker compose -f relay-server/docker-compose.yml down",
+    "dev": "VITE_RELAYS=ws://localhost:7777 npm -w @nostr-rating/web run dev",
+    "e2e": "npm -w @nostr-rating/web run e2e"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.12",
+    "@types/node": "^24.0.0"
+  }
+}

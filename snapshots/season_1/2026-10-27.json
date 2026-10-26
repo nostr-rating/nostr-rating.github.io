@@ -1,0 +1,18 @@
+{
+  "config_sha256": "a343aa49573c8ad50d68594d2ecfd12a5b114481fa34b980f41a15f1f0d92cf8",
+  "cutoff": 1793026800,
+  "game": "smash_sp",
+  "inputs": {
+    "event_count": 0,
+    "event_ids_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "kind": "rolling",
+  "migrations": [],
+  "players": {},
+  "previous": null,
+  "previous_sha256": null,
+  "recent_pairs": [],
+  "schema_version": 1,
+  "season": 1,
+  "season_summaries": {}
+}
