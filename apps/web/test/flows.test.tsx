@@ -86,7 +86,7 @@ describe('match room', () => {
     const m = await matchBetween(relay, a, b);
     renderWithApp(<MatchRoom matchId={m.id} />, { deps: makeDeps({ relay, now: realNow }), account: a.account });
     await user.click(await screen.findByRole('button', { name: '1戦目: あなたの勝ち' }));
-    await user.selectOptions(screen.getByLabelText('相手のキャラ（直前の敗者が変えたとき）'), 'luigi');
+    await user.selectOptions(screen.getByLabelText('相手のキャラ'), 'luigi');
     expect(screen.getByTestId('stage-options').textContent).toBe('終点・戦場・ポケモンスタジアム2・小戦場・ホロウバスティオン・村と街・すま村');
     await user.click(screen.getByRole('button', { name: '1つ前に戻す' }));
     expect(screen.getByTestId('stage-picker').textContent).toBe('1戦目: お互いが選び、ゲーム内の抽選に従います');

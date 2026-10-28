@@ -17,30 +17,30 @@ export function Ranking() {
   return (
     <section className="card">
       <h2>ランキング（シーズン {app.ratings.season}）</h2>
-      <p className="muted">締め切り（対戦から24時間）前の対戦は暫定値です。</p>
+      <p className="hint">締め切り（対戦から24時間）前の対戦は暫定値です。</p>
       {rows.length === 0 ? (
         <p>まだ対戦記録がありません。</p>
       ) : (
         <table>
           <thead>
             <tr>
-              <th>#</th>
+              <th className="num">順位</th>
               <th>名前</th>
-              <th>レート</th>
-              <th>勝敗</th>
-              <th>マナー</th>
+              <th className="num">レート</th>
+              <th className="num">勝敗</th>
+              <th className="num">マナー</th>
             </tr>
           </thead>
           <tbody>
             {rows.map(([pk, p], i) => (
               <tr key={pk} className={pk === app.pubkey ? 'me' : undefined}>
-                <td>{i + 1}</td>
+                <td className="num">{i + 1}</td>
                 <td>
                   <a href={`#/player/${pk}`}>{displayName(app, pk)}</a>
                 </td>
-                <td>{p.rating.toFixed(0)}</td>
-                <td>{p.wins}-{p.losses}</td>
-                <td>{p.manners.noReport + p.manners.cancel + p.manners.mismatch}</td>
+                <td className="num">{p.rating.toFixed(0)}</td>
+                <td className="num">{p.wins}-{p.losses}</td>
+                <td className="num">{p.manners.noReport + p.manners.cancel + p.manners.mismatch}</td>
               </tr>
             ))}
           </tbody>
@@ -54,7 +54,7 @@ export function Player({ pubkey }: { pubkey: string }) {
   const app = useApp();
   const p = app.ratings.players[pubkey];
   return (
-    <section className="card stack">
+    <section className="card">
       <h2>{displayName(app, pubkey)}</h2>
       <IdentityBadge claims={app.identities[pubkey]} pubkey={pubkey} fetchFn={app.fetchFn} />
       <details>
@@ -63,7 +63,7 @@ export function Player({ pubkey }: { pubkey: string }) {
       </details>
       {pubkey === app.pubkey && (
         <a
-          className="button"
+          className="button primary"
           href={`https://x.com/intent/post?text=${encodeURIComponent('Nostr-Rating の戦績')}&url=${encodeURIComponent(new URL(`${import.meta.env.BASE_URL}p/${pubkey}.html`, location.origin).href)}`}
           target="_blank"
           rel="noopener noreferrer"
@@ -71,7 +71,7 @@ export function Player({ pubkey }: { pubkey: string }) {
           レートを X に投稿
         </a>
       )}
-      {pubkey === app.pubkey && <p className="muted">投稿のカードには、毎日の集計で確定したレートが出ます。</p>}
+      {pubkey === app.pubkey && <p className="hint">投稿のカードには、毎日の集計で確定したレートが出ます。</p>}
       {p ? (
         <table>
           <tbody>

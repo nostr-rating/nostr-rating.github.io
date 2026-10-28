@@ -8,32 +8,37 @@ export interface ChatLine {
 
 export function ChatPanel({ lines, onSend, note }: { lines: ChatLine[]; onSend: (text: string) => Promise<void>; note: string }) {
   const [text, setText] = useState('');
+  const submit = () => {
+    const t = text.trim();
+    if (t === '') return;
+    setText('');
+    void onSend(t);
+  };
   return (
-    <div className="card stack">
+    <div className="card">
       <h3>連絡</h3>
       <div className="chat">
         {lines.length === 0 && <p className="muted">メッセージはまだありません。</p>}
         {lines.map((l, i) => (
-          <p key={i} className={l.mine ? '' : 'muted'}>
-            {l.mine ? 'あなた' : '相手'}: {l.text}
+          <p key={i} className={l.mine ? 'mine' : 'theirs'}>
+            <span className="sr-only">{l.mine ? 'あなた' : '相手'}: </span>
+            {l.text}
           </p>
         ))}
       </div>
-      <div className="row">
-        <input aria-label="メッセージ" value={text} onChange={(e) => setText(e.target.value)} style={{ flex: 1 }} />
-        <button
-          type="button"
-          disabled={text.trim() === ''}
-          onClick={() => {
-            const t = text.trim();
-            setText('');
-            void onSend(t);
-          }}
-        >
+      <form
+        className="send-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <input aria-label="メッセージ" value={text} onChange={(e) => setText(e.target.value)} />
+        <button type="submit" disabled={text.trim() === ''}>
           送る
         </button>
-      </div>
-      <p className="muted" data-testid="chat-note">{note}</p>
+      </form>
+      <p className="hint" data-testid="chat-note">{note}</p>
     </div>
   );
 }

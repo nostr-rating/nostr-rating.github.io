@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Account } from '../account/account.js';
 import { connectExternal, type ExternalDevice } from '../account/external.js';
 import { CopyButton } from '../components/CopyButton.js';
+import { Dock } from '../components/Dock.js';
 import { StatusBadge } from '../components/IdentityBadge.js';
 import { QrCode } from '../components/QrCode.js';
 import { RecoveryWords } from '../components/RecoveryWords.js';
@@ -163,7 +164,7 @@ export function Onboarding() {
     setClaim(c);
     if (!c || !app.pubkey) {
       setStatus(null);
-      setError('対応していない URL です（X の投稿か GitHub の Gist の URL を入力してください）');
+      setError('対応していない URL です。X の投稿か GitHub の Gist の URL を入力してください。');
       return;
     }
     setError(null);
@@ -186,18 +187,30 @@ export function Onboarding() {
     }
   };
 
+  /** 操作の失敗は画面の下に出す（上の要素を押し出さない）。URL の形の誤りだけは入力欄の下に出す */
+  const errorSlot = error && step !== 'identity' && (
+    <Dock>
+      <p className="notice bad" role="alert">{error}</p>
+    </Dock>
+  );
+
   return (
     <section>
       {step === 'checking' && <p className="loading">読み込み中…</p>}
 
       {step === 'start' && (
-        <div className="card stack">
+        <div className="card">
           <h1>Nostr-Rating へようこそ</h1>
           <p>運営のいない、1対1の対戦ゲームのレート戦です。対戦結果は誰でも確かめられる形で公開されます。個人情報は預かりません。ゲームは始めたあとに画面の上で選べます。</p>
-          <button type="button" className="primary" disabled={busy} onClick={() => void start()}>
-            この端末で始める
-          </button>
-          <button type="button" onClick={() => setStep('join')}>すでにアカウントを持っている</button>
+          <div className="stack">
+            <button type="button" className="primary wide" disabled={busy} onClick={() => void start()}>
+              この端末で始める
+            </button>
+            <button type="button" className="wide" onClick={() => setStep('join')}>
+              すでにアカウントを持っている
+            </button>
+          </div>
+          {errorSlot}
           <details>
             <summary>署名アプリを使う（Nostr に詳しい人向け）</summary>
             <SignerChoice busy={busy} bunker={bunker} setBunker={setBunker} onChoose={(k) => void start(k)} verb="始める" />
@@ -209,7 +222,7 @@ export function Onboarding() {
       )}
 
       {step === 'words' && words && (
-        <div className="card stack">
+        <div className="card">
           <h2>復活の言葉</h2>
           <RecoveryWords
             key={app.pendingWords ?? words}
@@ -222,18 +235,24 @@ export function Onboarding() {
       )}
 
       {step === 'join' && (
-        <div className="card stack">
+        <div className="card">
           <h2>この端末を登録する</h2>
           <p>登録済みの端末で、設定の「QR を読み取る」からこの QR コードを読み取ってください。読み取れないときは、下の「端末の申請」をコピーして貼ってください。登録が終わると、この画面は自動で進みます。</p>
-          {requestCode && <QrCode text={requestCode} label="端末の申請の QR コード" />}
-          <p>文字列を貼る場所は、次のどちらかです。</p>
-          <ul>
-            <li>登録済みの端末: 設定の「端末を追加」</li>
-            <li>端末を全部失くしたとき: 復活の道具</li>
-          </ul>
-          <p className="mono card" data-testid="device-request">{requestCode ?? '作成中…'}</p>
+          {requestCode ? <QrCode text={requestCode} label="端末の申請の QR コード" /> : <div className="qr">作成中…</div>}
+          <div className="field">
+            <span className="label">端末の申請</span>
+            <p className="code-box" data-testid="device-request">{requestCode ?? '作成中…'}</p>
+          </div>
           <CopyButton text={requestCode}>申請をコピー</CopyButton>
-          <p className="loading">登録を待っています…</p>
+          <div className="stack">
+            <p>文字列を貼る場所は、次のどちらかです。</p>
+            <ul>
+              <li>登録済みの端末: 設定の「端末を追加」</li>
+              <li>端末を全部失くしたとき: 復活の道具</li>
+            </ul>
+          </div>
+          <p className="muted" role="status">登録を待っています…</p>
+          {errorSlot}
           <details>
             <summary>この端末の鍵に署名アプリを使う（Nostr に詳しい人向け）</summary>
             <SignerChoice
@@ -252,43 +271,61 @@ export function Onboarding() {
       )}
 
       {step === 'name' && (
-        <div className="card stack">
+        <div className="card">
           <h2>表示名</h2>
-          <label htmlFor="name">表示名</label>
-          <input id="name" value={name} maxLength={32} onChange={(e) => setName(e.target.value)} />
-          <p className="muted" data-testid="name-hint">対戦相手とランキングに表示される名前です。</p>
-          <button type="button" className="primary" disabled={busy || name.trim() === '' || !app.signer} onClick={() => void saveName()}>
+          <div className="field">
+            <label htmlFor="name">表示名</label>
+            <input id="name" value={name} maxLength={32} onChange={(e) => setName(e.target.value)} />
+            <p className="hint" data-testid="name-hint">対戦相手とランキングに表示される名前です。</p>
+          </div>
+          {errorSlot}
+          <button type="button" className="primary wide" disabled={busy || name.trim() === '' || !app.signer} onClick={() => void saveName()}>
             次へ
           </button>
         </div>
       )}
 
       {step === 'identity' && app.pubkey && (
-        <div className="card stack">
+        <div className="card">
           <h2>X か GitHub の紐づけ</h2>
           <p>
             次の文をそのまま X に投稿するか、GitHub の公開の Gist に貼り、その URL を入力してください。1人で何個もアカウントを作れないようにするためのもので、英語のまま投稿してください。投稿や Gist は、紐づけのあとも消さないでください。
           </p>
-          <p className="mono card" data-testid="verification-text">{verificationText(app.pubkey)}</p>
+          <p className="code-box" data-testid="verification-text">{verificationText(app.pubkey)}</p>
           <CopyButton text={verificationText(app.pubkey)}>文をコピー</CopyButton>
-          <label htmlFor="proof-url">投稿の URL</label>
-          <input id="proof-url" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)} />
-          <button type="button" onClick={() => void check()}>確認する</button>
-          {status && <StatusBadge status={status} />}
-          <button type="button" className="primary" disabled={busy || !claim || status !== 'verified'} onClick={() => void register()}>
-            登録して次へ
-          </button>
-          <button type="button" onClick={() => setStep('name')}>表示名を変える</button>
+          <div className="field">
+            <label htmlFor="proof-url">投稿の URL</label>
+            <input
+              id="proof-url"
+              inputMode="url"
+              value={url}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                setStatus(null);
+                setClaim(null);
+              }}
+            />
+            <div className="slot two" data-testid="claim-status">
+              {error ? <span className="error" role="alert">{error}</span> : status ? <StatusBadge status={status} /> : ''}
+            </div>
+          </div>
+          <div className="stack">
+            <button type="button" disabled={url.trim() === ''} onClick={() => void check()}>確認する</button>
+            <button type="button" className="primary wide" disabled={busy || !claim || status !== 'verified'} onClick={() => void register()}>
+              登録して次へ
+            </button>
+          </div>
         </div>
       )}
 
       {(step === 'words' || step === 'name' || step === 'identity') && (
-        <p>
-          <button type="button" disabled={busy} onClick={() => void startOver()}>最初からやり直す</button>
-        </p>
+        <div className="sub-actions">
+          {step === 'identity' && (
+            <button type="button" className="text" onClick={() => setStep('name')}>表示名を変える</button>
+          )}
+          <button type="button" className="text danger" disabled={busy} onClick={() => void startOver()}>最初からやり直す</button>
+        </div>
       )}
-
-      {error && <p className="error" role="alert">{error}</p>}
     </section>
   );
 }
@@ -300,8 +337,11 @@ function SignerChoice(props: { busy: boolean; bunker: string; setBunker(v: strin
       <button type="button" disabled={props.busy} onClick={() => props.onChoose('nip07')}>
         ブラウザ拡張（NIP-07）で{props.verb}
       </button>
-      <label htmlFor="bunker-url">リモート署名の接続先（bunker:// で始まる文字列）</label>
-      <input id="bunker-url" autoComplete="off" value={props.bunker} onChange={(e) => props.setBunker(e.target.value)} />
+      <div className="field">
+        <label htmlFor="bunker-url">リモート署名の接続先</label>
+        <input id="bunker-url" autoComplete="off" placeholder="bunker://…" value={props.bunker} onChange={(e) => props.setBunker(e.target.value)} />
+        <p className="hint">bunker:// で始まる文字列を貼ってください。</p>
+      </div>
       <button type="button" disabled={props.busy || !props.bunker.trim().startsWith('bunker://')} onClick={() => props.onChoose('nip46')}>
         リモート署名（NIP-46）で{props.verb}
       </button>

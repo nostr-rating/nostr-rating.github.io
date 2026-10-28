@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Dock } from './Dock.js';
 
 function shuffled(n: number): number[] {
   const all = Array.from({ length: n }, (_, i) => i);
@@ -64,30 +65,42 @@ export function RecoveryWords({
       <div className="stack">
         {many ? (
           <p>
-            復活の言葉を{cards.length}枚に分けました。{cards.length}枚のうち2枚あれば戻せます。1枚ずつ別の紙に書き写し、別々の場所にしまってください（{card + 1}枚目／{cards.length}枚）。
+            復活の言葉を{cards.length}枚に分けました。1枚ずつ別の紙に書き写し、別々の場所にしまってください。{cards.length}枚のうち2枚あれば戻せます。
           </p>
         ) : (
           <p>端末を全部失くしたときに、アカウントを戻すための12個の単語です。紙に書き写してしまっておいてください。写真やスマホのメモ、クラウドには保存しないでください。</p>
+        )}
+        {many && (
+          <p className="muted" data-testid="card-number">
+            {card + 1}枚目／{cards.length}枚
+          </p>
         )}
         <ol className="words" data-testid="recovery-words">
           {cards[card]!.map((w, i) => (
             <li key={i}>{w}</li>
           ))}
         </ol>
-        <button type="button" className="primary" disabled={busy} onClick={() => (card + 1 < cards.length ? setCard(card + 1) : setChecking(true))}>
+        <button type="button" className="primary wide" disabled={busy} onClick={() => (card + 1 < cards.length ? setCard(card + 1) : setChecking(true))}>
           {card + 1 < cards.length ? `${card + 1}枚目を書き写した` : '書き写した'}
         </button>
         {!many && onSplit && (
-          <button type="button" disabled={busy} onClick={() => void split()}>
-            3枚に分けて保管する（2枚あれば戻せる）
-          </button>
+          <div className="field">
+            <button type="button" className="wide" disabled={busy} onClick={() => void split()}>
+              3枚に分けて保管する
+            </button>
+            <p className="hint">分散させて保管したい場合に有効です。3枚のうち2枚があれば復元できる状態となります。</p>
+          </div>
         )}
         {onLater && (
-          <button type="button" disabled={busy} onClick={onLater}>
+          <button type="button" className="text" disabled={busy} onClick={onLater}>
             あとで書く
           </button>
         )}
-        {error && <p className="error" role="alert">{error}</p>}
+        {error && (
+          <Dock>
+            <p className="notice bad" role="alert">{error}</p>
+          </Dock>
+        )}
       </div>
     );
   }
@@ -95,7 +108,7 @@ export function RecoveryWords({
     <div className="stack">
       <p>書き写せたかを確かめます。次の単語を入力してください。</p>
       {checks.map((c, i) => (
-        <label key={`${c.card}:${c.pos}`} className="stack">
+        <label key={`${c.card}:${c.pos}`} className="inline">
           {many ? `${c.card + 1}枚目の${c.pos + 1}番目` : `${c.pos + 1}番目`}
           <input
             autoComplete="off"
@@ -105,12 +118,15 @@ export function RecoveryWords({
           />
         </label>
       ))}
-      {wrong && <p className="error" role="alert">違う単語があります。紙を見直してください。</p>}
-      <button type="button" className="primary" onClick={submit}>
+      <p className="slot error" role="alert">
+        {wrong ? '違う単語があります。紙を見直してください。' : ''}
+      </p>
+      <button type="button" className="primary wide" onClick={submit}>
         確かめる
       </button>
       <button
         type="button"
+        className="text"
         onClick={() => {
           setChecking(false);
           setCard(0);

@@ -41,7 +41,7 @@ describe('MatchRoom', () => {
     expect(guest.getByTestId('room-password').textContent).toBe(password);
     expect(guest.queryByLabelText('部屋 ID')).toBeNull();
     expect(guest.getByTestId('room-format').textContent).toBe('2本先取 ／ ストック3・制限時間7分 ／ 入室制限「だれでも」 ／ 部屋の人数 2人');
-    expect(guest.getByTestId('chat-note').textContent).toBe('部屋 ID は上の「専用部屋」の欄から送ってください。');
+    expect(guest.getByTestId('chat-note').textContent).toBe('部屋 ID とパスワードは上の「専用部屋」の欄から送ってください。');
   });
 
   test('room id that is not 5 characters cannot be sent', async () => {
@@ -129,10 +129,10 @@ describe('MatchRoom', () => {
       const { host, guest } = await chessSetup();
       expect((await host.findByTestId('my-side')).textContent).toBe('あなたは「白」です（相手は「黒」）。');
       expect((await guest.findByTestId('my-side')).textContent).toBe('あなたは「黒」です（相手は「白」）。');
-      expect(guest.queryByLabelText('招待リンク（https:// で始まるもの）')).toBeNull();
+      expect(guest.queryByLabelText('招待リンク')).toBeNull();
       expect(guest.getByTestId('room-format').textContent).toBe('1本勝負 ／ 持ち時間: 15分＋1手ごとに10秒（国際チェス連盟の世界ラピッド選手権と同じ）');
       expect(guest.getByTestId('chat-note').textContent).toBe('招待リンクは上の「対局の場所」の欄から送ってください。チャットに貼ったリンクは、アプリがリンク先を確かめません。');
-      const input = await host.findByLabelText('招待リンク（https:// で始まるもの）');
+      const input = await host.findByLabelText('招待リンク');
       const send = host.getByRole('button', { name: '招待リンクを送る' }) as HTMLButtonElement;
       await user.type(input, 'http://chess.example/invite/1');
       expect(send.disabled).toBe(true);

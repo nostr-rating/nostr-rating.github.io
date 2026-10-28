@@ -40,14 +40,14 @@ export function IdentityBadge({
     };
   }, [claims, pubkey, fetchFn]);
 
-  if (claims === undefined) return <span className="muted">紐づけを確認中…</span>;
-  if (claims.length === 0) return <span className="badge ng">紐づけなし</span>;
+  if (claims === undefined) return <div className="claims"><span className="claim muted">紐づけを確認中…</span></div>;
+  if (claims.length === 0) return <div className="claims"><span className="claim"><span className="badge ng">紐づけなし</span></span></div>;
   return (
-    <span className="stack">
+    <span className="claims">
       {claims.map((c) => {
         const key = `${c.platform}:${c.identity}`;
         return (
-          <span key={key} className="row">
+          <span key={key} className="claim">
             <a className="chip" href={proofUrl(c)} target="_blank" rel="noreferrer noopener">
               {PLATFORM[c.platform]}: {c.identity}
             </a>

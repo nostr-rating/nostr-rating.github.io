@@ -28,6 +28,7 @@ import {
 import { useEffect, useId, useState } from 'react';
 import { ChatPanel, type ChatLine } from '../components/ChatPanel.js';
 import { CopyButton } from '../components/CopyButton.js';
+import { Dock } from '../components/Dock.js';
 import { IdentityBadge } from '../components/IdentityBadge.js';
 import { latestReports, ReportPanel, reportStatus } from '../components/ReportPanel.js';
 import { StageGuide } from '../components/StageGuide.js';
@@ -235,19 +236,21 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   if (error) return <p className="error">{error}</p>;
   if (notFound) {
     return (
-      <div className="card stack">
+      <div className="card">
         <p className="error">対戦が見つかりませんでした。電波の状態を確かめてください。</p>
-        <button type="button" onClick={() => setNotFound(false)}>もう一度読み込む</button>
-        <a href="#/lobby">ロビーに戻る</a>
+        <div className="actions">
+          <button type="button" className="primary" onClick={() => setNotFound(false)}>もう一度読み込む</button>
+          <a className="button" href="#/lobby">ロビーに戻る</a>
+        </div>
       </div>
     );
   }
   if (!match || !me) return <p className="loading">対戦を読み込み中…</p>;
   if (linked === false) {
     return (
-      <div className="card stack">
+      <div className="card">
         <p className="error">この対戦は有効ではありません。あなたの申し込みに応えた対戦であることを確かめられませんでした。</p>
-        <a href="#/lobby">ロビーに戻る</a>
+        <a className="button" href="#/lobby">ロビーに戻る</a>
       </div>
     );
   }
@@ -286,120 +289,153 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   const suggested: ReportResult | null = decided === null ? null : decided === side ? 'win' : 'lose';
   const closed = settlement !== null && settlement.status !== 'pending';
 
+  const format = (
+    <p className="muted" data-testid="room-format">
+      {def.format.bestOf === 1 ? '1本勝負' : `${Math.ceil(def.format.bestOf / 2)}本先取`}
+      {def.format.notes.length > 0 ? ` ／ ${def.format.notes.join('・')}` : ''}
+      {def.room.kind === 'code' ? ` ／ 入室制限「${def.room.entryRestriction}」 ／ 部屋の人数 ${def.room.maxPlayers}人` : ''}
+    </p>
+  );
+
   return (
     <section>
-      <div className="card stack">
+      <div className="card">
         <h2>対戦ルーム</h2>
-        <p>
-          相手: <strong>{displayName(app, opponent)}</strong>（レート {app.view.ratingOf(opponent).toFixed(0)}）
-        </p>
+        <div className="opponent">
+          <span className="muted">相手</span>
+          <p>
+            <strong className="opponent-name">{displayName(app, opponent)}</strong>
+            <span className="muted">　レート {app.view.ratingOf(opponent).toFixed(0)}</span>
+          </p>
+        </div>
         <IdentityBadge claims={app.identities[opponent]} pubkey={opponent} fetchFn={app.fetchFn} />
-        <p className="muted">マナーの目安（合計）: {app.view.mannersTotalOf(opponent)}</p>
-        <p className="muted" data-testid="deadline">{formatDeadline(match.createdAt + def.report.deadlineSec, app.now())}</p>
+        <p className="meta">
+          <span>マナーの目安（合計）: {app.view.mannersTotalOf(opponent)}</span>
+          <span data-testid="deadline">{formatDeadline(match.createdAt + def.report.deadlineSec, app.now())}</span>
+        </p>
       </div>
 
-      <div className="card stack">
+      <div className="card">
         <h3>{def.room.kind === 'code' ? '専用部屋' : '対局の場所'}</h3>
-        <p data-testid="my-side">
+        <p className="side" data-testid="my-side">
           あなたは「{def.sides[mySide!]}」です（相手は「{def.sides[mySide === 0 ? 1 : 0]}」）。
         </p>
-        <p className="muted" data-testid="room-format">
-          {def.format.bestOf === 1 ? '1本勝負' : `${Math.ceil(def.format.bestOf / 2)}本先取`}
-          {def.format.notes.length > 0 ? ` ／ ${def.format.notes.join('・')}` : ''}
-          {def.room.kind === 'code' ? ` ／ 入室制限「${def.room.entryRestriction}」 ／ 部屋の人数 ${def.room.maxPlayers}人` : ''}
-        </p>
-        <ul className="muted">
-          {def.room.notes.map((n) => (
-            <li key={n}>{n}</li>
-          ))}
-        </ul>
+        {format}
+        {def.room.notes.length > 0 && (
+          <ul className="muted">
+            {def.room.notes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        )}
         {def.room.kind === 'code' ? (
           mySide === 0 ? (
             <>
               <p>あなたが部屋を立てます。次のパスワードで専用部屋を作り、部屋 ID とパスワードを送ってください。</p>
-              <label htmlFor={`${id}-password`}>パスワード</label>
-              <input
-                id={`${id}-password`}
-                className="big"
-                inputMode="numeric"
-                autoComplete="off"
-                value={password}
-                maxLength={def.room.password.maxDigits}
-                onChange={(e) => {
-                  setPassword(e.target.value.replace(/[^0-9]/g, ''));
-                  savePassword(matchId, e.target.value.replace(/[^0-9]/g, ''));
-                }}
-              />
-              <p className="hint">
-                数字{def.room.password.minDigits}〜{def.room.password.maxDigits}桁。ゲームで別のパスワードにしたときは書き換えてください。
-              </p>
-              <label htmlFor={`${id}-room`}>部屋 ID</label>
-              <input
-                id={`${id}-room`}
-                value={roomInput}
-                maxLength={5}
-                autoCapitalize="characters"
-                onChange={(e) => setRoomInput(e.target.value.trim())}
-              />
+              <div className="field">
+                <label htmlFor={`${id}-password`}>パスワード</label>
+                <input
+                  id={`${id}-password`}
+                  className="big"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={password}
+                  maxLength={def.room.password.maxDigits}
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/[^0-9]/g, '');
+                    setPassword(v);
+                    savePassword(matchId, v);
+                  }}
+                />
+                <p className="hint">
+                  数字{def.room.password.minDigits}〜{def.room.password.maxDigits}桁。ゲームで別のパスワードにしたときは書き換えてください。
+                </p>
+              </div>
+              <div className="field">
+                <label htmlFor={`${id}-room`}>部屋 ID</label>
+                <input
+                  id={`${id}-room`}
+                  className="big"
+                  value={roomInput}
+                  maxLength={5}
+                  autoCapitalize="characters"
+                  autoComplete="off"
+                  onChange={(e) => setRoomInput(e.target.value.trim())}
+                />
+              </div>
               <button
                 type="button"
-                className="primary"
+                className="primary wide"
                 disabled={busy || !validRoomId(def, roomInput) || !validRoomPassword(def, password)}
                 onClick={() => void send({ type: 'room', roomId: roomInput, password })}
               >
                 部屋 ID とパスワードを送る
               </button>
-              {room && <p className="muted">送信済み: {room.roomId}</p>}
-            </>
-          ) : room ? (
-            <>
-              <p>部屋 ID</p>
-              <p className="big" data-testid="room-id">{room.roomId}</p>
-              <CopyButton text={room.roomId}>部屋 ID をコピー</CopyButton>
-              <p>パスワード</p>
-              <p className="big" data-testid="room-password">{room.password}</p>
-              <CopyButton text={room.password}>パスワードをコピー</CopyButton>
+              <p className="slot muted" role="status">{room ? `送信済み: 部屋 ID ${room.roomId}・パスワード ${room.password}` : ''}</p>
             </>
           ) : (
-            <p>相手が部屋を立てるのを待っています…</p>
+            <>
+              {/* 届く前から同じ枠を出しておき、届いたら中身だけを入れ替える */}
+              <p className="slot" role="status">{room ? '相手から部屋 ID とパスワードが届きました。' : '相手が部屋を立てるのを待っています…'}</p>
+              <div className="value-row">
+                <div>
+                  <span className="label">部屋 ID</span>
+                  <p className="big" data-testid={room ? 'room-id' : undefined}>{room ? room.roomId : '—'}</p>
+                </div>
+                <CopyButton text={room ? room.roomId : null}>コピー</CopyButton>
+              </div>
+              <div className="value-row">
+                <div>
+                  <span className="label">パスワード</span>
+                  <p className="big" data-testid={room ? 'room-password' : undefined}>{room ? room.password : '—'}</p>
+                </div>
+                <CopyButton text={room ? room.password : null}>コピー</CopyButton>
+              </div>
+            </>
           )
         ) : mySide === 0 ? (
           <>
             <p>あなたが対局を用意します。双方の使えるオンラインの対局サービスで相手を招待するリンクを作り、送ってください。</p>
-            <label htmlFor={`${id}-link`}>招待リンク（https:// で始まるもの）</label>
-            <input id={`${id}-link`} inputMode="url" value={roomInput} onChange={(e) => setRoomInput(e.target.value.trim())} />
+            <div className="field">
+              <label htmlFor={`${id}-link`}>招待リンク</label>
+              <input id={`${id}-link`} inputMode="url" placeholder="https://…" value={roomInput} onChange={(e) => setRoomInput(e.target.value.trim())} />
+              <p className="hint">https:// で始まるリンクだけを送れます。</p>
+            </div>
             <button
               type="button"
-              className="primary"
+              className="primary wide"
               disabled={busy || !validInviteLink(roomInput)}
               onClick={() => void send({ type: 'link', url: roomInput })}
             >
               招待リンクを送る
             </button>
-            {link && <p className="muted">送信済み: {link.hostname}</p>}
-          </>
-        ) : link ? (
-          <>
-            <p>
-              相手から招待リンクが届きました。リンク先は <strong data-testid="invite-host">{link.hostname}</strong> です。知らないサービスなら開かず、チャットで確かめてください。
-            </p>
-            <a className="button" href={link.href} target="_blank" rel="noopener noreferrer">
-              招待リンクを開く
-            </a>
+            <p className="slot muted" role="status">{link ? `送信済み: ${link.hostname}` : ''}</p>
           </>
         ) : (
-          <p>相手が対局を用意するのを待っています…</p>
+          <div className="invite">
+            {link ? (
+              <>
+                <p>
+                  相手から招待リンクが届きました。リンク先は <strong data-testid="invite-host">{link.hostname}</strong> です。知らないサービスなら開かず、チャットで確かめてください。
+                </p>
+                <a className="button primary wide" href={link.href} target="_blank" rel="noopener noreferrer">
+                  招待リンクを開く
+                </a>
+              </>
+            ) : (
+              <p role="status">相手が対局を用意するのを待っています…</p>
+            )}
+          </div>
         )}
       </div>
 
-      {bansMissing && <p className="notice" role="alert">拒否ステージを読み込めなかったため、拒否なしで案内しています。相手と確認してください。</p>}
       {def.stages && def.characters && <StageGuide def={def} match={match} me={side} bans={bans ?? { p1: {}, p2: {} }} onSetChange={setSet} />}
       <ChatPanel
         lines={chat}
         onSend={(text) => send({ type: 'chat', text })}
         note={
           def.room.kind === 'code'
-            ? '部屋 ID は上の「専用部屋」の欄から送ってください。'
+            ? '部屋 ID とパスワードは上の「専用部屋」の欄から送ってください。'
             : '招待リンクは上の「対局の場所」の欄から送ってください。チャットに貼ったリンクは、アプリがリンク先を確かめません。'
         }
       />
@@ -412,7 +448,12 @@ export function MatchRoom({ matchId }: { matchId: string }) {
         busy={busy}
         onReport={report}
       />
-      {sendError && <p className="error" role="alert">{sendError}</p>}
+      {(bansMissing || sendError) && (
+        <Dock>
+          {bansMissing && <p className="notice" role="alert">拒否ステージを読み込めなかったため、拒否なしで案内しています。相手と確認してください。</p>}
+          {sendError && <p className="notice bad" role="alert">{sendError}</p>}
+        </Dock>
+      )}
     </section>
   );
 }

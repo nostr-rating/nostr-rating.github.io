@@ -35,13 +35,15 @@ export function Devices() {
 
   return (
     <div className="stack">
-      <ul className="stack" data-testid="devices">
+      <ul className="device-list" data-testid="devices">
         {devices.map((d) => (
-          <li key={d.record.id} className="row">
+          <li key={d.record.id}>
             <span>
-              {d.record.label}
-              {d.record.id === app.account!.deviceId ? '（この端末）' : ''}
-              <span className="muted">　期限 {date(d.record.expiresAt)}</span>
+              <span className="device-name">
+                {d.record.label}
+                {d.record.id === app.account!.deviceId ? '（この端末）' : ''}
+              </span>
+              <span className="muted">期限 {date(d.record.expiresAt)}</span>
             </span>
             {d.record.id !== app.account!.deviceId && (
               <button
@@ -60,7 +62,7 @@ export function Devices() {
         ))}
       </ul>
       <h3>端末を追加</h3>
-      <p className="muted">新しい端末で「すでにアカウントを持っている」を選ぶと表示される QR コードを読み取るか、「端末の申請」の文字列を貼ってください。</p>
+      <p className="hint">新しい端末で「すでにアカウントを持っている」を選ぶと表示される QR コードを読み取るか、「端末の申請」の文字列を貼ってください。</p>
       {scanning ? (
         <QrScanner
           accept={(t) => decodeDeviceRequest(t) !== null}
@@ -75,13 +77,15 @@ export function Devices() {
           QR を読み取る
         </button>
       )}
-      <label htmlFor="device-request-input">端末の申請</label>
-      <textarea id="device-request-input" rows={3} autoComplete="off" value={code} onChange={(e) => setCode(e.target.value)} />
-      {request && <p>追加する端末: {request.label}</p>}
-      <button type="button" disabled={busy || !request} onClick={() => void run(async () => void (await app.account!.addDevice(code)), 'この端末を追加しました')}>
+      <div className="field">
+        <label htmlFor="device-request-input">端末の申請</label>
+        <textarea id="device-request-input" rows={3} autoComplete="off" value={code} onChange={(e) => setCode(e.target.value)} />
+        <p className="slot">{request ? `追加する端末: ${request.label}` : ''}</p>
+      </div>
+      <button type="button" className="wide" disabled={busy || !request} onClick={() => void run(async () => void (await app.account!.addDevice(code)), 'この端末を追加しました')}>
         この端末を追加
       </button>
-      {message && <p role="status">{message}</p>}
+      <p className="slot" role="status">{message ?? ''}</p>
     </div>
   );
 }

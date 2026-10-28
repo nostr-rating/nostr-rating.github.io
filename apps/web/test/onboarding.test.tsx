@@ -94,10 +94,10 @@ describe('Onboarding', () => {
     const deps = makeDeps({ now: realNow });
     renderWithApp(<Onboarding />, { deps });
     await user.click(screen.getByRole('button', { name: 'この端末で始める' }));
-    await user.click(await screen.findByRole('button', { name: '3枚に分けて保管する（2枚あれば戻せる）' }));
+    await user.click(await screen.findByRole('button', { name: '3枚に分けて保管する' }));
     const cards: string[][] = [];
     for (let i = 0; i < 3; i++) {
-      await screen.findByText(new RegExp(`（${i + 1}枚目／3枚）`));
+      expect((await screen.findByTestId('card-number')).textContent).toBe(`${i + 1}枚目／3枚`);
       cards.push(within(screen.getByTestId('recovery-words')).getAllByRole('listitem').map((li) => li.textContent ?? ''));
       await user.click(screen.getByRole('button', { name: i < 2 ? `${i + 1}枚目を書き写した` : '書き写した' }));
     }
@@ -235,6 +235,7 @@ describe('App header during onboarding', () => {
     renderWithApp(<App />, { deps: makeDeps({ now: realNow }) });
     await screen.findByRole('button', { name: 'この端末で始める' });
     expect(screen.queryByRole('combobox', { name: 'ゲーム' })).toBeNull();
-    expect(screen.getByRole('navigation').textContent).toBe('ヘルプ');
+    expect(screen.queryByRole('navigation', { name: '画面' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'ヘルプ' })).toBeTruthy();
   });
 });

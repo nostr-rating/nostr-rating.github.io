@@ -14,6 +14,7 @@ import {
   type StageId,
 } from '@nostr-rating/core';
 import { useEffect, useId, useState } from 'react';
+import { Dock } from './Dock.js';
 
 const key = (matchId: string) => `nostr-rating:set:${matchId}`;
 
@@ -98,19 +99,20 @@ export function StageGuide(props: {
     }
   };
 
-  const fighterSelect = (side: Side, label: string) => (
-    <>
+  const fighterSelect = (side: Side, label: string, hint: string, disabled = false) => (
+    <div className="field">
       <label htmlFor={`${id}-${side}`}>{label}</label>
-      <select id={`${id}-${side}`} value={fighterOf(side)} onChange={(e) => apply(() => changeFighter(def, set, side, e.target.value))}>
+      <select id={`${id}-${side}`} value={fighterOf(side)} disabled={disabled} onChange={(e) => apply(() => changeFighter(def, set, side, e.target.value))}>
         {characters.list.map((f) => (
           <option key={f.id} value={f.id}>{f.name}</option>
         ))}
       </select>
-    </>
+      <p className="hint">{hint}</p>
+    </div>
   );
 
   return (
-    <div className="card stack">
+    <div className="card">
       <h3>ステージ案内</h3>
       <p className="muted">
         あなた: {fighterName(fighterOf(me))} ／ 相手: {fighterName(fighterOf(other))}
@@ -122,9 +124,11 @@ export function StageGuide(props: {
           <p className="muted" data-testid="excluded-stages">
             除外: {excluded.length === 0 ? 'なし' : excluded.map((e) => `${stageName(e.stage)}（${e.by === 'me' ? 'あなた' : '相手'}の拒否）`).join('・')}
           </p>
-          {lastLoser === me && fighterSelect(me, 'キャラを変える（直前の敗者のみ）')}
-          {lastLoser === other && fighterSelect(other, '相手のキャラ（直前の敗者が変えたとき）')}
-          <div className="row">
+          {/* キャラの欄は1戦目から出しておき（1戦目は変えられない）、2戦目に入っても下の要素を動かさない */}
+          {lastLoser === null && fighterSelect(me, 'キャラを変える', '2戦目からは、直前の敗者だけがキャラを変えられます。', true)}
+          {lastLoser === me && fighterSelect(me, 'キャラを変える', '変えられるのは直前の敗者だけです。')}
+          {lastLoser === other && fighterSelect(other, '相手のキャラ', '相手がキャラを変えたら、ここで選び直してください。')}
+          <div className="choices">
             <button type="button" onClick={() => apply(() => recordGame(def, set, me))}>{gameNo}戦目: あなたの勝ち</button>
             <button type="button" onClick={() => apply(() => recordGame(def, set, other))}>{gameNo}戦目: 相手の勝ち</button>
           </div>
@@ -132,10 +136,14 @@ export function StageGuide(props: {
       ) : (
         <p>{winner === me ? 'あなたが2本先取しました。' : '相手が2本先取しました。'}結果を報告してください。</p>
       )}
-      {set.games.length > 0 && (
-        <button type="button" onClick={() => apply(() => undoGame(set))}>1つ前に戻す</button>
+      <button type="button" className="text" disabled={set.games.length === 0} onClick={() => apply(() => undoGame(set))}>
+        1つ前に戻す
+      </button>
+      {error && (
+        <Dock>
+          <p className="notice bad" role="alert">{error}</p>
+        </Dock>
       )}
-      {error && <p className="error" role="alert">{error}</p>}
     </div>
   );
 }

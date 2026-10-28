@@ -53,17 +53,21 @@ export function ReportPanel(props: {
       return;
     void props.onReport(r);
   };
+  const choices = props.allowDraw ? (['win', 'lose', 'draw', 'cancel'] as const) : (['win', 'lose', 'cancel'] as const);
   return (
-    <div className="card stack">
+    <div className="card">
       <h3>結果報告</h3>
-      <p data-testid="report-status" role="status" aria-live="polite">{props.status}</p>
-      {props.mine && <p>あなたの報告: {RESULT_LABEL[props.mine]}</p>}
+      {/* 状態と自分の報告は、報告の前から同じ場所を取っておく */}
+      <div className="report-state">
+        <p data-testid="report-status" role="status" aria-live="polite">{props.status}</p>
+        <p className="muted">{props.mine ? `あなたの報告: ${RESULT_LABEL[props.mine]}` : ''}</p>
+      </div>
       {props.closed ? (
-        <a href="#/lobby">ロビーに戻る</a>
+        <a className="button primary wide" href="#/lobby">ロビーに戻る</a>
       ) : (
         <>
-          <div className="row">
-            {(props.allowDraw ? (['win', 'lose', 'draw', 'cancel'] as const) : (['win', 'lose', 'cancel'] as const)).map((r) => (
+          <div className="choices">
+            {choices.map((r) => (
               <button
                 key={r}
                 type="button"
@@ -76,8 +80,10 @@ export function ReportPanel(props: {
               </button>
             ))}
           </div>
-          {props.suggested && <p id="suggested-note" className="muted">ステージ案内の記録から「{RESULT_LABEL[props.suggested]}」を勧めています。</p>}
-          <p className="muted">
+          <p id="suggested-note" className="slot muted">
+            {props.suggested ? `ステージ案内の記録から「${RESULT_LABEL[props.suggested]}」を勧めています。` : ''}
+          </p>
+          <p className="hint">
             中止は、相手と連絡が取れない・続けられない事情があるときだけ選んでください。食い違ったときは正しい結果を送り直せますが、前に送った報告も有効なまま残り、相手の報告と噛み合えばそちらで確定します。
           </p>
         </>

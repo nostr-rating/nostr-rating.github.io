@@ -119,7 +119,7 @@ test('two players choose chess, exchange an invite link and settle a draw', asyn
   await expect(a.getByTestId('my-side')).toHaveText(/^あなたは「[白黒]」です/);
   const aIsWhite = ((await a.getByTestId('my-side').textContent()) ?? '').startsWith('あなたは「白」');
   const [white, black] = aIsWhite ? [a, b] : [b, a];
-  await white.getByLabel('招待リンク（https:// で始まるもの）').fill('https://chess.example/invite/e2e');
+  await white.getByLabel('招待リンク').fill('https://chess.example/invite/e2e');
   await white.getByRole('button', { name: '招待リンクを送る' }).click();
   await expect(black.getByTestId('invite-host')).toHaveText('chess.example', { timeout: 20_000 });
 
