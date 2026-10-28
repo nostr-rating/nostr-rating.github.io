@@ -92,6 +92,24 @@ export function validRoomId(def: GameDefinition, id: string): boolean {
   return def.room.kind === 'code' && new RegExp(def.room.roomIdPattern).test(id);
 }
 
+export function validRoomPassword(def: GameDefinition, password: string): boolean {
+  if (def.room.kind !== 'code') return false;
+  const { minDigits, maxDigits } = def.room.password;
+  return new RegExp(`^[0-9]{${minDigits},${maxDigits}}$`).test(password);
+}
+
+/** 部屋のパスワードを作る。偏らないよう、10 で割り切れない端の値（250〜255）は捨てる */
+export function generateRoomPassword(def: GameDefinition, random: (n: number) => Uint8Array = (n) => crypto.getRandomValues(new Uint8Array(n))): string {
+  if (def.room.kind !== 'code') throw new Error('this game has no room password');
+  let out = '';
+  while (out.length < def.room.password.generatedDigits) {
+    for (const b of random(def.room.password.generatedDigits - out.length)) {
+      if (b < 250 && out.length < def.room.password.generatedDigits) out += String(b % 10);
+    }
+  }
+  return out;
+}
+
 /** 招待リンクとして受け付ける URL（https だけ）。開く前にホスト名を見せるために、URL として返す */
 export function validInviteLink(url: string): URL | null {
   try {

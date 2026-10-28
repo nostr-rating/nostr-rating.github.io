@@ -61,6 +61,16 @@ describe('parseGameDefinition', () => {
     expect(() => parseGameDefinition(bad)).toThrow('invalid game definition: format.bestOf must be a positive odd integer');
   });
 
+  test('room password digits', () => {
+    expect(def.room.kind === 'code' && def.room.password).toEqual({ minDigits: 4, maxDigits: 8, generatedDigits: 4 });
+  });
+
+  test('rejects generated password digits outside the allowed range', () => {
+    const bad = structuredClone(rawJson);
+    bad.room.password.generatedDigits = 9;
+    expect(() => parseGameDefinition(bad)).toThrow('invalid game definition: room.password.generatedDigits must be between minDigits and maxDigits');
+  });
+
   test('room notes for the in-game room settings', () => {
     expect(def.room.kind === 'code' && def.room.entryRestriction).toBe('だれでも');
     expect(def.room.notes).toEqual([

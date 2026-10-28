@@ -1,7 +1,7 @@
 import * as nip44 from 'nostr-tools/nip44';
 import { finalizeEvent, generateSecretKey, getEventHash, getPublicKey } from 'nostr-tools/pure';
 import { describe, expect, test } from 'vitest';
-import { unwrapRoomMessage, validRoomId, wrapRoomMessage } from '../../src/events/dm.js';
+import { generateRoomPassword, unwrapRoomMessage, validRoomId, validRoomPassword, wrapRoomMessage } from '../../src/events/dm.js';
 import { KIND } from '../../src/events/kinds.js';
 import { def } from '../helpers/def.js';
 import { newKeys as newUser } from '../helpers/keys.js';
@@ -82,4 +82,25 @@ describe('room DM', () => {
     expect(validRoomId(def, 'ab-12')).toBe(false);
     expect(validRoomId(def, 'ab12CD')).toBe(false);
   });
+
+  test('validRoomPassword accepts 4 to 8 digits', () => {
+    expect(['1234', '12345678', '0000'].map((p) => validRoomPassword(def, p))).toEqual([true, true, true]);
+    expect(['123', '123456789', '12a4', ' 1234', ''].map((p) => validRoomPassword(def, p))).toEqual([false, false, false, false, false]);
+  });
+
+  test('generateRoomPassword makes the configured number of random digits', () => {
+    const made = Array.from({ length: 200 }, () => generateRoomPassword(def));
+    expect(made.every((p) => /^[0-9]{4}$/.test(p))).toBe(true);
+    // 偏りなく散らばる（同じ値ばかりにならない）
+    expect(new Set(made).size).toBeGreaterThan(150);
+    expect(new Set(made.flatMap((p) => [...p])).size).toBe(10);
+  });
+
+  test('generateRoomPassword drops random bytes that would bias the digits', () => {
+    // 250 以上の値は 10 で割ると 0〜5 に寄るので使わない
+    const bytes = [250, 255, 7, 251, 3, 9, 0];
+    const random = (n: number) => Uint8Array.from(bytes.splice(0, n));
+    expect(generateRoomPassword(def, random)).toBe('7390');
+  });
 });
+

@@ -33,7 +33,8 @@ export interface GameDefinition {
   room:
     | {
         kind: 'code';
-        defaultPassword: string;
+        /** 部屋のパスワードは数字だけ。部屋を立てる人の端末が generatedDigits 桁で作り、送る前に書き換えられる */
+        password: { minDigits: number; maxDigits: number; generatedDigits: number };
         roomIdPattern: string;
         maxPlayers: number;
         entryRestriction: string;
@@ -142,6 +143,16 @@ function parseStages(v: unknown, characters: GameDefinition['characters']): Game
   return { all, starter, counterpick, maxBansPerFighter: num(st.maxBansPerFighter, 'stages.maxBansPerFighter') };
 }
 
+function parsePassword(v: unknown): { minDigits: number; maxDigits: number; generatedDigits: number } {
+  const o = obj(v, 'room.password');
+  const minDigits = num(o.minDigits, 'room.password.minDigits');
+  const maxDigits = num(o.maxDigits, 'room.password.maxDigits');
+  const generatedDigits = num(o.generatedDigits, 'room.password.generatedDigits');
+  if (minDigits < 1 || maxDigits < minDigits) fail('room.password.maxDigits', 'must be at least minDigits');
+  if (generatedDigits < minDigits || generatedDigits > maxDigits) fail('room.password.generatedDigits', 'must be between minDigits and maxDigits');
+  return { minDigits, maxDigits, generatedDigits };
+}
+
 function parseRoom(v: unknown): GameDefinition['room'] {
   const room = obj(v, 'room');
   const notes = strList(room.notes ?? [], 'room.notes');
@@ -149,7 +160,7 @@ function parseRoom(v: unknown): GameDefinition['room'] {
   if (room.kind !== 'code') fail('room.kind', 'must be code or link');
   return {
     kind: 'code',
-    defaultPassword: str(room.defaultPassword, 'room.defaultPassword'),
+    password: parsePassword(room.password),
     roomIdPattern: str(room.roomIdPattern, 'room.roomIdPattern'),
     maxPlayers: num(room.maxPlayers, 'room.maxPlayers'),
     entryRestriction: str(room.entryRestriction, 'room.entryRestriction'),

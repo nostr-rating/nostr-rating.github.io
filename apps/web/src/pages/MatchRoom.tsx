@@ -1,5 +1,6 @@
 import {
   buildReport,
+  generateRoomPassword,
   isLinkedMatch,
   KIND,
   parseApplication,
@@ -12,7 +13,9 @@ import {
   sideOf,
   validInviteLink,
   validRoomId,
+  validRoomPassword,
   wrapRoomMessage,
+  type GameDefinition,
   type MatchRecord,
   type ReportResult,
   type ResultReport,
@@ -67,6 +70,7 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   const [room, setRoom] = useState<{ roomId: string; password: string } | null>(null);
   const [link, setLink] = useState<URL | null>(null);
   const [roomInput, setRoomInput] = useState('');
+  const [password, setPassword] = useState('');
   const [chat, setChat] = useState<ChatLine[]>([]);
   const [reports, setReports] = useState<ResultReport[]>([]);
   const [set, setSet] = useState<SetState | null>(null);
@@ -76,6 +80,8 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   const [notFound, setNotFound] = useState(false);
   const [linked, setLinked] = useState<boolean | null>(null);
   const [, setTick] = useState(0);
+  // 対戦のゲームに切り替わってから作る（開いた時点では別のゲームのことがある）
+  useEffect(() => setPassword(roomPassword(def, matchId)), [def, matchId]);
 
   useEffect(() => {
     if (match) return;
@@ -182,7 +188,7 @@ export function MatchRoom({ matchId }: { matchId: string }) {
         if (!got || got.matchId !== match.id) return;
         if (got.from !== mySessionPk && got.from !== opponentSession) return;
         if (got.msg.type === 'room') {
-          if (got.from !== hostSession || got.createdAt < latestRoom || !validRoomId(def, got.msg.roomId)) return;
+          if (got.from !== hostSession || got.createdAt < latestRoom || !validRoomId(def, got.msg.roomId) || !validRoomPassword(def, got.msg.password)) return;
           latestRoom = got.createdAt;
           setRoom({ roomId: got.msg.roomId, password: got.msg.password });
         } else if (got.msg.type === 'link') {
@@ -310,7 +316,23 @@ export function MatchRoom({ matchId }: { matchId: string }) {
         {def.room.kind === 'code' ? (
           mySide === 0 ? (
             <>
-              <p>あなたが部屋を立てます。パスワード「{def.room.defaultPassword}」で専用部屋を作り、部屋 ID を送ってください。</p>
+              <p>あなたが部屋を立てます。次のパスワードで専用部屋を作り、部屋 ID とパスワードを送ってください。</p>
+              <label htmlFor={`${id}-password`}>パスワード</label>
+              <input
+                id={`${id}-password`}
+                className="big"
+                inputMode="numeric"
+                autoComplete="off"
+                value={password}
+                maxLength={def.room.password.maxDigits}
+                onChange={(e) => {
+                  setPassword(e.target.value.replace(/[^0-9]/g, ''));
+                  savePassword(matchId, e.target.value.replace(/[^0-9]/g, ''));
+                }}
+              />
+              <p className="hint">
+                数字{def.room.password.minDigits}〜{def.room.password.maxDigits}桁。ゲームで別のパスワードにしたときは書き換えてください。
+              </p>
               <label htmlFor={`${id}-room`}>部屋 ID</label>
               <input
                 id={`${id}-room`}
@@ -322,10 +344,10 @@ export function MatchRoom({ matchId }: { matchId: string }) {
               <button
                 type="button"
                 className="primary"
-                disabled={busy || !validRoomId(def, roomInput)}
-                onClick={() => def.room.kind === 'code' && void send({ type: 'room', roomId: roomInput, password: def.room.defaultPassword })}
+                disabled={busy || !validRoomId(def, roomInput) || !validRoomPassword(def, password)}
+                onClick={() => void send({ type: 'room', roomId: roomInput, password })}
               >
-                部屋 ID を送る
+                部屋 ID とパスワードを送る
               </button>
               {room && <p className="muted">送信済み: {room.roomId}</p>}
             </>
@@ -393,4 +415,28 @@ export function MatchRoom({ matchId }: { matchId: string }) {
       {sendError && <p className="error" role="alert">{sendError}</p>}
     </section>
   );
+}
+
+const PASSWORD_KEY = 'nostr-rating:room-password:';
+
+/** 部屋を立てる人のパスワード。開き直しても同じ値にするため、対戦ごとに端末に残す */
+function roomPassword(def: GameDefinition, matchId: string): string {
+  if (def.room.kind !== 'code') return '';
+  try {
+    const saved = localStorage.getItem(PASSWORD_KEY + matchId);
+    if (saved !== null) return saved;
+  } catch {
+    // 残せなくても、その場で作った値で進める
+  }
+  const made = generateRoomPassword(def);
+  savePassword(matchId, made);
+  return made;
+}
+
+function savePassword(matchId: string, password: string): void {
+  try {
+    localStorage.setItem(PASSWORD_KEY + matchId, password);
+  } catch {
+    // 開き直すと作り直しになるだけ
+  }
 }

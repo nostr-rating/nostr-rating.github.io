@@ -25,7 +25,7 @@ async function setup() {
   const [A, B] = [within(roomA.container), within(roomB.container)];
   // 部屋を立てるのは、マッチの id で決まった1つ目の側（P1）
   const p1First = sideOf(match.id, 'p1') === 0;
-  return { relay, match, A, B, host: p1First ? A : B, guest: p1First ? B : A };
+  return { relay, match, A, B, host: p1First ? A : B, guest: p1First ? B : A, hostAccount: (p1First ? a : b).account };
 }
 
 describe('MatchRoom', () => {
@@ -33,10 +33,12 @@ describe('MatchRoom', () => {
     const user = userEvent.setup();
     const { host, guest } = await setup();
     expect((await host.findByTestId('my-side')).textContent).toBe('あなたは「P1」です（相手は「P2」）。');
+    const password = ((await host.findByLabelText('パスワード')) as HTMLInputElement).value;
+    expect(password).toMatch(/^[0-9]{4}$/);
     await user.type(await host.findByLabelText('部屋 ID'), 'AB12C');
-    await user.click(host.getByRole('button', { name: '部屋 ID を送る' }));
+    await user.click(host.getByRole('button', { name: '部屋 ID とパスワードを送る' }));
     expect((await guest.findByTestId('room-id', {}, { timeout: 5000 })).textContent).toBe('AB12C');
-    expect(guest.getByTestId('room-password').textContent).toBe('1122');
+    expect(guest.getByTestId('room-password').textContent).toBe(password);
     expect(guest.queryByLabelText('部屋 ID')).toBeNull();
     expect(guest.getByTestId('room-format').textContent).toBe('2本先取 ／ ストック3・制限時間7分 ／ 入室制限「だれでも」 ／ 部屋の人数 2人');
     expect(guest.getByTestId('chat-note').textContent).toBe('部屋 ID は上の「専用部屋」の欄から送ってください。');
@@ -46,7 +48,32 @@ describe('MatchRoom', () => {
     const user = userEvent.setup();
     const { host } = await setup();
     await user.type(await host.findByLabelText('部屋 ID'), 'AB12');
-    expect((host.getByRole('button', { name: '部屋 ID を送る' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((host.getByRole('button', { name: '部屋 ID とパスワードを送る' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('P1 can change the password to 4 to 8 digits before sending', async () => {
+    const user = userEvent.setup();
+    const { host, guest } = await setup();
+    const input = (await host.findByLabelText('パスワード')) as HTMLInputElement;
+    await user.type(await host.findByLabelText('部屋 ID'), 'AB12C');
+    const sendButton = host.getByRole('button', { name: '部屋 ID とパスワードを送る' }) as HTMLButtonElement;
+    await user.clear(input);
+    await user.type(input, '123');
+    expect(sendButton.disabled).toBe(true);
+    await user.type(input, '45678');
+    expect(sendButton.disabled).toBe(false);
+    await user.type(input, '9');
+    expect(input.value).toBe('12345678');
+    await user.click(sendButton);
+    expect((await guest.findByTestId('room-password', {}, { timeout: 5000 })).textContent).toBe('12345678');
+  });
+
+  test('the generated password stays the same when the room is opened again', async () => {
+    const { relay, match, host, hostAccount } = await setup();
+    const first = ((await host.findByLabelText('パスワード')) as HTMLInputElement).value;
+    cleanup();
+    const again = within(renderWithApp(<MatchRoom matchId={match.id} />, { deps: makeDeps({ relay, now: realNow }), account: hostAccount }).container);
+    expect(((await again.findByLabelText('パスワード')) as HTMLInputElement).value).toBe(first);
   });
 
   test('stage guide applies both bans in game 1 and only the winner bans afterwards', async () => {

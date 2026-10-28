@@ -17,7 +17,7 @@
   ],
   "room": {
     "kind": "code",
-    "defaultPassword": "1122",
+    "password": { "minDigits": 4, "maxDigits": 8, "generatedDigits": 4 },
     "roomIdPattern": "^[A-Za-z0-9]{5}$",
     "maxPlayers": 2,
     "entryRestriction": "だれでも",

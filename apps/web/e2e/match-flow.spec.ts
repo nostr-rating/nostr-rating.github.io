@@ -68,10 +68,12 @@ test('two players match, exchange the room id, play a set and confirm the result
   const aIsP1 = ((await a.getByTestId('my-side').textContent()) ?? '').startsWith('あなたは「P1」');
   const [host, guest] = aIsP1 ? [a, b] : [b, a];
   await expect(guest.getByTestId('my-side')).toHaveText('あなたは「P2」です（相手は「P1」）。');
+  const password = await host.getByLabel('パスワード').inputValue();
+  expect(password).toMatch(/^[0-9]{4}$/);
   await host.getByLabel('部屋 ID').fill('AB12C');
-  await host.getByRole('button', { name: '部屋 ID を送る' }).click();
+  await host.getByRole('button', { name: '部屋 ID とパスワードを送る' }).click();
   await expect(guest.getByTestId('room-id')).toHaveText('AB12C', { timeout: 20_000 });
-  await expect(guest.getByTestId('room-password')).toHaveText('1122');
+  await expect(guest.getByTestId('room-password')).toHaveText(password);
 
   await a.getByRole('button', { name: '1戦目: あなたの勝ち' }).click();
   await a.getByRole('button', { name: '2戦目: あなたの勝ち' }).click();

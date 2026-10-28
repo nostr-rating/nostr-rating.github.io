@@ -74,7 +74,7 @@ describe('match room', () => {
     const host = sideOf(m.id, 'p1') === 0 ? a : b;
     renderWithApp(<MatchRoom matchId={m.id} />, { deps: { ...makeDeps({ relay, now: realNow }), relay: failing }, account: host.account });
     await user.type(await screen.findByLabelText('部屋 ID'), 'AB12C');
-    await user.click(screen.getByRole('button', { name: '部屋 ID を送る' }));
+    await user.click(screen.getByRole('button', { name: '部屋 ID とパスワードを送る' }));
     expect(await screen.findByText('送れませんでした。電波のよい場所でもう一度押してください。')).toBeTruthy();
   });
 
