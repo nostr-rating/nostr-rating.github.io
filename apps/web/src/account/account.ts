@@ -1,4 +1,6 @@
 import {
+  decodeDeviceRequest,
+  encodeDeviceRequest,
   certTags,
   DEVICE_LIFETIME_SEC,
   DEVICE_RENEW_BEFORE_SEC,
@@ -74,7 +76,6 @@ const ACCOUNT = 'account';
 const PENDING_DEVICE = 'pendingDevice';
 /** DM を読むために残す、古い使い捨ての鍵の数 */
 const KEEP_SESSIONS = 3;
-const REQUEST_PREFIX = 'nr-device:';
 
 export async function createDevice(label: string): Promise<StoredDevice> {
   const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']);
@@ -94,26 +95,7 @@ function recordOf(d: StoredDevice, at: number): DeviceRecord {
   return { id: d.id, key: d.key, publisher: publisherOf(d), label: d.label, expiresAt: at + DEVICE_LIFETIME_SEC };
 }
 
-/** 新しい端末が表示する「端末の申請」。登録済みの端末か復活の道具に貼ってもらう */
-export function encodeDeviceRequest(r: { key: KeyRef; publisher: Pubkey; label: string }): string {
-  // 端末の名前は日本語なので、UTF-8 のバイト列にしてから base64url にする
-  const bytes = new TextEncoder().encode(JSON.stringify(r));
-  return REQUEST_PREFIX + btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-export function decodeDeviceRequest(code: string): { key: KeyRef; publisher: Pubkey; label: string } | null {
-  const s = code.trim();
-  if (!s.startsWith(REQUEST_PREFIX)) return null;
-  try {
-    const b64 = s.slice(REQUEST_PREFIX.length).replace(/-/g, '+').replace(/_/g, '/');
-    const bin = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
-    const v = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)))) as { key: KeyRef; publisher: Pubkey; label: string };
-    if (!v?.key?.pub || typeof v.publisher !== 'string' || typeof v.label !== 'string') return null;
-    return { key: v.key, publisher: v.publisher, label: v.label.slice(0, 64) };
-  } catch {
-    return null;
-  }
-}
+export { decodeDeviceRequest, encodeDeviceRequest } from '@nostr-rating/core';
 
 /** aid の KEL を集める（x タグと、分かっている鍵の持ち主から） */
 async function fetchKel(relay: RelayClient, aid: string, holders: Pubkey[]): Promise<NostrEvent[]> {

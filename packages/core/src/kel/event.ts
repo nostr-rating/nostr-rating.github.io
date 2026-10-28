@@ -18,6 +18,8 @@ export function kelEventTemplate(entry: KelEntry, createdAt: number, notify: str
       ['aid', aid],
       ['x', aid],
       ['sn', String(b.sn)],
+      // 復活の言葉の公開鍵から、そのアカウントを探せるように（復活の道具が使う）
+      ...(b.t === 'ixn' ? [] : b.next.keys.map((k) => ['n', k])),
       ...notify.map((p) => ['p', p]),
     ],
     content: JSON.stringify(entry),

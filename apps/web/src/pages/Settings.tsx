@@ -128,6 +128,17 @@ export function Settings() {
       <div className="card stack">
         <h2>端末</h2>
         <Devices />
+        <p className="muted">
+          端末を全部失くしたときは、復活の言葉を復活の道具に入力して戻します。
+          {import.meta.env.VITE_REPO_URL && (
+            <>
+              {' '}
+              <a href={`${import.meta.env.VITE_REPO_URL}/releases/latest`} target="_blank" rel="noopener noreferrer">
+                復活の道具を入手する
+              </a>
+            </>
+          )}
+        </p>
       </div>
 
       {app.pendingWords && (

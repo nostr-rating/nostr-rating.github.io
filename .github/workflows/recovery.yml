@@ -1,0 +1,41 @@
+name: Recovery tool
+
+# 復活の道具（HTML 1ファイル）をビルドし、リリースに添付する。
+# 普段のアプリとは別の場所で開くための道具なので、Pages では配らない（docs/adr/0008「復活の道具」）
+on:
+  push:
+    tags: ['recovery-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'リリースのタグ（例: recovery-v1）'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run recovery:build
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          file=apps/recovery/dist/nostr-rating-recovery.html
+          sum=$(sha256sum "$file" | cut -d' ' -f1)
+          notes="復活の道具です。ダウンロードしてブラウザで開いてください。sha256: ${sum}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$file" --clobber
+          else
+            gh release create "$TAG" "$file" --title "復活の道具 ${TAG}" --notes "$notes" --target "${GITHUB_SHA}"
+          fi

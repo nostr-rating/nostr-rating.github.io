@@ -16,6 +16,8 @@
     "typecheck": "tsc -b",
     "snapshot": "npm -w @nostr-rating/snapshot run snapshot --",
     "site": "npm -w @nostr-rating/snapshot run site --",
+    "recover": "npm -w @nostr-rating/snapshot run recover",
+    "recovery:build": "npm -w @nostr-rating/recovery run build",
     "relay:up": "docker compose -f relay-server/docker-compose.yml up -d",
     "relay:down": "docker compose -f relay-server/docker-compose.yml down",
     "dev": "VITE_RELAYS=ws://localhost:7777 npm -w @nostr-rating/web run dev",

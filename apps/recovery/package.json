@@ -1,0 +1,14 @@
+{
+  "name": "@nostr-rating/recovery",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/inline.mjs"
+  },
+  "dependencies": {
+    "@nostr-rating/core": "*",
+    "jsqr": "^1.4.0"
+  }
+}

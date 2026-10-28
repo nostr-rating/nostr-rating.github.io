@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "snapshot": "tsx src/cli.ts",
-    "site": "tsx src/site-cli.ts"
+    "site": "tsx src/site-cli.ts",
+    "recover": "tsx src/recover-cli.ts"
   },
   "dependencies": {
     "@nostr-rating/core": "*"

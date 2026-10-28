@@ -22,3 +22,4 @@ export * from './kel/cert.js';
 export * from './kel/event.js';
 export * from './kel/recovery.js';
 export * from './kel/book.js';
+export * from './kel/recover.js';

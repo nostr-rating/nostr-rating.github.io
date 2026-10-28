@@ -30,6 +30,7 @@ jobs:
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
           VITE_SNAPSHOT_BASE: https://raw.githubusercontent.com/${{ github.repository }}/main/
+          VITE_REPO_URL: https://github.com/${{ github.repository }}
       # 最新のスナップショットから、選手ページ（p/）と公開 API（api/v1/）を書き出す（docs/api.md）
       - id: pages
         uses: actions/configure-pages@v5
