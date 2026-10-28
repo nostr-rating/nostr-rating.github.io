@@ -16,7 +16,7 @@ export interface LocalView {
   ratingOf(pk: Pubkey): number;
   mannersTotalOf(pk: Pubkey): number;
   lastMatchBetween(a: Pubkey, b: Pubkey): number | null;
-  /** NIP-39 の主張が手元で確認できている（レート戦の参加条件） */
+  /** 紐づけ（X か GitHub）が手元で確認できている（レート戦の参加条件） */
   hasIdentity(pk: Pubkey): boolean;
 }
 

@@ -16,18 +16,18 @@
 
 - `wss://` で接続できる
 - NIP-40（有効期限）に対応している
-- [docs/protocol.md](docs/protocol.md) の「イベント」に挙げた kind を受け付ける
+- [docs/protocol.md](docs/protocol.md) の「アカウント」と「イベント」に挙げた kind を受け付け、1文字のタグ（`#x`、`#n`、`#p`、`#d` など）で検索できる
 - 運営者の連絡先が NIP-11 の情報に載っている
 
-## スナップショットの PR
+## スナップショットを確かめる
 
-スナップショットは誰が作っても同じバイト列になります。PR を確かめる手順は次のとおりです。
+スナップショットは GitHub Actions が毎日作り、`snapshots/` に積みます（[ADR 0009](docs/adr/0009-daily-snapshots.md)）。誰が作っても同じバイト列になるので、次の手順で確かめられます。
 
 ```bash
-git checkout <PR の直前のコミット>
+git checkout <確かめるスナップショットの直前のコミット>
 npm install
-npm run snapshot -- --cutoff <PR のスナップショットの cutoff>
-git diff <PR のブランチ> -- snapshots/
+npm run snapshot -- --cutoff <確かめるスナップショットの cutoff>
+git diff <確かめるスナップショットのコミット> -- snapshots/
 ```
 
 差分がなければ、そのスナップショットは正しく計算されています。リレーが手元と違うイベントを持っていると差分が出ることがあるので、その場合は `.ids.txt` の ID を見比べてください。

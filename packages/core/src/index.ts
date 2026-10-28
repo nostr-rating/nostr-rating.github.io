@@ -3,7 +3,6 @@ export * from './game/definition.js';
 export * from './match/stages.js';
 export * from './match/bo3.js';
 export * from './rating/glicko2.js';
-export * from './identity/keys.js';
 export * from './identity/signer.js';
 export * from './identity/claims.js';
 export * from './events/kinds.js';

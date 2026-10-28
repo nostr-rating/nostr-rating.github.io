@@ -1,6 +1,6 @@
 import type { NostrEvent } from 'nostr-tools/pure';
 import { beforeAll, describe, expect, test } from 'vitest';
-import { buildMatch, buildReport } from '../../src/events/codec.js';
+import { buildAccountInfo, buildMatch, buildReport } from '../../src/events/codec.js';
 import { seasonById } from '../../src/game/definition.js';
 import { advanceRatings, provisionalRatings, toLocalView } from '../../src/rating/pipeline.js';
 import { initialState } from '../helpers/state.js';
@@ -195,9 +195,9 @@ describe('advanceRatings', () => {
     expect(a.usedEventIds).not.toContain(v2.id);
   });
 
-  test('identity claim with no valid claims does not count', async () => {
+  test('account info without claims does not count as linked', async () => {
     const dave = newUser();
-    const empty = await dave.signer.signEvent({ kind: 10011, created_at: T0 - 5, tags: [], content: '' });
+    const empty = await dave.signer.signEvent(buildAccountInfo('smash_sp', { pubkey: dave.pk, name: 'dave', claims: [] }, T0 - 5));
     const { state } = advanceRatings(def, s0(), [...ids, empty, ...(await p1Wins(alice, dave, T0))], after(T0));
     expect(state.players[dave.pk]?.hasIdentity ?? false).toBe(false);
   });

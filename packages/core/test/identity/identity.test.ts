@@ -1,6 +1,5 @@
-import { getPublicKey } from 'nostr-tools/pure';
+import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { describe, expect, test } from 'vitest';
-import { decodeNsec, encodeNsec, generateSecretKey, npubOf } from '../../src/identity/keys.js';
 import { parseClaim, parseProofUrl, proofUrl, verificationText, verifyClaim } from '../../src/identity/claims.js';
 import { LocalSigner } from '../../src/identity/signer.js';
 
@@ -16,21 +15,6 @@ function stubFetch(routes: Record<string, unknown>): typeof fetch {
     return new Response(JSON.stringify(routes[url]), { status: 200 });
   }) as typeof fetch;
 }
-
-describe('keys', () => {
-  test('nsec roundtrip', () => {
-    expect(decodeNsec(encodeNsec(SK))).toEqual(SK);
-  });
-
-  test('nsec with surrounding whitespace is accepted', () => {
-    expect(decodeNsec(`  ${encodeNsec(SK)}\n`)).toEqual(SK);
-  });
-
-  test('invalid nsec throws', () => {
-    expect(() => decodeNsec('nsec1xxx')).toThrow();
-    expect(() => decodeNsec(npubOf(PK))).toThrow();
-  });
-});
 
 describe('verificationText', () => {
   test('names the account id', () => {
