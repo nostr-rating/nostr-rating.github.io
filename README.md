@@ -137,16 +137,16 @@ npm run dev:lan                  # https で LAN に公開し、/relay をロー
 表示される `Network:` の URL（`https://192.168.x.x:5173/` など）をスマホで開きます。
 
 - 端末の鍵（WebCrypto）と記録の保存（OPFS）は https でしか動かないので、自己署名の証明書で配ります。初めて開くと「この接続ではプライバシーが保護されません」などの警告が出るので、詳細から進んでください。
-- リレーにはページと同じアドレスの `/relay` を通してつなぎます。スマホから Mac の 7777 番へ直接はつなぎません。
+- リレーにはページと同じアドレスの `/relay` を通してつなぎます。スマホから開発機の 7777 番へ直接はつなぎません。
 - iPhone の Safari では、自己署名の証明書だとリレーにつながらないことがあります。そのときは [mkcert](https://github.com/FiloSottile/mkcert) で証明書を作って渡し、mkcert の CA（`mkcert -CAROOT` にある `rootCA.pem`）をスマホに入れて信頼させてください。
 
   ```bash
-  mkcert -cert-file lan.pem -key-file lan-key.pem <MacのIP> localhost
+  mkcert -cert-file lan.pem -key-file lan-key.pem <開発機のIP> localhost
   NR_LAN_CERT=lan.pem NR_LAN_KEY=lan-key.pem npm run dev:lan
   ```
 
 - IP の代わりに開発機のホスト名（`<ホスト名>` や `<ホスト名>.local`）でも開けます。それ以外の名前で開くと、保存したときの画面の自動更新がつながりません。その名前を `NR_LAN_HOSTS=<名前> npm run dev:lan` のように渡してください。
-- つながらないときは、macOS のファイアウォールで node への着信を許可してください。
+- つながらないときは、開発機のファイアウォールで node への着信を許可してください。
 
 ```bash
 npm test                         # ユニットテスト
