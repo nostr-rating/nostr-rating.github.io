@@ -5,7 +5,10 @@ import type { Signer } from '../identity/signer.js';
 import type { Pubkey } from '../types.js';
 import { isValidEvent, KIND, tagValue } from './kinds.js';
 
-export type RoomMessage = { type: 'room'; roomId: string; password: string } | { type: 'chat'; text: string };
+export type RoomMessage =
+  | { type: 'room'; roomId: string; password: string }
+  | { type: 'link'; url: string }
+  | { type: 'chat'; text: string };
 
 /** NIP-17: seal と gift wrap の created_at は最大2日前までランダムにずらす */
 const TWO_DAYS = 2 * 24 * 3600;
@@ -17,6 +20,7 @@ function parseRoomMessage(text: string): RoomMessage | null {
     if (v.type === 'room' && typeof v.roomId === 'string' && typeof v.password === 'string') {
       return { type: 'room', roomId: v.roomId, password: v.password };
     }
+    if (v.type === 'link' && typeof v.url === 'string') return { type: 'link', url: v.url };
     if (v.type === 'chat' && typeof v.text === 'string') return { type: 'chat', text: v.text };
     return null;
   } catch {
@@ -85,5 +89,15 @@ export async function unwrapRoomMessage(
 }
 
 export function validRoomId(def: GameDefinition, id: string): boolean {
-  return new RegExp(def.room.roomIdPattern).test(id);
+  return def.room.kind === 'code' && new RegExp(def.room.roomIdPattern).test(id);
+}
+
+/** 招待リンクとして受け付ける URL（https だけ）。開く前にホスト名を見せるために、URL として返す */
+export function validInviteLink(url: string): URL | null {
+  try {
+    const u = new URL(url.trim());
+    return u.protocol === 'https:' && u.hostname !== '' && url.length <= 500 ? u : null;
+  } catch {
+    return null;
+  }
 }

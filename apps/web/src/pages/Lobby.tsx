@@ -83,7 +83,7 @@ export function Lobby() {
   const app = useApp();
   const { def } = app;
   const id = useId();
-  const [fighter, setFighter] = useState(rememberedFighter() || def.fighters[0]!.id);
+  const [fighter, setFighter] = useState(rememberedFighter() || def.characters?.list[0]!.id || '');
   const [range, setRange] = useState<number | null>(app.mySettings?.rangeChoice ?? null);
   const [, setTick] = useState(0);
   const open = useOpenMatches();
@@ -128,6 +128,9 @@ export function Lobby() {
     return s;
   };
 
+  // キャラのないゲームでは空。ゲームを切り替えて前のゲームのキャラが残っていたら、一覧の最初にする
+  const chosenFighter = def.characters ? (def.characters.list.some((f) => f.id === fighter) ? fighter : def.characters.list[0]!.id) : '';
+
   const search = async () => {
     try {
       localStorage.setItem(FIGHTER_KEY, fighter);
@@ -139,7 +142,7 @@ export function Lobby() {
     }
     const m = await app.startSearch(async () => {
       const settings = await ensureSettings();
-      return { firstFighter: fighter, rangeChoice: settings.rangeChoice, rematchHours: settings.rematchHours, settingsId: settings.eventId };
+      return { firstFighter: chosenFighter, rangeChoice: settings.rangeChoice, rematchHours: settings.rematchHours, settingsId: settings.eventId };
     });
     if (!m) return;
     navigate({ name: 'match', id: m.id });
@@ -190,12 +193,16 @@ export function Lobby() {
       </div>
 
       <div className="card stack">
-        <label htmlFor={`${id}-fighter`}>1戦目に使うキャラ</label>
-        <select id={`${id}-fighter`} value={fighter} disabled={app.search.busy} onChange={(e) => setFighter(e.target.value)}>
-          {def.fighters.map((f) => (
-            <option key={f.id} value={f.id}>{f.name}</option>
-          ))}
-        </select>
+        {def.characters && (
+          <>
+            <label htmlFor={`${id}-fighter`}>1戦目に使うキャラ</label>
+            <select id={`${id}-fighter`} value={chosenFighter} disabled={app.search.busy} onChange={(e) => setFighter(e.target.value)}>
+              {def.characters.list.map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select>
+          </>
+        )}
         <label htmlFor={`${id}-range`}>マッチングするレート差</label>
         <select
           id={`${id}-range`}

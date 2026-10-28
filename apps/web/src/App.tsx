@@ -19,6 +19,13 @@ export function App() {
     <div className="app">
       <header className="app-header">
         <a href="#/lobby" className="brand">Nostr-Rating</a>
+        {app.games.length > 1 && (
+          <select aria-label="ゲーム" className="game-select" value={app.def.id} disabled={app.search.busy} onChange={(e) => app.setGame(e.target.value)}>
+            {app.games.map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        )}
         <nav>
           <a href="#/lobby">{app.search.waitingSince !== null ? '待機中' : 'ロビー'}</a>
           <a href="#/ranking">ランキング</a>

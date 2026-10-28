@@ -51,7 +51,7 @@ export function Onboarding() {
     let latest: { name: string; claims: IdentityClaim[]; at: number } | null = null;
     try {
       for (const ev of await app.relay.query([{ kinds: [KIND.account], '#d': [aid] }])) {
-        const a = parseAccountInfo(app.def.id, ev, await app.author(ev));
+        const a = parseAccountInfo(ev, await app.author(ev));
         if (a && a.pubkey === aid && (!latest || latest.at < a.createdAt)) latest = { name: a.name, claims: a.claims, at: a.createdAt };
       }
     } catch {
@@ -123,7 +123,7 @@ export function Onboarding() {
     // 置き換え可能なイベントは、同じ秒だと id の小さいほうが残る。前に出した版より必ず新しくする
     const at = Math.max(app.now(), lastPublished.current + 1);
     lastPublished.current = at;
-    const ev = await app.signer.signEvent(buildAccountInfo(app.def.id, { pubkey: app.pubkey, ...next }, at));
+    const ev = await app.signer.signEvent(buildAccountInfo({ pubkey: app.pubkey, ...next }, at));
     await app.relay.publish(ev);
     await app.store.put([ev]);
     app.rememberProfile(app.pubkey, next.name);
@@ -177,7 +177,7 @@ export function Onboarding() {
       {step === 'start' && (
         <div className="card stack">
           <h1>Nostr-Rating へようこそ</h1>
-          <p>運営のいない、{app.def.name} のレート対戦です。対戦結果は誰でも確かめられる形で公開されます。個人情報は預かりません。</p>
+          <p>運営のいない、1対1の対戦ゲームのレート戦です。対戦結果は誰でも確かめられる形で公開されます。個人情報は預かりません。ゲームは始めたあとに画面の上で選べます。</p>
           <button type="button" className="primary" disabled={busy} onClick={() => void start()}>
             この端末で始める
           </button>

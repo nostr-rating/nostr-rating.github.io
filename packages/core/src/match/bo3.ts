@@ -39,7 +39,7 @@ export function undoGame(s: SetState): SetState {
 
 export function changeFighter(def: GameDefinition, s: SetState, side: Side, fighter: FighterId): SetState {
   if (setWinner(def, s) !== null) throw new Error('set is already decided');
-  if (!def.fighters.some((f) => f.id === fighter)) throw new Error(`unknown fighter ${fighter}`);
+  if (!def.characters?.list.some((f) => f.id === fighter)) throw new Error(`unknown fighter ${fighter}`);
   const last = s.games.at(-1);
   if (last === undefined || last.winner === side) throw new Error('only the previous loser may change fighter');
   return side === 'p1' ? { ...s, p1Fighter: fighter } : { ...s, p2Fighter: fighter };

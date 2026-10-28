@@ -4,7 +4,7 @@
 
 ## 置き場所
 
-アプリと同じ場所の `api/v1/` の下にあります。
+アプリと同じ場所の `api/v1/` の下にあります。レートはゲームごとに別なので、ゲームの id（`configs/games.json` にある `smash_sp`、`chess` など）ごとに分けて置いています。
 
 ```
 https://<アカウント名>.github.io/<リポジトリ名>/api/v1/
@@ -16,10 +16,13 @@ GitHub Pages は `Access-Control-Allow-Origin: *` を返すので、ブラウザ
 
 | パス | 中身 |
 |---|---|
-| `index.json` | 元にしたスナップショット（`snapshot`）、シーズン、選手の数 |
-| `players/<aid>.json` | 選手1人分（下の「選手の項目」） |
-| `by/x/<ユーザー名>.json` | X のユーザー名から引く。`{"players": [選手, …]}` |
-| `by/github/<ユーザー名>.json` | GitHub のユーザー名から引く。形は上と同じ |
+| `index.json` | ゲームの一覧。`{"games": [{id, name, season, players, snapshot}, …]}` |
+| `<ゲーム>/index.json` | そのゲームの `game`（`id` と `name`）、元にしたスナップショット（`snapshot`）、シーズン、選手の数 |
+| `<ゲーム>/players/<aid>.json` | 選手1人分（下の「選手の項目」） |
+| `<ゲーム>/by/x/<ユーザー名>.json` | X のユーザー名から引く。`{"players": [選手, …]}` |
+| `<ゲーム>/by/github/<ユーザー名>.json` | GitHub のユーザー名から引く。形は上と同じ |
+
+- 載るのは、そのゲームで対戦の記録がある人だけです。アカウントを作っただけの人や、別のゲームだけで対戦している人は 404 になります。
 
 - `by/` のユーザー名は小文字にします。
 - `by/` には、投稿や Gist を確かめられた紐づけだけが載ります。
@@ -30,14 +33,15 @@ GitHub Pages は `Access-Control-Allow-Origin: *` を返すので、ブラウザ
 
 | 項目 | 内容 |
 |---|---|
+| `game` | ゲームの `id` と `name` |
 | `aid` | アカウントの識別子 |
 | `name` | 表示名（本人が決めた値） |
 | `season` | シーズンの番号 |
 | `rating`、`rd`、`peak_rating` | 今のシーズンの確定レート、その信頼区間の幅、最高レート |
-| `matches`、`wins`、`losses` | 今のシーズンの対戦数と勝敗 |
+| `matches`、`wins`、`losses`、`draws` | 今のシーズンの対戦数、勝敗、引き分けの数（引き分けのないゲームでは常に 0） |
 | `manners` | 未報告・中止・食い違いの回数 |
 | `accounts` | 紐づけた外部アカウント。`platform`（`twitter` か `github`）、`identity`、`proof_url`、`verified` |
-| `past_seasons` | 終わったシーズンの成績。シーズンの番号ごとに `final_rating`、`peak_rating`、`matches`、`wins`、`losses` |
+| `past_seasons` | 終わったシーズンの成績。シーズンの番号ごとに `final_rating`、`peak_rating`、`matches`、`wins`、`losses`、`draws` |
 | `linked_accounts` | 同じ X か GitHub を紐づけた別のアカウント（復活の言葉を失くして作り直す前のアカウントなど）。双方の紐づけを確かめられたものだけで、`aid`、`name`、`via`（共通の外部アカウント）、`past_seasons` を持つ |
 | `snapshot` | 元にしたスナップショットの `path`、`sha256`、`cutoff` |
 
@@ -46,7 +50,7 @@ GitHub Pages は `Access-Control-Allow-Origin: *` を返すので、ブラウザ
 利用者がすでに X か GitHub でログインしているサイトなら、そのユーザー名で `by/` を引けば、Nostr を扱わずにレートを表示できます。
 
 ```js
-const res = await fetch(`https://<アカウント名>.github.io/<リポジトリ名>/api/v1/by/x/${name.toLowerCase()}.json`);
+const res = await fetch(`https://<アカウント名>.github.io/<リポジトリ名>/api/v1/smash_sp/by/x/${name.toLowerCase()}.json`);
 if (res.ok) {
   const { players } = await res.json();
   console.log(players[0].rating);
@@ -68,4 +72,4 @@ API の値は公開リポジトリのスナップショットから作ってい�
 
 ## 選手ページ
 
-`p/<aid>.html` は選手ごとの静的なページです。X に貼るとカードとして表示され、レート、戦績、紐づけたアカウント、根拠のスナップショットが載っています。
+`p/<aid>.html` は選手ごとの静的なページです。X に貼るとカードとして表示され、対戦したゲームごとのレートと戦績、紐づけたアカウント、根拠のスナップショットが載っています。

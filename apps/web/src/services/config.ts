@@ -1,6 +1,9 @@
 import { parseGameDefinition, type GameDefinition } from '@nostr-rating/core';
-import bundledDef from '../../../../configs/smash_sp.json';
+import gameList from '../../../../configs/games.json';
 import bundledRelays from '../../../../configs/relays.json';
+
+/** configs/ の定義ファイルをすべて同梱する（どれを使うかは configs/games.json の順に並べる） */
+const bundledDefs = import.meta.glob('../../../../configs/*.json', { eager: true, import: 'default' }) as Record<string, unknown>;
 
 const OVERRIDE_KEY = 'nostr-rating:overrides';
 
@@ -25,8 +28,34 @@ export function saveOverrides(o: Overrides): void {
   }
 }
 
-export function gameDefinition(): GameDefinition {
-  return parseGameDefinition(bundledDef);
+/** 利用者が選べるゲーム（docs/adr/0010） */
+export function gameDefinitions(): GameDefinition[] {
+  return gameList.games.map((id) => {
+    const raw = bundledDefs[`../../../../configs/${id}.json`];
+    if (!raw) throw new Error(`configs/${id}.json is missing`);
+    return parseGameDefinition(raw);
+  });
+}
+
+const GAME_KEY = 'nostr-rating:game';
+
+/** 最後に選んだゲーム。なければ一覧の最初 */
+export function rememberedGame(games: GameDefinition[]): GameDefinition {
+  let id: string | null = null;
+  try {
+    id = localStorage.getItem(GAME_KEY);
+  } catch {
+    id = null;
+  }
+  return games.find((g) => g.id === id) ?? games[0]!;
+}
+
+export function rememberGame(id: string): void {
+  try {
+    localStorage.setItem(GAME_KEY, id);
+  } catch {
+    // 次回は一覧の最初から
+  }
 }
 
 /** 取得元の優先順: 設定画面の上書き → ビルド時の環境変数 → 同じ配信元 */

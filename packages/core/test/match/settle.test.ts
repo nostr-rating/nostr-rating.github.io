@@ -159,3 +159,21 @@ describe('mannersDelta', () => {
     expect(mannersDelta(match, { status: 'pending' })).toEqual({});
   });
 });
+
+describe('draws', () => {
+  test('both reporting a draw settles as drawn when the game allows draws', () => {
+    expect(settleMatch(match, [rep(A, 'draw', T0 + 5), rep(B, 'draw', T0 + 7)], T0 + 8, DL, true)).toEqual({ status: 'drawn', settledAt: T0 + 7 });
+  });
+
+  test('a draw against a win is a mismatch at the deadline', () => {
+    expect(settleMatch(match, [rep(A, 'draw', T0 + 5), rep(B, 'win', T0 + 7)], T0 + DL, DL, true)).toEqual({ status: 'mismatch', settledAt: T0 + DL });
+  });
+
+  test('draw reports are ignored in games without draws', () => {
+    expect(settleMatch(match, [rep(A, 'draw', T0 + 5), rep(B, 'draw', T0 + 7)], T0 + DL, DL, false)).toEqual({
+      status: 'no_report',
+      settledAt: T0 + DL,
+      missing: [A, B],
+    });
+  });
+});

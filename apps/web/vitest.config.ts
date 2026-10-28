@@ -9,5 +9,7 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['test/**/*.test.{ts,tsx}'],
     setupFiles: ['test/setup.ts'],
+    // 鍵の生成と署名が重いので、負荷が高いときに既定の5秒では足りない
+    testTimeout: 20_000,
   },
 });

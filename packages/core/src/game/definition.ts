@@ -6,26 +6,41 @@ export interface Season {
   endsAt: number;
 }
 
+export interface Character {
+  id: FighterId;
+  name: string;
+}
+
 export interface GameDefinition {
   id: string;
   name: string;
-  format: { bestOf: number; stock: number; timeLimitSec: number };
-  room: {
-    defaultPassword: string;
-    roomIdPattern: string;
-    maxPlayers: number;
-    entryRestriction: string;
-    /** 対戦ルームに表示する部屋の設定の注意書き */
-    notes: string[];
-  };
-  fighters: { id: FighterId; name: string }[];
-  sharedBanGroups: FighterId[][];
+  /** 何本先取か（bestOf は奇数）と、対戦ルームに出す試合の形式の説明 */
+  format: { bestOf: number; notes: string[] };
+  /** 報告できる結果。win・lose・cancel は必ずあり、draw はゲームによる（docs/adr/0010） */
+  results: { draw: boolean };
+  /** 先後の名前。対戦ごとにマッチの id で決め、1つ目の側が対戦の場所を用意する */
+  sides: [string, string];
+  /** キャラを選ぶゲームだけ。拒否ステージを共有するキャラの組も持つ */
+  characters: { list: Character[]; sharedBanGroups: FighterId[][] } | null;
+  /** ステージを拒否し合うゲームだけ（characters が必要） */
   stages: {
     all: { id: StageId; name: string }[];
     starter: StageId[];
     counterpick: StageId[];
     maxBansPerFighter: number;
-  };
+  } | null;
+  /** 対戦の場所の受け渡し。部屋 ID とパスワードか、招待リンク */
+  room:
+    | {
+        kind: 'code';
+        defaultPassword: string;
+        roomIdPattern: string;
+        maxPlayers: number;
+        entryRestriction: string;
+        /** 対戦ルームに表示する部屋の設定の注意書き */
+        notes: string[];
+      }
+    | { kind: 'link'; notes: string[] };
   rating: {
     system: 'glicko2';
     initialRating: number;
@@ -81,44 +96,80 @@ function numObj<K extends string>(v: unknown, path: string, keys: readonly K[]):
   return out;
 }
 
-export function parseGameDefinition(json: unknown): GameDefinition {
-  const root = obj(json, '$');
+const strList = (v: unknown, path: string): string[] => arr(v, path).map((n, i) => str(n, `${path}[${i}]`));
 
-  const fighters = arr(root.fighters, 'fighters').map((f, i) => {
-    const o = obj(f, `fighters[${i}]`);
-    return { id: str(o.id, `fighters[${i}].id`), name: str(o.name, `fighters[${i}].name`) };
+function parseCharacters(v: unknown): GameDefinition['characters'] {
+  if (v === undefined || v === null) return null;
+  const o = obj(v, 'characters');
+  const list = arr(o.list, 'characters.list').map((f, i) => {
+    const c = obj(f, `characters.list[${i}]`);
+    return { id: str(c.id, `characters.list[${i}].id`), name: str(c.name, `characters.list[${i}].name`) };
   });
-  const fighterIds = new Set(fighters.map((f) => f.id));
-  if (fighterIds.size !== fighters.length) fail('fighters', 'has duplicate ids');
-
-  const sharedBanGroups = arr(root.sharedBanGroups, 'sharedBanGroups').map((g, i) =>
-    arr(g, `sharedBanGroups[${i}]`).map((id, j) => {
-      const s = str(id, `sharedBanGroups[${i}][${j}]`);
-      if (!fighterIds.has(s)) fail(`sharedBanGroups[${i}][${j}]`, `unknown fighter ${s}`);
+  if (list.length === 0) fail('characters.list', 'must not be empty');
+  const ids = new Set(list.map((f) => f.id));
+  if (ids.size !== list.length) fail('characters.list', 'has duplicate ids');
+  const sharedBanGroups = arr(o.sharedBanGroups ?? [], 'characters.sharedBanGroups').map((g, i) =>
+    arr(g, `characters.sharedBanGroups[${i}]`).map((id, j) => {
+      const s = str(id, `characters.sharedBanGroups[${i}][${j}]`);
+      if (!ids.has(s)) fail(`characters.sharedBanGroups[${i}][${j}]`, `unknown character ${s}`);
       return s;
     }),
   );
+  return { list, sharedBanGroups };
+}
 
-  const st = obj(root.stages, 'stages');
+function parseStages(v: unknown, characters: GameDefinition['characters']): GameDefinition['stages'] {
+  if (v === undefined || v === null) return null;
+  // 拒否ステージは相手のキャラごとに決めるので、キャラのないゲームでは使えない
+  if (!characters) fail('stages', 'needs characters');
+  const st = obj(v, 'stages');
   const all = arr(st.all, 'stages.all').map((s, i) => {
     const o = obj(s, `stages.all[${i}]`);
     return { id: str(o.id, `stages.all[${i}].id`) as StageId, name: str(o.name, `stages.all[${i}].name`) };
   });
   const stageIds = new Set<string>(all.map((s) => s.id));
-  const stageList = (v: unknown, path: string): StageId[] =>
-    arr(v, path).map((s, i) => {
+  const stageList = (x: unknown, path: string): StageId[] =>
+    arr(x, path).map((s, i) => {
       const id = str(s, `${path}[${i}]`);
       if (!stageIds.has(id)) fail(`${path}[${i}]`, `unknown stage ${id}`);
       return id as StageId;
     });
-
   const starter = stageList(st.starter, 'stages.starter');
   const counterpick = stageList(st.counterpick, 'stages.counterpick');
   for (const s of starter) {
     if (!counterpick.includes(s)) fail('stages.starter', `${s} must also be a counterpick stage`);
   }
-  const format = numObj(root.format, 'format', ['bestOf', 'stock', 'timeLimitSec'] as const);
-  if (format.bestOf % 2 !== 1) fail('format.bestOf', 'must be odd');
+  return { all, starter, counterpick, maxBansPerFighter: num(st.maxBansPerFighter, 'stages.maxBansPerFighter') };
+}
+
+function parseRoom(v: unknown): GameDefinition['room'] {
+  const room = obj(v, 'room');
+  const notes = strList(room.notes ?? [], 'room.notes');
+  if (room.kind === 'link') return { kind: 'link', notes };
+  if (room.kind !== 'code') fail('room.kind', 'must be code or link');
+  return {
+    kind: 'code',
+    defaultPassword: str(room.defaultPassword, 'room.defaultPassword'),
+    roomIdPattern: str(room.roomIdPattern, 'room.roomIdPattern'),
+    maxPlayers: num(room.maxPlayers, 'room.maxPlayers'),
+    entryRestriction: str(room.entryRestriction, 'room.entryRestriction'),
+    notes,
+  };
+}
+
+export function parseGameDefinition(json: unknown): GameDefinition {
+  const root = obj(json, '$');
+  const characters = parseCharacters(root.characters);
+  const stages = parseStages(root.stages, characters);
+
+  const fmt = obj(root.format, 'format');
+  const format = { bestOf: num(fmt.bestOf, 'format.bestOf'), notes: strList(fmt.notes ?? [], 'format.notes') };
+  if (!Number.isInteger(format.bestOf) || format.bestOf < 1 || format.bestOf % 2 !== 1) fail('format.bestOf', 'must be a positive odd integer');
+
+  const res = obj(root.results ?? {}, 'results');
+  if (res.draw !== undefined && typeof res.draw !== 'boolean') fail('results.draw', 'must be a boolean');
+  const sides = strList(root.sides, 'sides');
+  if (sides.length !== 2 || sides[0] === sides[1]) fail('sides', 'must be two different names');
 
   const rating = obj(root.rating, 'rating');
   if (rating.system !== 'glicko2') fail('rating.system', 'must be glicko2');
@@ -128,27 +179,18 @@ export function parseGameDefinition(json: unknown): GameDefinition {
   if (weights.length === 0) fail('rematchWeight.weights', 'must not be empty');
 
   const m = obj(root.matching, 'matching');
-  const room = obj(root.room, 'room');
+  const id = str(root.id, 'id');
+  if (!/^[a-z0-9_]{1,32}$/.test(id)) fail('id', 'must be lowercase letters, digits and _');
 
   return {
-    id: str(root.id, 'id'),
+    id,
     name: str(root.name, 'name'),
     format,
-    room: {
-      defaultPassword: str(room.defaultPassword, 'room.defaultPassword'),
-      roomIdPattern: str(room.roomIdPattern, 'room.roomIdPattern'),
-      maxPlayers: num(room.maxPlayers, 'room.maxPlayers'),
-      entryRestriction: str(room.entryRestriction, 'room.entryRestriction'),
-      notes: arr(room.notes, 'room.notes').map((n, i) => str(n, `room.notes[${i}]`)),
-    },
-    fighters,
-    sharedBanGroups,
-    stages: {
-      all,
-      starter,
-      counterpick,
-      maxBansPerFighter: num(st.maxBansPerFighter, 'stages.maxBansPerFighter'),
-    },
+    results: { draw: res.draw === true },
+    sides: [sides[0]!, sides[1]!],
+    characters,
+    stages,
+    room: parseRoom(root.room),
     rating: {
       system: 'glicko2',
       ...numObj(rating, 'rating', ['initialRating', 'initialRd', 'initialVolatility', 'tau', 'inactivityPeriodSec'] as const),
@@ -169,6 +211,15 @@ export function parseGameDefinition(json: unknown): GameDefinition {
     report: numObj(root.report, 'report', ['deadlineSec'] as const),
     seasons: parseSeasons(root.seasons),
   };
+}
+
+/**
+ * 対戦の先後（docs/adr/0010）。マッチの id の最後の16進数が偶数なら p1 が1つ目の側。
+ * どちらのクライアントも同じ結果を出せ、募集した側が選ぶこともできない
+ */
+export function sideOf(matchId: string, role: 'p1' | 'p2'): 0 | 1 {
+  const p1First = parseInt(matchId.slice(-1), 16) % 2 === 0;
+  return (role === 'p1') === p1First ? 0 : 1;
 }
 
 function parseSeasons(v: unknown): GameDefinition['seasons'] {
@@ -205,9 +256,9 @@ export function seasonById(def: GameDefinition, id: number): Season {
   return { id, startsAt: boundary(def, id - 1), endsAt: boundary(def, id) };
 }
 
-/** 拒否ステージを共有するグループなら先頭のファイター、それ以外は自分自身 */
+/** 拒否ステージを共有するグループなら先頭のキャラ、それ以外は自分自身 */
 export function banGroupKey(def: GameDefinition, fighter: FighterId): FighterId {
-  const group = def.sharedBanGroups.find((g) => g.includes(fighter));
+  const group = def.characters?.sharedBanGroups.find((g) => g.includes(fighter));
   return group?.[0] ?? fighter;
 }
 

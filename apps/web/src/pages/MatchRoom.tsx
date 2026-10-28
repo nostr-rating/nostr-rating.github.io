@@ -9,6 +9,8 @@ import {
   setWinner,
   settleMatch,
   unwrapRoomMessage,
+  sideOf,
+  validInviteLink,
   validRoomId,
   wrapRoomMessage,
   type MatchRecord,
@@ -62,6 +64,7 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   const [bans, setBans] = useState<{ p1: StageBans; p2: StageBans } | null>(() => cachedBans(matchId));
   const [bansMissing, setBansMissing] = useState(false);
   const [room, setRoom] = useState<{ roomId: string; password: string } | null>(null);
+  const [link, setLink] = useState<URL | null>(null);
   const [roomInput, setRoomInput] = useState('');
   const [chat, setChat] = useState<ChatLine[]>([]);
   const [reports, setReports] = useState<ResultReport[]>([]);
@@ -79,6 +82,14 @@ export function MatchRoom({ matchId }: { matchId: string }) {
     void app.relay
       .query([{ kinds: [KIND.match], ids: [matchId] }])
       .then(async (evs) => {
+        // ほかのゲームの対戦なら、そのゲームに切り替えて開く
+        for (const g of app.games) {
+          const found = (await parseEach(app, evs, (e, by) => parseMatch(g.id, e, by)))[0];
+          if (found && g.id !== def.id) {
+            if (alive) app.setGame(g.id);
+            return;
+          }
+        }
         const m = (await parseEach(app, evs, (e, by) => parseMatch(def.id, e, by)))[0];
         if (!alive) return;
         if (m) setMatch(m);
@@ -106,7 +117,9 @@ export function MatchRoom({ matchId }: { matchId: string }) {
     };
   }, [app.sessionSigners, match]);
   const opponentSession = match && mySessionPk ? (match.sessions.find((s) => s !== mySessionPk) ?? null) : null;
-  const p1Session = match ? (side === 'p1' ? mySessionPk : opponentSession) : null;
+  // 先後はマッチの id で決まり、1つ目の側が対戦の場所を用意する（docs/adr/0010）
+  const mySide = match && side ? sideOf(match.id, side) : null;
+  const hostSession = match ? (mySide === 0 ? mySessionPk : opponentSession) : null;
 
   // 第三者が勝手に作った対戦でないか（申し込みに結び付いているか）を確かめる
   useEffect(() => {
@@ -168,16 +181,21 @@ export function MatchRoom({ matchId }: { matchId: string }) {
         if (!got || got.matchId !== match.id) return;
         if (got.from !== mySessionPk && got.from !== opponentSession) return;
         if (got.msg.type === 'room') {
-          if (got.from !== p1Session || got.createdAt < latestRoom || !validRoomId(def, got.msg.roomId)) return;
+          if (got.from !== hostSession || got.createdAt < latestRoom || !validRoomId(def, got.msg.roomId)) return;
           latestRoom = got.createdAt;
           setRoom({ roomId: got.msg.roomId, password: got.msg.password });
+        } else if (got.msg.type === 'link') {
+          const url = def.room.kind === 'link' ? validInviteLink(got.msg.url) : null;
+          if (got.from !== hostSession || got.createdAt < latestRoom || !url) return;
+          latestRoom = got.createdAt;
+          setLink(url);
         } else {
           lines.push({ mine: got.from === mySessionPk, text: got.msg.text.slice(0, 500), at: got.createdAt });
           setChat([...lines].sort((a, b) => a.at - b.at));
         }
       });
     });
-  }, [app.relay, app.sessionSigners, def, match, me, side, mySessionPk, opponentSession, p1Session]);
+  }, [app.relay, app.sessionSigners, def, match, me, side, mySessionPk, opponentSession, hostSession]);
 
   // 結果報告
   useEffect(() => {
@@ -199,7 +217,7 @@ export function MatchRoom({ matchId }: { matchId: string }) {
     return () => clearInterval(t);
   }, []);
 
-  const settlement = match ? settleMatch(match, reports, app.now(), def.report.deadlineSec) : null;
+  const settlement = match ? settleMatch(match, reports, app.now(), def.report.deadlineSec, def.results.draw) : null;
   const confirmed = settlement?.status === 'confirmed';
   // 確定したらレートと順位を読み直す
   useEffect(() => {
@@ -275,59 +293,92 @@ export function MatchRoom({ matchId }: { matchId: string }) {
       </div>
 
       <div className="card stack">
-        <h3>専用部屋</h3>
+        <h3>{def.room.kind === 'code' ? '専用部屋' : '対局の場所'}</h3>
+        <p data-testid="my-side">
+          あなたは「{def.sides[mySide!]}」です（相手は「{def.sides[mySide === 0 ? 1 : 0]}」）。
+        </p>
         <p className="muted">
-          ストック{def.format.stock}・{def.format.timeLimitSec / 60}分・{Math.ceil(def.format.bestOf / 2)}本先取 ／ 入室制限「
-          {def.room.entryRestriction}」 ／ 部屋の人数 {def.room.maxPlayers}人
+          {def.format.bestOf === 1 ? '1本勝負' : `${Math.ceil(def.format.bestOf / 2)}本先取`}
+          {def.format.notes.length > 0 ? ` ／ ${def.format.notes.join('・')}` : ''}
+          {def.room.kind === 'code' ? ` ／ 入室制限「${def.room.entryRestriction}」 ／ 部屋の人数 ${def.room.maxPlayers}人` : ''}
         </p>
         <ul className="muted">
           {def.room.notes.map((n) => (
             <li key={n}>{n}</li>
           ))}
         </ul>
-        {side === 'p1' ? (
+        {def.room.kind === 'code' ? (
+          mySide === 0 ? (
+            <>
+              <p>あなたが部屋を立てます。パスワード「{def.room.defaultPassword}」で専用部屋を作り、部屋 ID を送ってください。</p>
+              <label htmlFor={`${id}-room`}>部屋 ID</label>
+              <input
+                id={`${id}-room`}
+                value={roomInput}
+                maxLength={5}
+                autoCapitalize="characters"
+                onChange={(e) => setRoomInput(e.target.value.trim())}
+              />
+              <button
+                type="button"
+                className="primary"
+                disabled={busy || !validRoomId(def, roomInput)}
+                onClick={() => def.room.kind === 'code' && void send({ type: 'room', roomId: roomInput, password: def.room.defaultPassword })}
+              >
+                部屋 ID を送る
+              </button>
+              {room && <p className="muted">送信済み: {room.roomId}</p>}
+            </>
+          ) : room ? (
+            <>
+              <p>部屋 ID</p>
+              <p className="big" data-testid="room-id">{room.roomId}</p>
+              <button type="button" onClick={() => copy(room.roomId)}>部屋 ID をコピー</button>
+              <p>パスワード</p>
+              <p className="big" data-testid="room-password">{room.password}</p>
+              <button type="button" onClick={() => copy(room.password)}>パスワードをコピー</button>
+            </>
+          ) : (
+            <p>相手が部屋を立てるのを待っています…</p>
+          )
+        ) : mySide === 0 ? (
           <>
-            <p>あなたが部屋を立てます。パスワード「{def.room.defaultPassword}」で専用部屋を作り、部屋 ID を送ってください。</p>
-            <label htmlFor={`${id}-room`}>部屋 ID</label>
-            <input
-              id={`${id}-room`}
-              value={roomInput}
-              maxLength={5}
-              autoCapitalize="characters"
-              onChange={(e) => setRoomInput(e.target.value.trim())}
-            />
+            <p>あなたが対局を用意します。双方の使えるオンラインの対局サービスで相手を招待するリンクを作り、送ってください。</p>
+            <label htmlFor={`${id}-link`}>招待リンク（https:// で始まるもの）</label>
+            <input id={`${id}-link`} inputMode="url" value={roomInput} onChange={(e) => setRoomInput(e.target.value.trim())} />
             <button
               type="button"
               className="primary"
-              disabled={busy || !validRoomId(def, roomInput)}
-              onClick={() => void send({ type: 'room', roomId: roomInput, password: def.room.defaultPassword })}
+              disabled={busy || !validInviteLink(roomInput)}
+              onClick={() => void send({ type: 'link', url: roomInput })}
             >
-              部屋 ID を送る
+              招待リンクを送る
             </button>
-            {room && <p className="muted">送信済み: {room.roomId}</p>}
+            {link && <p className="muted">送信済み: {link.hostname}</p>}
           </>
-        ) : room ? (
+        ) : link ? (
           <>
-            <p>部屋 ID</p>
-            <p className="big" data-testid="room-id">{room.roomId}</p>
-            <button type="button" onClick={() => copy(room.roomId)}>部屋 ID をコピー</button>
-            <p>パスワード</p>
-            <p className="big" data-testid="room-password">{room.password}</p>
-            <button type="button" onClick={() => copy(room.password)}>パスワードをコピー</button>
+            <p>
+              相手から招待リンクが届きました。リンク先は <strong data-testid="invite-host">{link.hostname}</strong> です。知らないサービスなら開かず、チャットで確かめてください。
+            </p>
+            <a className="button" href={link.href} target="_blank" rel="noopener noreferrer">
+              招待リンクを開く
+            </a>
           </>
         ) : (
-          <p>相手が部屋を立てるのを待っています…</p>
+          <p>相手が対局を用意するのを待っています…</p>
         )}
       </div>
 
       {bansMissing && <p className="notice" role="alert">拒否ステージを読み込めなかったため、拒否なしで案内しています。相手と確認してください。</p>}
-      <StageGuide def={def} match={match} me={side} bans={bans ?? { p1: {}, p2: {} }} onSetChange={setSet} />
+      {def.stages && def.characters && <StageGuide def={def} match={match} me={side} bans={bans ?? { p1: {}, p2: {} }} onSetChange={setSet} />}
       <ChatPanel lines={chat} onSend={(text) => send({ type: 'chat', text })} />
       <ReportPanel
         status={reportStatus(def, match, reports, me, app.now())}
         closed={closed}
         mine={latestReports(match, reports).get(me)}
         suggested={suggested}
+        allowDraw={def.results.draw}
         busy={busy}
         onReport={report}
       />

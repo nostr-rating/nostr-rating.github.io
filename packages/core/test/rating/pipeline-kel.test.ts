@@ -44,7 +44,7 @@ function account(at: number) {
 }
 
 async function playedBy(p1: ReturnType<typeof account>, p2: ReturnType<typeof account>, at: number, from = at - 3600) {
-  const claim = (a: typeof p1) => a.sign(a.d2, from, buildAccountInfo(G, { pubkey: a.aid, name: '', claims: [{ platform: 'github', identity: 'x', proof: 'a' }] }, at - 50));
+  const claim = (a: typeof p1) => a.sign(a.d2, from, buildAccountInfo({ pubkey: a.aid, name: '', claims: [{ platform: 'github', identity: 'x', proof: 'a' }] }, at - 50));
   const recruiterSession = p1.sessionKey(p1.d1, from);
   const app = await p2.sign(p2.d2, from, buildApplication(G, { recruiter: p1.aid, recruiterSession, firstFighter: 'fox', settingsId: '2'.repeat(64), rangeChoice: null, rematchHours: 0, waitingSince: at - 5 }, at - 1));
   const m = await p1.sign(p1.d1, from, buildMatch(G, { p1: p1.aid, p2: p2.aid, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: app.id, sessions: [recruiterSession, app.pubkey] }, at));

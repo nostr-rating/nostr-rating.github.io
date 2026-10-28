@@ -63,11 +63,15 @@ test('two players match, exchange the room id, play a set and confirm the result
   await expect(b).toHaveURL(/#\/match\/[0-9a-f]{64}$/, { timeout: 30_000 });
   expect(a.url().split('/match/')[1]).toBe(b.url().split('/match/')[1]);
 
-  // 先に待っていたアリスが部屋を立てる側（プレイヤー1）
-  await a.getByLabel('部屋 ID').fill('AB12C');
-  await a.getByRole('button', { name: '部屋 ID を送る' }).click();
-  await expect(b.getByTestId('room-id')).toHaveText('AB12C', { timeout: 20_000 });
-  await expect(b.getByTestId('room-password')).toHaveText('1122');
+  // 部屋を立てるのは P1 の側。どちらが P1 かはマッチの id で決まる
+  await expect(a.getByTestId('my-side')).toHaveText(/^あなたは「P[12]」です/);
+  const aIsP1 = ((await a.getByTestId('my-side').textContent()) ?? '').startsWith('あなたは「P1」');
+  const [host, guest] = aIsP1 ? [a, b] : [b, a];
+  await expect(guest.getByTestId('my-side')).toHaveText('あなたは「P2」です（相手は「P1」）。');
+  await host.getByLabel('部屋 ID').fill('AB12C');
+  await host.getByRole('button', { name: '部屋 ID を送る' }).click();
+  await expect(guest.getByTestId('room-id')).toHaveText('AB12C', { timeout: 20_000 });
+  await expect(guest.getByTestId('room-password')).toHaveText('1122');
 
   await a.getByRole('button', { name: '1戦目: あなたの勝ち' }).click();
   await a.getByRole('button', { name: '2戦目: あなたの勝ち' }).click();
@@ -87,6 +91,39 @@ test('two players match, exchange the room id, play a set and confirm the result
   await expect(row).toBeVisible({ timeout: 20_000 });
   const rating = Number((await row.getByRole('cell').nth(2).textContent()) ?? '0');
   expect(rating).toBeGreaterThan(1500);
+
+  await ctxA.close();
+  await ctxB.close();
+});
+
+test('two players choose chess, exchange an invite link and settle a draw', async ({ browser }) => {
+  const ctxA = await browser.newContext();
+  const ctxB = await browser.newContext();
+  const a = await ctxA.newPage();
+  const b = await ctxB.newPage();
+  for (const p of [a, b]) p.on('dialog', (d) => void d.accept());
+  const suffix = Date.now().toString(36);
+  await onboard(a, `シロ${suffix}`, `shiro${suffix}`);
+  await onboard(b, `クロ${suffix}`, `kuro${suffix}`);
+
+  for (const p of [a, b]) {
+    await p.getByLabel('ゲーム').selectOption('chess');
+    await expect(p.getByLabel('1戦目に使うキャラ')).toHaveCount(0);
+    await p.getByRole('button', { name: '対戦相手を探す' }).click();
+  }
+  await expect(a).toHaveURL(/#\/match\/[0-9a-f]{64}$/, { timeout: 30_000 });
+  await expect(b).toHaveURL(/#\/match\/[0-9a-f]{64}$/, { timeout: 30_000 });
+
+  await expect(a.getByTestId('my-side')).toHaveText(/^あなたは「[白黒]」です/);
+  const aIsWhite = ((await a.getByTestId('my-side').textContent()) ?? '').startsWith('あなたは「白」');
+  const [white, black] = aIsWhite ? [a, b] : [b, a];
+  await white.getByLabel('招待リンク（https:// で始まるもの）').fill('https://chess.example/invite/e2e');
+  await white.getByRole('button', { name: '招待リンクを送る' }).click();
+  await expect(black.getByTestId('invite-host')).toHaveText('chess.example', { timeout: 20_000 });
+
+  await white.getByRole('button', { name: '引き分け', exact: true }).click();
+  await black.getByRole('button', { name: '引き分け', exact: true }).click();
+  for (const p of [a, b]) await expect(p.getByTestId('report-status')).toHaveText('結果が確定しました（引き分け）', { timeout: 20_000 });
 
   await ctxA.close();
   await ctxB.close();

@@ -31,9 +31,9 @@ function snapshotFiles(tamper = false) {
   const text = serializeSnapshot(
     stateToSnapshot(initialState(def, 1, CUT), { game: 'smash_sp', previous: null, previousSha256: null, eventIds: [], configSha256: 'x' }),
   );
-  const path = 'snapshots/season_1/2026-10-27.json';
+  const path = 'snapshots/smash_sp/season_1/2026-10-27.json';
   return {
-    [`${BASE}snapshots/latest.json`]: JSON.stringify({ path, sha256: sha256Hex(text) }),
+    [`${BASE}snapshots/smash_sp/latest.json`]: JSON.stringify({ path, sha256: sha256Hex(text) }),
     [`${BASE}${path}`]: tamper ? text.replace('"season": 1', '"season": 2') : text,
   };
 }
@@ -44,7 +44,7 @@ async function playerAt(relay: MemoryRelay, clock: { t: number }, name: string):
   const now = () => clock.t;
   const { account, words } = await Account.create(keyStore, relay, now, name);
   const session = await account.session();
-  await relay.publish(await session.signer.signEvent(buildAccountInfo('smash_sp', { pubkey: account.aid, name, claims: [{ platform: 'github', identity: name, proof: 'abc' }] }, clock.t)));
+  await relay.publish(await session.signer.signEvent(buildAccountInfo({ pubkey: account.aid, name, claims: [{ platform: 'github', identity: name, proof: 'abc' }] }, clock.t)));
   return { account, keyStore, words, aid: account.aid, signer: session.signer, session };
 }
 
@@ -66,10 +66,10 @@ describe('syncRatings across seasons', () => {
   test('a snapshot from the previous season starts the current season from zero and keeps the summaries', async () => {
     const s2 = 1_798_729_200; // 2027-01-01 JST
     const base = initialState(def, 1, s2);
-    const final = { ...base, seasonSummaries: { '1': { ['a'.repeat(64)]: { finalRating: 1600, peakRating: 1650, matches: 3, wins: 2, losses: 1 } } } };
+    const final = { ...base, seasonSummaries: { '1': { ['a'.repeat(64)]: { finalRating: 1600, peakRating: 1650, matches: 3, wins: 2, losses: 1, draws: 0 } } } };
     const text = serializeSnapshot(stateToSnapshot(final, { game: 'smash_sp', previous: null, previousSha256: null, eventIds: [], configSha256: 'x', kind: 'final' }));
-    const path = 'snapshots/season_1/final.json';
-    const files = { [`${BASE}snapshots/latest.json`]: JSON.stringify({ path, sha256: sha256Hex(text) }), [`${BASE}${path}`]: text };
+    const path = 'snapshots/smash_sp/season_1/final.json';
+    const files = { [`${BASE}snapshots/smash_sp/latest.json`]: JSON.stringify({ path, sha256: sha256Hex(text) }), [`${BASE}${path}`]: text };
     const { state } = await syncRatings({ def, relay: new MemoryRelay(() => s2 + 100), store: new MemoryEventStore(), fetchFn: fakeFetch(files), base: BASE, now: () => s2 + 100 });
     expect([state.season, state.cutoff, state.players]).toEqual([2, s2 + 100, {}]);
     expect(state.seasonSummaries).toEqual(final.seasonSummaries);

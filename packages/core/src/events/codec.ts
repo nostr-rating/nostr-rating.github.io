@@ -2,7 +2,7 @@ import type { EventTemplate, NostrEvent } from 'nostr-tools/pure';
 import { parseClaim, type IdentityClaim } from '../identity/claims.js';
 import type { StageBans } from '../match/stages.js';
 import type { FighterId, Pubkey, StageId } from '../types.js';
-import { appTags, isAppEvent, KIND, recruitmentAddr, settingsD, tagValue, tagValues } from './kinds.js';
+import { APP_TAG, appTags, isAppEvent, isValidEvent, KIND, recruitmentAddr, settingsD, tagValue, tagValues } from './kinds.js';
 
 /**
  * docs/adr/0008。アプリのイベントは使い捨ての鍵が署名し、証明書でアカウント（aid）に結び付く。
@@ -66,7 +66,7 @@ export interface MatchRecord {
   sessions: Pubkey[];
 }
 
-export type ReportResult = 'win' | 'lose' | 'cancel';
+export type ReportResult = 'win' | 'lose' | 'draw' | 'cancel';
 
 export interface ResultReport {
   id: string;
@@ -97,6 +97,8 @@ function json(ev: NostrEvent): Record<string, unknown> | null {
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v !== '';
+/** キャラの欄。キャラのないゲーム（docs/adr/0010）では空 */
+const isFighter = (v: unknown): v is string => typeof v === 'string' && v.length <= 64;
 const isHex = (v: unknown): v is string => typeof v === 'string' && HEX64.test(v);
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isRange = (v: unknown): v is number | null => v === null || isNum(v);
@@ -164,7 +166,7 @@ export function parseRecruitment(game: string, ev: NostrEvent, author: Pubkey | 
   const c = json(ev);
   const expiresAt = Number(tagValue(ev, 'expiration'));
   if (!c || !Number.isFinite(expiresAt)) return null;
-  if (!isStr(c.firstFighter) || !isNum(c.rating) || !isRange(c.rangeChoice) || !isNum(c.rematchHours)) return null;
+  if (!isFighter(c.firstFighter) || !isNum(c.rating) || !isRange(c.rangeChoice) || !isNum(c.rematchHours)) return null;
   if (!isHex(c.settingsId) || !isNum(c.waitingSince) || (c.status !== 'open' && c.status !== 'closed')) return null;
   return {
     pubkey: author,
@@ -210,7 +212,7 @@ export function parseApplication(game: string, ev: NostrEvent, author: Pubkey | 
   const addr = tagValue(ev, 'a');
   const c = json(ev);
   if (!isHex(recruiterSession) || addr !== recruitmentAddr(recruiterSession, game)) return null;
-  if (!c || !isHex(c.recruiter) || c.recruiter === author || !isStr(c.firstFighter) || !isHex(c.settingsId)) return null;
+  if (!c || !isHex(c.recruiter) || c.recruiter === author || !isFighter(c.firstFighter) || !isHex(c.settingsId)) return null;
   if (!isRange(c.rangeChoice) || !isNum(c.rematchHours) || !isNum(c.waitingSince)) return null;
   return {
     eventId: ev.id,
@@ -254,7 +256,7 @@ export function parseMatch(game: string, ev: NostrEvent, author: Pubkey | null):
   // 相手が購読で気づけるよう、p タグに双方の使い捨ての鍵を入れる
   const sessions = tagValues(ev, 'p').filter(isHex);
   if (!sessions.includes(ev.pubkey) || sessions.length < 2) return null;
-  if (!isStr(c.p1Fighter) || !isStr(c.p2Fighter) || !isHex(c.p1SettingsId) || !isHex(c.p2SettingsId)) return null;
+  if (!isFighter(c.p1Fighter) || !isFighter(c.p2Fighter) || !isHex(c.p1SettingsId) || !isHex(c.p2SettingsId)) return null;
   return {
     id: ev.id,
     createdAt: ev.created_at,
@@ -289,23 +291,25 @@ export function parseReport(game: string, ev: NostrEvent, author: Pubkey | null)
   const c = json(ev);
   const matchId = tagValue(ev, 'e');
   if (!c || !isHex(matchId)) return null;
-  if (c.result !== 'win' && c.result !== 'lose' && c.result !== 'cancel') return null;
+  if (c.result !== 'win' && c.result !== 'lose' && c.result !== 'draw' && c.result !== 'cancel') return null;
   return { id: ev.id, matchId, reporter: author, result: c.result, createdAt: ev.created_at };
 }
 
 // ---- account info (kind 30756) ----
 
-export function buildAccountInfo(game: string, a: Pick<AccountInfo, 'pubkey' | 'name' | 'claims'>, now: number): EventTemplate {
+/** 全ゲームで共通なので、game タグは付けない（docs/adr/0010） */
+export function buildAccountInfo(a: Pick<AccountInfo, 'pubkey' | 'name' | 'claims'>, now: number): EventTemplate {
   return {
     kind: KIND.account,
     created_at: now,
-    tags: [['d', a.pubkey], ...appTags(game)],
+    tags: [['d', a.pubkey], ['t', APP_TAG]],
     content: JSON.stringify({ name: a.name, claims: a.claims }),
   };
 }
 
-export function parseAccountInfo(game: string, ev: NostrEvent, author: Pubkey | null): AccountInfo | null {
-  if (!author || !isAppEvent(ev, KIND.account, game) || tagValue(ev, 'd') !== author) return null;
+export function parseAccountInfo(ev: NostrEvent, author: Pubkey | null): AccountInfo | null {
+  if (!author || !isValidEvent(ev) || ev.kind !== KIND.account || tagValue(ev, 'd') !== author) return null;
+  if (!ev.tags.some((t) => t[0] === 't' && t[1] === APP_TAG)) return null;
   const c = json(ev);
   if (!c || typeof c.name !== 'string' || c.name.length > 64 || !Array.isArray(c.claims)) return null;
   const claims = c.claims.map(parseClaim).filter((x): x is IdentityClaim => x !== null);

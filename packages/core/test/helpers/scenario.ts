@@ -14,7 +14,7 @@ const G = 'smash_sp';
 export const DAY = 86400;
 
 export async function identity(u: User, at: number, proof = 'a0'): Promise<NostrEvent> {
-  return u.signer.signEvent(buildAccountInfo(G, { pubkey: u.pk, name: '', claims: [{ platform: 'github', identity: u.pk.slice(0, 8), proof }] }, at));
+  return u.signer.signEvent(buildAccountInfo({ pubkey: u.pk, name: '', claims: [{ platform: 'github', identity: u.pk.slice(0, 8), proof }] }, at));
 }
 
 /** p2 が p1 の募集に申し込んだイベント */

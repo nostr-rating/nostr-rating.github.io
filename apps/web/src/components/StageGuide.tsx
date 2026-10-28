@@ -40,7 +40,7 @@ function excludedStages(def: GameDefinition, s: SetState, bans: { p1: StageBans;
   if (!last) {
     add('p1', s.p2Fighter);
     add('p2', s.p1Fighter);
-    return out.filter((o) => def.stages.starter.includes(o.stage));
+    return out.filter((o) => def.stages!.starter.includes(o.stage));
   }
   const winner = last.winner;
   add(winner, winner === 'p1' ? s.p2Fighter : s.p1Fighter);
@@ -73,8 +73,11 @@ export function StageGuide(props: {
   const gameNo = set.games.length + 1;
   const winner = setWinner(def, set);
   const opts = nextStageOptions(def, set, bans);
-  const stageName = (s: string) => def.stages.all.find((x) => x.id === s)?.name ?? s;
-  const fighterName = (f: string) => def.fighters.find((x) => x.id === f)?.name ?? f;
+  // ステージとキャラのあるゲームでだけ表示する（MatchRoom が確かめる）
+  const stages = def.stages!;
+  const characters = def.characters!;
+  const stageName = (s: string) => stages.all.find((x) => x.id === s)?.name ?? s;
+  const fighterName = (f: string) => characters.list.find((x) => x.id === f)?.name ?? f;
   const lastLoser: Side | null = set.games.length > 0 ? (set.games.at(-1)!.winner === 'p1' ? 'p2' : 'p1') : null;
   const fighterOf = (side: Side) => (side === 'p1' ? set.p1Fighter : set.p2Fighter);
   const excluded = excludedStages(def, set, bans, me);
@@ -99,7 +102,7 @@ export function StageGuide(props: {
     <>
       <label htmlFor={`${id}-${side}`}>{label}</label>
       <select id={`${id}-${side}`} value={fighterOf(side)} onChange={(e) => apply(() => changeFighter(def, set, side, e.target.value))}>
-        {def.fighters.map((f) => (
+        {characters.list.map((f) => (
           <option key={f.id} value={f.id}>{f.name}</option>
         ))}
       </select>

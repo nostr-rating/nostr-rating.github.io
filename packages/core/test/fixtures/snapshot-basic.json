@@ -12,6 +12,7 @@
   "kind": "rolling",
   "players": {
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+      "draws": 0,
       "has_identity": true,
       "last_match_at": 1790850000,
       "losses": 0,
@@ -28,6 +29,7 @@
       "wins": 1
     },
     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+      "draws": 0,
       "has_identity": true,
       "last_match_at": 1790850000,
       "losses": 1,

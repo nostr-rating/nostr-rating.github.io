@@ -22,7 +22,7 @@ function flatView(ratings: Record<string, number> = {}): LocalView {
 
 type U = ReturnType<typeof newUser>;
 const claimFor = (u: U, at: number) =>
-  u.signer.signEvent(buildAccountInfo('smash_sp', { pubkey: u.pk, name: '', claims: [{ platform: 'github', identity: u.pk.slice(0, 6), proof: 'abc' }] }, at));
+  u.signer.signEvent(buildAccountInfo({ pubkey: u.pk, name: '', claims: [{ platform: 'github', identity: u.pk.slice(0, 6), proof: 'abc' }] }, at));
 
 /** 紐づけをリレーに出したユーザー（手元の view はまだ知らない状態） */
 function maker(relay: MemoryRelay, view: LocalView = flatView(), withIdentity = true) {

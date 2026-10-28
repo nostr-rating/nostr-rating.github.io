@@ -1,0 +1,20 @@
+{
+  "accounts": {},
+  "config_sha256": "66c7474c63cf9115e7a30964b200dbd86c39ce778eb1e81e749606d3fdff68a2",
+  "cutoff": 1793168799,
+  "excluded": [],
+  "game": "chess",
+  "inputs": {
+    "event_count": 0,
+    "event_ids_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "kels": {},
+  "kind": "rolling",
+  "players": {},
+  "previous": null,
+  "previous_sha256": null,
+  "recent_pairs": [],
+  "schema_version": 2,
+  "season": 1,
+  "season_summaries": {}
+}

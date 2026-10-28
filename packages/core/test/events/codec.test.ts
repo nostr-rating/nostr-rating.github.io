@@ -116,12 +116,12 @@ describe('roundtrip build → sign → parse', () => {
 
   test('account info', async () => {
     const claims = [{ platform: 'github' as const, identity: 'alice', proof: 'abc' }];
-    const ev = await alice.signer.signEvent(buildAccountInfo(G, { pubkey: alice.pk, name: 'アリス', claims }, NOW));
+    const ev = await alice.signer.signEvent(buildAccountInfo({ pubkey: alice.pk, name: 'アリス', claims }, NOW));
     expect(ev.kind).toBe(KIND.account);
-    expect(parseAccountInfo(G, ev, by(ev))).toEqual({ pubkey: alice.pk, eventId: ev.id, createdAt: NOW, name: 'アリス', claims });
+    expect(parseAccountInfo(ev, by(ev))).toEqual({ pubkey: alice.pk, eventId: ev.id, createdAt: NOW, name: 'アリス', claims });
     // d が署名したアカウントと違えば読まない
-    const other = await bob.signer.signEvent(buildAccountInfo(G, { pubkey: alice.pk, name: 'x', claims }, NOW));
-    expect(parseAccountInfo(G, other, by(other))).toBeNull();
+    const other = await bob.signer.signEvent(buildAccountInfo({ pubkey: alice.pk, name: 'x', claims }, NOW));
+    expect(parseAccountInfo(other, by(other))).toBeNull();
   });
 
   test('events without a valid certificate have no author', async () => {
@@ -156,7 +156,7 @@ describe('parsers reject malformed events', () => {
   });
 
   test('unknown result value', async () => {
-    expect(parseReport(G, await signRaw(KIND.report, '{"result":"draw"}', [...base, ['e', 'd'.repeat(64)], ['p', bob.pk]]), alice.pk)).toBeNull();
+    expect(parseReport(G, await signRaw(KIND.report, '{"result":"tie"}', [...base, ['e', 'd'.repeat(64)], ['p', bob.pk]]), alice.pk)).toBeNull();
   });
 
   test('tampered signature even when the object keeps nostr-tools verified marker', async () => {
@@ -190,7 +190,7 @@ describe('parsers reject malformed events', () => {
 
   test('null and garbage input do not throw', () => {
     expect(parseMatch(G, null as unknown as NostrEvent, alice.pk)).toBeNull();
-    expect(parseAccountInfo(G, {} as NostrEvent, alice.pk)).toBeNull();
+    expect(parseAccountInfo({} as NostrEvent, alice.pk)).toBeNull();
     expect(by({} as NostrEvent)).toBeNull();
   });
 });

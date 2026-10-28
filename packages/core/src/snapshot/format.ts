@@ -14,6 +14,7 @@ export interface SnapshotPlayer {
   matches: number;
   wins: number;
   losses: number;
+  draws: number;
   manners: { no_report: number; cancel: number; mismatch: number };
   last_match_at: number | null;
   has_identity: boolean;
@@ -50,6 +51,7 @@ export interface SnapshotSeasonSummary {
   matches: number;
   wins: number;
   losses: number;
+  draws: number;
 }
 
 export interface LatestPointer {
@@ -87,6 +89,7 @@ export function stateToSnapshot(
       matches: p.matches,
       wins: p.wins,
       losses: p.losses,
+      draws: p.draws,
       manners: { no_report: p.manners.noReport, cancel: p.manners.cancel, mismatch: p.manners.mismatch },
       last_match_at: p.lastMatchAt,
       has_identity: p.hasIdentity,
@@ -110,7 +113,7 @@ export function stateToSnapshot(
         Object.fromEntries(
           Object.entries(players).map(([pk, x]) => [
             pk,
-            { final_rating: x.finalRating, peak_rating: x.peakRating, matches: x.matches, wins: x.wins, losses: x.losses },
+            { final_rating: x.finalRating, peak_rating: x.peakRating, matches: x.matches, wins: x.wins, losses: x.losses, draws: x.draws },
           ]),
         ),
       ]),
@@ -134,6 +137,7 @@ export function snapshotToState(s: Snapshot): RatingState {
       matches: p.matches,
       wins: p.wins,
       losses: p.losses,
+      draws: p.draws ?? 0,
       manners: { noReport: p.manners.no_report, cancel: p.manners.cancel, mismatch: p.manners.mismatch },
       lastMatchAt: p.last_match_at,
       hasIdentity: p.has_identity,
@@ -150,7 +154,7 @@ export function snapshotToState(s: Snapshot): RatingState {
         Object.fromEntries(
           Object.entries(players).map(([pk, x]) => [
             pk,
-            { finalRating: x.final_rating, peakRating: x.peak_rating, matches: x.matches, wins: x.wins, losses: x.losses },
+            { finalRating: x.final_rating, peakRating: x.peak_rating, matches: x.matches, wins: x.wins, losses: x.losses, draws: x.draws ?? 0 },
           ]),
         ),
       ]),
@@ -174,6 +178,7 @@ export function ratingConfigHash(def: GameDefinition): string {
         rating: def.rating,
         rematchWeight: def.rematchWeight,
         report: def.report,
+        results: def.results,
         applicationTimeoutSec: def.matching.applicationTimeoutSec,
         rematchHourChoices: def.matching.rematchHourChoices,
         seasons: def.seasons,

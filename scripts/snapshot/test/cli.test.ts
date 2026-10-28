@@ -38,7 +38,7 @@ async function seededEvents(): Promise<NostrEvent[]> {
   const b = fixedAccount(2, T0 - DAY);
   const evs: NostrEvent[] = [a.kelEvent, b.kelEvent, a.certAnnouncement(T0), b.certAnnouncement(T0)];
   for (const [acc, proof] of [[a, 'a1'], [b, 'b1'], [b, 'b2']] as const) {
-    evs.push(acc.sign(buildAccountInfo('smash_sp', { pubkey: acc.aid, name: '', claims: [{ platform: 'github', identity: proof, proof }] }, T0 - (proof === 'b2' ? 5 : 10))));
+    evs.push(acc.sign(buildAccountInfo({ pubkey: acc.aid, name: '', claims: [{ platform: 'github', identity: proof, proof }] }, T0 - (proof === 'b2' ? 5 : 10))));
   }
   const app = b.sign(
     buildApplication(
@@ -81,21 +81,21 @@ describe('runSnapshot', () => {
   test('writes snapshot, ids and latest pointer that match the golden files', async () => {
     const relay = await relaysWith(await seededEvents());
     const out = await runSnapshot({ root, cutoff: T0 + DAY, relay });
-    expect(out.path).toBe('snapshots/season_1/2026-10-02.json');
+    expect(out.path).toBe('snapshots/smash_sp/season_1/2026-10-02.json');
     expect(read(out.path)).toBe(readFileSync(join(FIXTURES, 'snapshot.json'), 'utf8'));
-    expect(read('snapshots/season_1/2026-10-02.ids.txt')).toBe(readFileSync(join(FIXTURES, 'snapshot.ids.txt'), 'utf8'));
-    expect(read('snapshots/latest.json')).toBe(readFileSync(join(FIXTURES, 'latest.json'), 'utf8'));
+    expect(read('snapshots/smash_sp/season_1/2026-10-02.ids.txt')).toBe(readFileSync(join(FIXTURES, 'snapshot.ids.txt'), 'utf8'));
+    expect(read('snapshots/smash_sp/latest.json')).toBe(readFileSync(join(FIXTURES, 'latest.json'), 'utf8'));
   });
 
   test('result does not depend on the order relays return events', async () => {
     const evs = await seededEvents();
     const first = await runSnapshot({ root, cutoff: T0 + DAY, relay: await relaysWith(evs) });
     const bytes = read(first.path);
-    const ids = read('snapshots/season_1/2026-10-02.ids.txt');
+    const ids = read('snapshots/smash_sp/season_1/2026-10-02.ids.txt');
     rmSync(join(root, 'snapshots'), { recursive: true });
     await runSnapshot({ root, cutoff: T0 + DAY, relay: reversed(await relaysWith([...evs].reverse())) });
     expect(read(first.path)).toBe(bytes);
-    expect(read('snapshots/season_1/2026-10-02.ids.txt')).toBe(ids);
+    expect(read('snapshots/smash_sp/season_1/2026-10-02.ids.txt')).toBe(ids);
   });
 
   test('chains from the previous snapshot without double counting', async () => {
@@ -103,7 +103,7 @@ describe('runSnapshot', () => {
     await runSnapshot({ root, cutoff: T0 + DAY, relay });
     const out = await runSnapshot({ root, cutoff: T0 + 3 * DAY, relay });
     const snap = JSON.parse(read(out.path));
-    expect(snap.previous).toBe('snapshots/season_1/2026-10-02.json');
+    expect(snap.previous).toBe('snapshots/smash_sp/season_1/2026-10-02.json');
     expect(Object.values(snap.players).map((p: any) => p.matches)).toEqual([1, 1]);
     expect(snap.inputs.event_count).toBe(0);
   });
@@ -113,7 +113,7 @@ describe('runSnapshot', () => {
     const out = await runSnapshot({ root, cutoff: T0 + DAY, relay });
     writeFileSync(join(root, out.path), read(out.path).replace('"wins": 1', '"wins": 9'));
     await expect(runSnapshot({ root, cutoff: T0 + 3 * DAY, relay })).rejects.toThrow(
-      'sha256 mismatch: snapshots/season_1/2026-10-02.json does not match snapshots/latest.json',
+      'sha256 mismatch: snapshots/smash_sp/season_1/2026-10-02.json does not match snapshots/smash_sp/latest.json',
     );
   });
 
@@ -139,11 +139,11 @@ describe('runSnapshot', () => {
     await runSnapshot({ root, cutoff: T0 + DAY, relay });
     const s2 = 1_798_729_200; // シーズン2の開始（2027-01-01 JST）
     const out = await runSnapshot({ root, cutoff: s2 + DAY, relay, now: () => s2 + 2 * DAY });
-    expect(out.path).toBe('snapshots/season_1/final.json');
+    expect(out.path).toBe('snapshots/smash_sp/season_1/final.json');
     const final = JSON.parse(read(out.path));
-    expect([final.kind, final.season, final.cutoff, final.previous]).toEqual(['final', 1, s2, 'snapshots/season_1/2026-10-02.json']);
+    expect([final.kind, final.season, final.cutoff, final.previous]).toEqual(['final', 1, s2, 'snapshots/smash_sp/season_1/2026-10-02.json']);
     expect(Object.values(final.season_summaries['1']).map((x: any) => [x.matches, x.wins, x.losses]).sort()).toEqual([[1, 0, 1], [1, 1, 0]]);
-    expect(JSON.parse(read('snapshots/latest.json')).path).toBe('snapshots/season_1/final.json');
+    expect(JSON.parse(read('snapshots/smash_sp/latest.json')).path).toBe('snapshots/smash_sp/season_1/final.json');
   });
 
   test('the next run starts the new season from zero and keeps the summaries', async () => {
@@ -152,10 +152,10 @@ describe('runSnapshot', () => {
     const s2 = 1_798_729_200;
     await runSnapshot({ root, cutoff: s2 + DAY, relay, now: () => s2 + 2 * DAY });
     const out = await runSnapshot({ root, cutoff: s2 + DAY, relay, now: () => s2 + 2 * DAY });
-    expect(out.path).toBe('snapshots/season_2/2027-01-02.json');
+    expect(out.path).toBe('snapshots/smash_sp/season_2/2027-01-02.json');
     const next = JSON.parse(read(out.path));
-    expect([next.season, next.previous, next.players]).toEqual([2, 'snapshots/season_1/final.json', {}]);
-    expect(next.season_summaries).toEqual(JSON.parse(read('snapshots/season_1/final.json')).season_summaries);
+    expect([next.season, next.previous, next.players]).toEqual([2, 'snapshots/smash_sp/season_1/final.json', {}]);
+    expect(next.season_summaries).toEqual(JSON.parse(read('snapshots/smash_sp/season_1/final.json')).season_summaries);
   });
 
   test('rating settings may change between the final snapshot and the new season, but not later', async () => {

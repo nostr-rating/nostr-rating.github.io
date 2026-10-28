@@ -12,17 +12,17 @@ function routesFor(me: string, old: string, oldOwner: string): Record<string, un
   const base = initialState(def, 2, SNAP_CUTOFF);
   const state = {
     ...base,
-    seasonSummaries: { '1': { [old]: { finalRating: 1712, peakRating: 1780, matches: 30, wins: 20, losses: 10 } } },
+    seasonSummaries: { '1': { [old]: { finalRating: 1712, peakRating: 1780, matches: 30, wins: 20, losses: 10, draws: 0 } } },
     accounts: {
       [old]: { name: 'むかし', claims: [{ platform: 'github' as const, identity: 'Alice', proof: 'aa1' }], eventId: 'e'.repeat(64), createdAt: 1 },
       [me]: { name: 'いま', claims: [{ platform: 'github' as const, identity: 'alice', proof: 'bb2' }], eventId: 'f'.repeat(64), createdAt: 2 },
     },
   };
   const text = serializeSnapshot(stateToSnapshot(state, { game: 'smash_sp', previous: null, previousSha256: null, eventIds: [], configSha256: 'x' }));
-  const path = 'snapshots/season_2/x.json';
+  const path = 'snapshots/smash_sp/season_2/x.json';
   const gist = (owner: string, aid: string) => ({ owner: { login: owner }, files: { f: { content: verificationText(aid) } } });
   return {
-    [`${BASE}snapshots/latest.json`]: { path, sha256: sha256Hex(text) },
+    [`${BASE}snapshots/smash_sp/latest.json`]: { path, sha256: sha256Hex(text) },
     [`${BASE}${path}`]: text,
     'https://api.github.com/gists/aa1': gist(oldOwner, old),
     'https://api.github.com/gists/bb2': gist('alice', me),

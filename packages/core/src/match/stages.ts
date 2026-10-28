@@ -4,9 +4,16 @@ import type { FighterId, StageId } from '../types.js';
 /** 相手のファイター（banGroupKey で正規化）→ 拒否するステージ */
 export type StageBans = Record<FighterId, StageId[]>;
 
+/** ステージのあるゲームの定義から、ステージの決まりを取り出す（ないゲームで呼ぶのは誤り） */
+function stagesOf(def: GameDefinition): NonNullable<GameDefinition['stages']> {
+  if (!def.stages) throw new Error(`${def.id} has no stages`);
+  return def.stages;
+}
+
 export function validateStageBans(def: GameDefinition, bans: StageBans): string[] {
   const errors: string[] = [];
-  const fighterIds = new Set(def.fighters.map((f) => f.id));
+  if (!def.stages || !def.characters) return Object.keys(bans).length === 0 ? [] : ['このゲームには拒否ステージがありません'];
+  const fighterIds = new Set(def.characters.list.map((f) => f.id));
   const allowed = new Set<string>(def.stages.counterpick);
   for (const [fighter, stages] of Object.entries(bans)) {
     if (!fighterIds.has(fighter)) {
@@ -34,6 +41,7 @@ export function validateStageBans(def: GameDefinition, bans: StageBans): string[
 
 /** 相手の改造クライアントが上限を超えて拒否しても、既知のステージを先頭から上限数までしか効かせない */
 export function bansAgainst(def: GameDefinition, bans: StageBans, opponentFighter: FighterId): StageId[] {
+  if (!def.stages) return [];
   const raw = bans[banGroupKey(def, opponentFighter)];
   if (!Array.isArray(raw)) return [];
   const known = new Set<string>(def.stages.counterpick);
@@ -41,7 +49,7 @@ export function bansAgainst(def: GameDefinition, bans: StageBans, opponentFighte
 }
 
 function inStageOrder(def: GameDefinition, pool: readonly StageId[], excluded: readonly StageId[]): StageId[] {
-  return def.stages.all.map((s) => s.id).filter((id) => pool.includes(id) && !excluded.includes(id));
+  return stagesOf(def).all.map((s) => s.id).filter((id) => pool.includes(id) && !excluded.includes(id));
 }
 
 /** 1戦目: 双方が相手の1戦目のキャラに対して設定した拒否ステージを除く */
@@ -49,7 +57,7 @@ export function game1Stages(
   def: GameDefinition,
   p: { p1Fighter: FighterId; p2Fighter: FighterId; p1Bans: StageBans; p2Bans: StageBans },
 ): StageId[] {
-  return inStageOrder(def, def.stages.starter, [
+  return inStageOrder(def, stagesOf(def).starter, [
     ...bansAgainst(def, p.p1Bans, p.p2Fighter),
     ...bansAgainst(def, p.p2Bans, p.p1Fighter),
   ]);
@@ -60,5 +68,5 @@ export function counterpickStages(
   def: GameDefinition,
   p: { winnerBans: StageBans; loserFighter: FighterId },
 ): StageId[] {
-  return inStageOrder(def, def.stages.counterpick, bansAgainst(def, p.winnerBans, p.loserFighter));
+  return inStageOrder(def, stagesOf(def).counterpick, bansAgainst(def, p.winnerBans, p.loserFighter));
 }

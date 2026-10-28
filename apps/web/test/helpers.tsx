@@ -17,11 +17,13 @@ import {
 import { render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import rawDef from '../../../configs/smash_sp.json';
+import rawChess from '../../../configs/chess.json';
 import { Account, memoryKeyStore } from '../src/account/account.js';
 import { AppProvider, type AppDeps } from '../src/state/AppContext.js';
 import { MemoryEventStore } from '../src/storage/memory.js';
 
 export const def = parseGameDefinition(rawDef);
+export const chess = parseGameDefinition(rawChess);
 export const BASE = 'https://example.test/';
 export const SNAP_CUTOFF = 1_793_026_800;
 
@@ -29,9 +31,9 @@ export function snapshotRoutes(): Record<string, unknown> {
   const text = serializeSnapshot(
     stateToSnapshot(initialState(def, 1, SNAP_CUTOFF), { game: 'smash_sp', previous: null, previousSha256: null, eventIds: [], configSha256: 'x' }),
   );
-  const path = 'snapshots/season_1/2026-10-27.json';
+  const path = 'snapshots/smash_sp/season_1/2026-10-27.json';
   return {
-    [`${BASE}snapshots/latest.json`]: { path, sha256: sha256Hex(text) },
+    [`${BASE}snapshots/smash_sp/latest.json`]: { path, sha256: sha256Hex(text) },
     [`${BASE}${path}`]: text,
   };
 }
@@ -49,7 +51,7 @@ export function stubFetch(routes: Record<string, unknown>): typeof fetch {
 export function makeDeps(o: { relay?: MemoryRelay; routes?: Record<string, unknown>; now?: () => number } = {}): AppDeps {
   const now = o.now ?? (() => SNAP_CUTOFF + 3600);
   return {
-    def,
+    games: [def, chess],
     relay: o.relay ?? new MemoryRelay(now),
     store: new MemoryEventStore(),
     // routes は後から追加できるよう、渡されたオブジェクトをそのまま使う
@@ -78,7 +80,7 @@ export async function newPlayer(
   if (!o.keepWords) await account.confirmWords();
   const session = await account.session();
   if (o.claims || o.name) {
-    await relay.publish(await session.signer.signEvent(buildAccountInfo('smash_sp', { pubkey: account.aid, name: o.name ?? '', claims: o.claims ?? [] }, now())));
+    await relay.publish(await session.signer.signEvent(buildAccountInfo({ pubkey: account.aid, name: o.name ?? '', claims: o.claims ?? [] }, now())));
   }
   return { account, keyStore, words, aid: account.aid, signer: session.signer, session };
 }
@@ -95,18 +97,21 @@ export async function matchBetween(
   relay: RelayClient,
   a: Player,
   b: Player,
-  o: { at?: number; bansA?: Record<string, string[]>; bansB?: Record<string, string[]> } = {},
+  o: { at?: number; bansA?: Record<string, string[]>; bansB?: Record<string, string[]>; game?: string } = {},
 ): Promise<MatchRecord> {
   const t = o.at ?? Math.floor(Date.now() / 1000) - 30;
+  const game = o.game ?? 'smash_sp';
+  // キャラのないゲームでは、キャラの欄を空にする
+  const [fa, fb] = game === 'smash_sp' ? ['fox', 'mario'] : ['', ''];
   const [sa, sb] = [await a.signer.getPublicKey(), await b.signer.getPublicKey()];
-  const setA = await a.signer.signEvent(buildSettings('smash_sp', { stageBans: (o.bansA ?? { mario: ['final_destination'] }) as never, rangeChoice: null, rematchHours: 0 }, t - 10));
-  const setB = await b.signer.signEvent(buildSettings('smash_sp', { stageBans: (o.bansB ?? {}) as never, rangeChoice: null, rematchHours: 0 }, t - 10));
+  const setA = await a.signer.signEvent(buildSettings(game, { stageBans: (o.bansA ?? (game === 'smash_sp' ? { mario: ['final_destination'] } : {})) as never, rangeChoice: null, rematchHours: 0 }, t - 10));
+  const setB = await b.signer.signEvent(buildSettings(game, { stageBans: (o.bansB ?? {}) as never, rangeChoice: null, rematchHours: 0 }, t - 10));
   const app = await b.signer.signEvent(
-    buildApplication('smash_sp', { recruiter: a.aid, recruiterSession: sa, firstFighter: 'mario', settingsId: setB.id, rangeChoice: null, rematchHours: 0, waitingSince: t - 5 }, t - 1),
+    buildApplication(game, { recruiter: a.aid, recruiterSession: sa, firstFighter: fb, settingsId: setB.id, rangeChoice: null, rematchHours: 0, waitingSince: t - 5 }, t - 1),
   );
   const mev = await a.signer.signEvent(
-    buildMatch('smash_sp', { p1: a.aid, p2: b.aid, p1Fighter: 'fox', p2Fighter: 'mario', p1SettingsId: setA.id, p2SettingsId: setB.id, applicationId: app.id, sessions: [sa, sb] }, t),
+    buildMatch(game, { p1: a.aid, p2: b.aid, p1Fighter: fa, p2Fighter: fb, p1SettingsId: setA.id, p2SettingsId: setB.id, applicationId: app.id, sessions: [sa, sb] }, t),
   );
   for (const e of [setA, setB, app, mev]) await relay.publish(e);
-  return parseMatch('smash_sp', mev, a.aid)!;
+  return parseMatch(game, mev, a.aid)!;
 }

@@ -2,6 +2,7 @@ import { KIND, MemoryRelay } from '@nostr-rating/core';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, test } from 'vitest';
+import { App } from '../src/App.js';
 import { Lobby } from '../src/pages/Lobby.js';
 import { Ranking } from '../src/pages/Ranking.js';
 import { makeDeps, newPlayer, renderWithApp } from './helpers.js';
@@ -85,5 +86,35 @@ describe('Ranking', () => {
   test('shows an empty state without rated players', async () => {
     renderWithApp(<Ranking />);
     expect(await screen.findByText('まだ対戦記録がありません。')).toBeTruthy();
+  });
+});
+
+describe('game select', () => {
+  test('choosing chess hides the character select, recruits for chess and is remembered', async () => {
+    const user = userEvent.setup();
+    localStorage.clear();
+    location.hash = '#/lobby';
+    const relay = new MemoryRelay(realNow);
+    const a = await userWithIdentity(relay);
+    const view = renderWithApp(<App />, { deps: makeDeps({ relay, now: realNow }), account: a });
+    const select = (await screen.findByLabelText('ゲーム')) as HTMLSelectElement;
+    expect(select.value).toBe('smash_sp');
+    expect(await screen.findByLabelText('1戦目に使うキャラ')).toBeTruthy();
+
+    await user.selectOptions(select, 'chess');
+    await waitFor(() => expect(screen.queryByLabelText('1戦目に使うキャラ')).toBeNull());
+    await user.click(await screen.findByRole('button', { name: '対戦相手を探す' }));
+    await waitFor(() => expect(relay.all().filter((e) => e.kind === KIND.recruitment)).toHaveLength(1));
+    const rec = relay.all().find((e) => e.kind === KIND.recruitment)!;
+    expect(rec.tags.find((t) => t[0] === 'd')).toEqual(['d', 'chess']);
+    expect(JSON.parse(rec.content).firstFighter).toBe('');
+    // 待っている間は、ゲームを切り替えられない
+    expect(select.disabled).toBe(true);
+    await user.click(screen.getByRole('button', { name: 'やめる' }));
+    view.unmount();
+
+    // 開き直すと、最後に選んだゲームで始まる
+    renderWithApp(<App />, { deps: makeDeps({ relay, now: realNow }), account: a });
+    expect(((await screen.findByLabelText('ゲーム')) as HTMLSelectElement).value).toBe('chess');
   });
 });

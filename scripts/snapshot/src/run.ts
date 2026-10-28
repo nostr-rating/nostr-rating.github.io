@@ -29,7 +29,8 @@ export interface RunOptions {
   now?: () => number;
 }
 
-const LATEST = 'snapshots/latest.json';
+/** ゲームごとに snapshots/<game>/ の下に置く（docs/adr/0010） */
+const latestOf = (game: string) => `snapshots/${game}/latest.json`;
 
 /** cutoff の JST の日付（YYYY-MM-DD） */
 function jstDate(unix: number): string {
@@ -44,12 +45,12 @@ interface Previous {
   kind: Snapshot['kind'];
 }
 
-function loadPrevious(root: string): Previous | null {
-  const latestPath = join(root, LATEST);
+function loadPrevious(root: string, game: string): Previous | null {
+  const latestPath = join(root, latestOf(game));
   if (!existsSync(latestPath)) return null;
   const pointer = JSON.parse(readFileSync(latestPath, 'utf8')) as LatestPointer;
   const text = readFileSync(join(root, pointer.path), 'utf8');
-  if (sha256Hex(text) !== pointer.sha256) throw new Error(`sha256 mismatch: ${pointer.path} does not match ${LATEST}`);
+  if (sha256Hex(text) !== pointer.sha256) throw new Error(`sha256 mismatch: ${pointer.path} does not match ${latestOf(game)}`);
   const snapshot = JSON.parse(text) as Snapshot;
   return {
     state: snapshotToState(snapshot),
@@ -70,13 +71,13 @@ async function advance(def: GameDefinition, relay: RelayClient, prev: RatingStat
   return { ...advanceRatings(def, prev, events, cutoff, { exclude: incomplete }), excluded };
 }
 
-function write(root: string, path: string, snapshot: Snapshot, usedEventIds: string[]): void {
+function write(root: string, game: string, path: string, snapshot: Snapshot, usedEventIds: string[]): void {
   const text = serializeSnapshot(snapshot);
   mkdirSync(dirname(join(root, path)), { recursive: true });
   writeFileSync(join(root, path), text);
   writeFileSync(join(root, path.replace(/\.json$/, '.ids.txt')), usedEventIds.map((id) => `${id}\n`).join(''));
   const pointer: LatestPointer = { path, sha256: sha256Hex(text) };
-  writeFileSync(join(root, LATEST), `${JSON.stringify(pointer, null, 2)}\n`);
+  writeFileSync(join(root, latestOf(game)), `${JSON.stringify(pointer, null, 2)}\n`);
 }
 
 /**
@@ -96,7 +97,7 @@ export async function runSnapshot(opts: RunOptions): Promise<{ path: string; sna
   const season = currentSeason(def, opts.cutoff);
   if (!season) throw new Error(`cutoff ${opts.cutoff} is before the first season`);
 
-  const prev = loadPrevious(opts.root);
+  const prev = loadPrevious(opts.root, def.id);
   const configSha256 = ratingConfigHash(def);
   const meta = (eventIds: string[], kind: Snapshot['kind'], excluded: string[]) => ({
     game: def.id,
@@ -117,9 +118,9 @@ export async function runSnapshot(opts: RunOptions): Promise<{ path: string; sna
     const ended = seasonById(def, prev.state.season);
     const { state, usedEventIds, excluded } = await advance(def, opts.relay, prev.state, ended.endsAt);
     const finalState = { ...state, seasonSummaries: summarizeSeason(state) };
-    const path = `snapshots/season_${ended.id}/final.json`;
+    const path = `snapshots/${def.id}/season_${ended.id}/final.json`;
     const snapshot = stateToSnapshot(finalState, meta(usedEventIds, 'final', excluded));
-    write(opts.root, path, snapshot, usedEventIds);
+    write(opts.root, def.id, path, snapshot, usedEventIds);
     return { path, snapshot };
   }
 
@@ -135,9 +136,18 @@ export async function runSnapshot(opts: RunOptions): Promise<{ path: string; sna
   }
 
   const { state, usedEventIds, excluded } = await advance(def, opts.relay, start, opts.cutoff);
-  const path = `snapshots/season_${season.id}/${jstDate(opts.cutoff)}.json`;
+  const path = `snapshots/${def.id}/season_${season.id}/${jstDate(opts.cutoff)}.json`;
   if (prev?.path === path) throw new Error(`${path} is the previous snapshot; use a cutoff on a later date`);
   const snapshot = stateToSnapshot(state, meta(usedEventIds, 'rolling', excluded));
-  write(opts.root, path, snapshot, usedEventIds);
+  write(opts.root, def.id, path, snapshot, usedEventIds);
   return { path, snapshot };
+}
+
+/** configs/games.json にあるゲームの id */
+export function listGames(root: string): string[] {
+  const j = JSON.parse(readFileSync(join(root, 'configs/games.json'), 'utf8')) as { games?: unknown };
+  if (!Array.isArray(j.games) || !j.games.every((g) => typeof g === 'string' && /^[a-z0-9_]{1,32}$/.test(g))) {
+    throw new Error('configs/games.json must be { "games": ["<id>", ...] }');
+  }
+  return j.games as string[];
 }

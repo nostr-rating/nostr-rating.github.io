@@ -300,7 +300,7 @@ export class Matchmaker {
     let ok = false;
     for (const e of evs) {
       const by = await author(e);
-      if (by === pk && (parseAccountInfo(def.id, e, by)?.claims.length ?? 0) > 0) ok = true;
+      if (by === pk && (parseAccountInfo(e, by)?.claims.length ?? 0) > 0) ok = true;
     }
     this.#identityCache.set(pk, ok);
     return ok;

@@ -4,6 +4,8 @@ import type { Pubkey } from '../types.js';
 export type Settlement =
   | { status: 'pending' }
   | { status: 'confirmed'; winner: Pubkey; loser: Pubkey; settledAt: number }
+  /** 双方が引き分けを報告した（引き分けがあるゲームだけ） */
+  | { status: 'drawn'; settledAt: number }
   | { status: 'cancelled'; settledAt: number }
   | { status: 'mismatch'; settledAt: number }
   | { status: 'no_report'; settledAt: number; missing: Pubkey[] };
@@ -20,7 +22,7 @@ export interface MannersCount {
  * 判定するので、日時を遡らせた報告を後から足しても確定は覆らない。
  * 締め切り（createdAt + deadlineSec）までにそろわなければ、最新報告から食い違い／未報告とする。
  */
-export function settleMatch(match: MatchRecord, reports: ResultReport[], now: number, deadlineSec: number): Settlement {
+export function settleMatch(match: MatchRecord, reports: ResultReport[], now: number, deadlineSec: number, allowDraw = false): Settlement {
   const deadline = match.createdAt + deadlineSec;
   const valid = reports
     .filter(
@@ -29,7 +31,9 @@ export function settleMatch(match: MatchRecord, reports: ResultReport[], now: nu
         (r.reporter === match.p1 || r.reporter === match.p2) &&
         r.createdAt >= match.createdAt &&
         r.createdAt <= deadline &&
-        r.createdAt <= now,
+        r.createdAt <= now &&
+        // 引き分けのないゲームでは、引き分けの報告はなかったものとする
+        (allowDraw || r.result !== 'draw'),
     )
     .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
@@ -44,6 +48,7 @@ export function settleMatch(match: MatchRecord, reports: ResultReport[], now: nu
     if (r.result === 'win' && theirs.has('lose')) return { status: 'confirmed', winner: r.reporter, loser: other, settledAt: r.createdAt };
     if (r.result === 'lose' && theirs.has('win')) return { status: 'confirmed', winner: other, loser: r.reporter, settledAt: r.createdAt };
     if (r.result === 'cancel' && theirs.has('cancel')) return { status: 'cancelled', settledAt: r.createdAt };
+    if (r.result === 'draw' && theirs.has('draw')) return { status: 'drawn', settledAt: r.createdAt };
   }
 
   if (now < deadline) return { status: 'pending' };

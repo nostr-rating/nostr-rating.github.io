@@ -47,6 +47,7 @@ describe('advanceRatings', () => {
       matches: 1,
       wins: 1,
       losses: 0,
+      draws: 0,
       manners: { noReport: 0, cancel: 0, mismatch: 0 },
       lastMatchAt: T0,
       hasIdentity: true,
@@ -59,6 +60,7 @@ describe('advanceRatings', () => {
       matches: 1,
       wins: 0,
       losses: 1,
+      draws: 0,
       manners: { noReport: 0, cancel: 0, mismatch: 0 },
       lastMatchAt: T0,
       hasIdentity: true,
@@ -197,7 +199,7 @@ describe('advanceRatings', () => {
 
   test('account info without claims does not count as linked', async () => {
     const dave = newUser();
-    const empty = await dave.signer.signEvent(buildAccountInfo('smash_sp', { pubkey: dave.pk, name: 'dave', claims: [] }, T0 - 5));
+    const empty = await dave.signer.signEvent(buildAccountInfo({ pubkey: dave.pk, name: 'dave', claims: [] }, T0 - 5));
     const { state } = advanceRatings(def, s0(), [...ids, empty, ...(await p1Wins(alice, dave, T0))], after(T0));
     expect(state.players[dave.pk]?.hasIdentity ?? false).toBe(false);
   });

@@ -53,56 +53,60 @@ export function Settings() {
     }
   };
 
-  const fighterName = (id: string) => def.fighters.find((f) => f.id === id)?.name ?? id;
-  const stageName = (id: string) => def.stages.all.find((s) => s.id === id)?.name ?? id;
+  // 拒否ステージは、ステージとキャラのあるゲームだけ（docs/adr/0010）
+  const { stages, characters } = def;
+  const fighterName = (id: string) => characters?.list.find((f) => f.id === id)?.name ?? id;
+  const stageName = (id: string) => stages?.all.find((s) => s.id === id)?.name ?? id;
 
   return (
     <section>
-      <div className="card stack">
-        <h2>拒否ステージ</h2>
-        <p className="muted">相手のキャラごとに、戦いたくないステージを{def.stages.maxBansPerFighter}つまで設定できます。変更は次の対戦から反映されます。</p>
-        <label htmlFor="ban-fighter">相手のファイター</label>
-        <select id="ban-fighter" value={fighter} onChange={(e) => setFighter(e.target.value)}>
-          <option value="">選んでください</option>
-          {def.fighters.map((f) => (
-            <option key={f.id} value={f.id}>{f.name}</option>
+      {stages && characters && (
+        <div className="card stack">
+          <h2>拒否ステージ</h2>
+          <p className="muted">相手のキャラごとに、戦いたくないステージを{stages.maxBansPerFighter}つまで設定できます。変更は次の対戦から反映されます。</p>
+          <label htmlFor="ban-fighter">相手のファイター</label>
+          <select id="ban-fighter" value={fighter} onChange={(e) => setFighter(e.target.value)}>
+            <option value="">選んでください</option>
+            {characters.list.map((f) => (
+              <option key={f.id} value={f.id}>{f.name}</option>
+            ))}
+          </select>
+          {key && (
+            <div className="chips">
+              {stages.counterpick.map((s) => {
+                const on = current.includes(s);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`chip ${on ? 'on' : ''}`}
+                    aria-pressed={on}
+                    disabled={!on && current.length >= stages.maxBansPerFighter}
+                    onClick={() => toggle(s)}
+                  >
+                    {stageName(s)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {Object.keys(bans).length > 0 && (
+            <table>
+              <tbody>
+                {Object.entries(bans).map(([f, ss]) => (
+                  <tr key={f}>
+                    <td>{[f, ...(characters.sharedBanGroups.find((g) => g[0] === f)?.slice(1) ?? [])].map(fighterName).join('／')}</td>
+                    <td>{ss.map(stageName).join('、')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {errors.map((e) => (
+            <p key={e} className="error">{e}</p>
           ))}
-        </select>
-        {key && (
-          <div className="chips">
-            {def.stages.counterpick.map((s) => {
-              const on = current.includes(s);
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  className={`chip ${on ? 'on' : ''}`}
-                  aria-pressed={on}
-                  disabled={!on && current.length >= def.stages.maxBansPerFighter}
-                  onClick={() => toggle(s)}
-                >
-                  {stageName(s)}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        {Object.keys(bans).length > 0 && (
-          <table>
-            <tbody>
-              {Object.entries(bans).map(([f, ss]) => (
-                <tr key={f}>
-                  <td>{[f, ...(def.sharedBanGroups.find((g) => g[0] === f)?.slice(1) ?? [])].map(fighterName).join('／')}</td>
-                  <td>{ss.map(stageName).join('、')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {errors.map((e) => (
-          <p key={e} className="error">{e}</p>
-        ))}
-      </div>
+        </div>
+      )}
 
       <div className="card stack">
         <h2>対戦設定</h2>

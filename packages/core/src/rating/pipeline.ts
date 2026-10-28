@@ -23,6 +23,7 @@ export interface PlayerState extends PlayerRating {
   matches: number;
   wins: number;
   losses: number;
+  draws: number;
   manners: MannersCount;
   lastMatchAt: number | null;
   hasIdentity: boolean;
@@ -43,6 +44,7 @@ export interface SeasonSummary {
   matches: number;
   wins: number;
   losses: number;
+  draws: number;
 }
 
 export interface RatingState {
@@ -82,7 +84,7 @@ export function summarizeSeason(state: RatingState): RatingState['seasonSummarie
   const summary: Record<Pubkey, SeasonSummary> = {};
   for (const [pk, p] of Object.entries(state.players)) {
     if (p.matches === 0) continue;
-    summary[pk] = { finalRating: p.rating, peakRating: p.peakRating, matches: p.matches, wins: p.wins, losses: p.losses };
+    summary[pk] = { finalRating: p.rating, peakRating: p.peakRating, matches: p.matches, wins: p.wins, losses: p.losses, draws: p.draws };
   }
   return { ...state.seasonSummaries, [String(state.season)]: summary };
 }
@@ -96,6 +98,7 @@ function initialPlayer(def: GameDefinition): PlayerState {
     matches: 0,
     wins: 0,
     losses: 0,
+    draws: 0,
     manners: { noReport: 0, cancel: 0, mismatch: 0 },
     lastMatchAt: null,
     hasIdentity: false,
@@ -161,7 +164,7 @@ function collect(def: GameDefinition, season: number, events: NostrEvent[], auth
   for (const ev of unique) {
     const by = author(ev);
     if (!by) continue;
-    const ids = parseAccountInfo(def.id, ev, by);
+    const ids = parseAccountInfo(ev, by);
     if (ids) {
       const last = latest.get(ids.pubkey);
       if (ids.createdAt <= until && (!last || byTimeThenId({ createdAt: last.createdAt, id: last.eventId }, { createdAt: ids.createdAt, id: ids.eventId }) < 0)) {
@@ -249,7 +252,7 @@ class Applier {
       for (const r of reports) if (r.createdAt <= deadline) this.used.add(r.id);
     };
 
-    if (s.status !== 'confirmed') {
+    if (s.status !== 'confirmed' && s.status !== 'drawn') {
       if (!mannersToo) return;
       for (const [pk, d] of Object.entries(mannersDelta(m, s))) {
         const p = this.player(pk);
@@ -259,8 +262,11 @@ class Applier {
       return;
     }
 
-    const w = this.player(s.winner);
-    const l = this.player(s.loser);
+    // 引き分けは、どちらを「勝者側」に置いても同じ結果になる（どちらも 0.5）
+    const [winnerPk, loserPk] = s.status === 'confirmed' ? [s.winner, s.loser] : [m.p1, m.p2];
+    const drawn = s.status === 'drawn';
+    const w = this.player(winnerPk);
+    const l = this.player(loserPk);
     if (!w.hasIdentity || !l.hasIdentity) return;
 
     const { def } = this;
@@ -268,10 +274,10 @@ class Applier {
     const idle = (p: PlayerState) => (p.lastMatchAt === null ? 0 : Math.floor((t - p.lastMatchAt) / def.rating.inactivityPeriodSec));
     const w0 = inflateRd(w, idle(w), def.rating.initialRd);
     const l0 = inflateRd(l, idle(l), def.rating.initialRd);
-    const w1 = glicko2Update(w0, [{ opponent: l0, score: 1 }], def.rating.tau);
-    const l1 = glicko2Update(l0, [{ opponent: w0, score: 0 }], def.rating.tau);
+    const w1 = glicko2Update(w0, [{ opponent: l0, score: drawn ? 0.5 : 1 }], def.rating.tau);
+    const l1 = glicko2Update(l0, [{ opponent: w0, score: drawn ? 0.5 : 0 }], def.rating.tau);
 
-    const [a, b] = pairKey(s.winner, s.loser);
+    const [a, b] = pairKey(winnerPk, loserPk);
     const n = this.recentPairs.filter((p) => p.a === a && p.b === b && t - p.settledAt < def.rematchWeight.windowSec).length;
     const weights = def.rematchWeight.weights;
     const weight = weights[Math.min(n, weights.length - 1)]!;
@@ -279,7 +285,8 @@ class Applier {
     const update = (p: PlayerState, before: PlayerRating, after: PlayerRating, won: boolean) => {
       Object.assign(p, applyWeight(before, after, weight));
       p.matches += 1;
-      if (won) p.wins += 1;
+      if (drawn) p.draws += 1;
+      else if (won) p.wins += 1;
       else p.losses += 1;
       p.peakRating = Math.max(p.peakRating, p.rating);
       p.lastMatchAt = t;
@@ -320,7 +327,7 @@ export function advanceRatings(
   for (const l of linked) {
     const deadline = l.match.createdAt + def.report.deadlineSec;
     if (deadline <= prev.cutoff || deadline > cutoff) continue;
-    const s = settleMatch(l.match, l.reports, deadline, def.report.deadlineSec);
+    const s = settleMatch(l.match, l.reports, deadline, def.report.deadlineSec, def.results.draw);
     if (s.status !== 'pending') ap.apply(l, s, true);
   }
 
@@ -351,8 +358,8 @@ export function provisionalRatings(def: GameDefinition, state: RatingState, even
   ap.markIdentities(identities);
   for (const l of linked) {
     if (l.match.createdAt + def.report.deadlineSec <= state.cutoff) continue;
-    const s = settleMatch(l.match, l.reports, now, def.report.deadlineSec);
-    if (s.status === 'confirmed') ap.apply(l, s, false);
+    const s = settleMatch(l.match, l.reports, now, def.report.deadlineSec, def.results.draw);
+    if (s.status === 'confirmed' || s.status === 'drawn') ap.apply(l, s, false);
   }
   return { ...state, players: ap.players, recentPairs: ap.recentPairs, kels: book.records, accounts: mergeAccounts(state.accounts, latest) };
 }

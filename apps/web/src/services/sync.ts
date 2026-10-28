@@ -21,7 +21,7 @@ export interface SyncDeps {
   relay: RelayClient;
   store: EventStore;
   fetchFn: typeof fetch;
-  /** snapshots/latest.json を持つ取得元（末尾 /） */
+  /** snapshots/<game>/latest.json を持つ取得元（末尾 /） */
   base: string;
   now: () => number;
 }
@@ -42,7 +42,7 @@ export async function syncRatings(
   deps: SyncDeps,
 ): Promise<{ state: RatingState; shown: RatingState; snapshotCutoff: number }> {
   const { def, relay, store, fetchFn, base, now } = deps;
-  const pointer = JSON.parse(await fetchText(fetchFn, `${base}snapshots/latest.json`)) as LatestPointer;
+  const pointer = JSON.parse(await fetchText(fetchFn, `${base}snapshots/${def.id}/latest.json`)) as LatestPointer;
   const text = await fetchText(fetchFn, `${base}${pointer.path}`);
   if (sha256Hex(text) !== pointer.sha256) throw new Error(`sha256 mismatch: ${pointer.path}`);
   const snapshot = JSON.parse(text) as Snapshot;

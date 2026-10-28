@@ -3,10 +3,20 @@
   "name": "大乱闘スマッシュブラザーズ SPECIAL",
   "format": {
     "bestOf": 3,
-    "stock": 3,
-    "timeLimitSec": 420
+    "notes": [
+      "ストック3",
+      "制限時間7分"
+    ]
   },
+  "results": {
+    "draw": false
+  },
+  "sides": [
+    "P1",
+    "P2"
+  ],
   "room": {
+    "kind": "code",
     "defaultPassword": "1122",
     "roomIdPattern": "^[A-Za-z0-9]{5}$",
     "maxPlayers": 2,
@@ -17,366 +27,368 @@
       "「終点」「戦場」は、終点化・戦場化したステージとしても選べます"
     ]
   },
-  "fighters": [
-    {
-      "id": "mario",
-      "name": "マリオ"
-    },
-    {
-      "id": "donkey_kong",
-      "name": "ドンキーコング"
-    },
-    {
-      "id": "link",
-      "name": "リンク"
-    },
-    {
-      "id": "samus",
-      "name": "サムス"
-    },
-    {
-      "id": "dark_samus",
-      "name": "ダークサムス"
-    },
-    {
-      "id": "yoshi",
-      "name": "ヨッシー"
-    },
-    {
-      "id": "kirby",
-      "name": "カービィ"
-    },
-    {
-      "id": "fox",
-      "name": "フォックス"
-    },
-    {
-      "id": "pikachu",
-      "name": "ピカチュウ"
-    },
-    {
-      "id": "luigi",
-      "name": "ルイージ"
-    },
-    {
-      "id": "ness",
-      "name": "ネス"
-    },
-    {
-      "id": "captain_falcon",
-      "name": "キャプテン・ファルコン"
-    },
-    {
-      "id": "jigglypuff",
-      "name": "プリン"
-    },
-    {
-      "id": "peach",
-      "name": "ピーチ"
-    },
-    {
-      "id": "daisy",
-      "name": "デイジー"
-    },
-    {
-      "id": "bowser",
-      "name": "クッパ"
-    },
-    {
-      "id": "ice_climbers",
-      "name": "アイスクライマー"
-    },
-    {
-      "id": "sheik",
-      "name": "シーク"
-    },
-    {
-      "id": "zelda",
-      "name": "ゼルダ"
-    },
-    {
-      "id": "dr_mario",
-      "name": "ドクターマリオ"
-    },
-    {
-      "id": "pichu",
-      "name": "ピチュー"
-    },
-    {
-      "id": "falco",
-      "name": "ファルコ"
-    },
-    {
-      "id": "marth",
-      "name": "マルス"
-    },
-    {
-      "id": "lucina",
-      "name": "ルキナ"
-    },
-    {
-      "id": "young_link",
-      "name": "こどもリンク"
-    },
-    {
-      "id": "ganondorf",
-      "name": "ガノンドロフ"
-    },
-    {
-      "id": "mewtwo",
-      "name": "ミュウツー"
-    },
-    {
-      "id": "roy",
-      "name": "ロイ"
-    },
-    {
-      "id": "chrom",
-      "name": "クロム"
-    },
-    {
-      "id": "mr_game_and_watch",
-      "name": "Mr.ゲーム＆ウォッチ"
-    },
-    {
-      "id": "meta_knight",
-      "name": "メタナイト"
-    },
-    {
-      "id": "pit",
-      "name": "ピット"
-    },
-    {
-      "id": "dark_pit",
-      "name": "ブラックピット"
-    },
-    {
-      "id": "zero_suit_samus",
-      "name": "ゼロスーツサムス"
-    },
-    {
-      "id": "wario",
-      "name": "ワリオ"
-    },
-    {
-      "id": "snake",
-      "name": "スネーク"
-    },
-    {
-      "id": "ike",
-      "name": "アイク"
-    },
-    {
-      "id": "pokemon_trainer",
-      "name": "ポケモントレーナー"
-    },
-    {
-      "id": "diddy_kong",
-      "name": "ディディーコング"
-    },
-    {
-      "id": "lucas",
-      "name": "リュカ"
-    },
-    {
-      "id": "sonic",
-      "name": "ソニック"
-    },
-    {
-      "id": "king_dedede",
-      "name": "デデデ"
-    },
-    {
-      "id": "olimar",
-      "name": "ピクミン＆オリマー"
-    },
-    {
-      "id": "lucario",
-      "name": "ルカリオ"
-    },
-    {
-      "id": "rob",
-      "name": "ロボット"
-    },
-    {
-      "id": "toon_link",
-      "name": "トゥーンリンク"
-    },
-    {
-      "id": "wolf",
-      "name": "ウルフ"
-    },
-    {
-      "id": "villager",
-      "name": "むらびと"
-    },
-    {
-      "id": "mega_man",
-      "name": "ロックマン"
-    },
-    {
-      "id": "wii_fit_trainer",
-      "name": "Wii Fit トレーナー"
-    },
-    {
-      "id": "rosalina",
-      "name": "ロゼッタ＆チコ"
-    },
-    {
-      "id": "little_mac",
-      "name": "リトル・マック"
-    },
-    {
-      "id": "greninja",
-      "name": "ゲッコウガ"
-    },
-    {
-      "id": "mii_brawler",
-      "name": "Mii 格闘タイプ"
-    },
-    {
-      "id": "mii_swordfighter",
-      "name": "Mii 剣術タイプ"
-    },
-    {
-      "id": "mii_gunner",
-      "name": "Mii 射撃タイプ"
-    },
-    {
-      "id": "palutena",
-      "name": "パルテナ"
-    },
-    {
-      "id": "pac_man",
-      "name": "パックマン"
-    },
-    {
-      "id": "robin",
-      "name": "ルフレ"
-    },
-    {
-      "id": "shulk",
-      "name": "シュルク"
-    },
-    {
-      "id": "bowser_jr",
-      "name": "クッパJr."
-    },
-    {
-      "id": "duck_hunt",
-      "name": "ダックハント"
-    },
-    {
-      "id": "ryu",
-      "name": "リュウ"
-    },
-    {
-      "id": "ken",
-      "name": "ケン"
-    },
-    {
-      "id": "cloud",
-      "name": "クラウド"
-    },
-    {
-      "id": "corrin",
-      "name": "カムイ"
-    },
-    {
-      "id": "bayonetta",
-      "name": "ベヨネッタ"
-    },
-    {
-      "id": "inkling",
-      "name": "インクリング"
-    },
-    {
-      "id": "ridley",
-      "name": "リドリー"
-    },
-    {
-      "id": "simon",
-      "name": "シモン"
-    },
-    {
-      "id": "richter",
-      "name": "リヒター"
-    },
-    {
-      "id": "king_k_rool",
-      "name": "キングクルール"
-    },
-    {
-      "id": "isabelle",
-      "name": "しずえ"
-    },
-    {
-      "id": "incineroar",
-      "name": "ガオガエン"
-    },
-    {
-      "id": "piranha_plant",
-      "name": "パックンフラワー"
-    },
-    {
-      "id": "joker",
-      "name": "ジョーカー"
-    },
-    {
-      "id": "hero",
-      "name": "勇者"
-    },
-    {
-      "id": "banjo_kazooie",
-      "name": "バンジョー＆カズーイ"
-    },
-    {
-      "id": "terry",
-      "name": "テリー"
-    },
-    {
-      "id": "byleth",
-      "name": "ベレト/ベレス"
-    },
-    {
-      "id": "min_min",
-      "name": "ミェンミェン"
-    },
-    {
-      "id": "steve",
-      "name": "スティーブ/アレックス"
-    },
-    {
-      "id": "sephiroth",
-      "name": "セフィロス"
-    },
-    {
-      "id": "pyra_mythra",
-      "name": "ホムラ/ヒカリ"
-    },
-    {
-      "id": "kazuya",
-      "name": "カズヤ"
-    },
-    {
-      "id": "sora",
-      "name": "ソラ"
-    }
-  ],
-  "sharedBanGroups": [
-    [
-      "peach",
-      "daisy"
+  "characters": {
+    "list": [
+      {
+        "id": "mario",
+        "name": "マリオ"
+      },
+      {
+        "id": "donkey_kong",
+        "name": "ドンキーコング"
+      },
+      {
+        "id": "link",
+        "name": "リンク"
+      },
+      {
+        "id": "samus",
+        "name": "サムス"
+      },
+      {
+        "id": "dark_samus",
+        "name": "ダークサムス"
+      },
+      {
+        "id": "yoshi",
+        "name": "ヨッシー"
+      },
+      {
+        "id": "kirby",
+        "name": "カービィ"
+      },
+      {
+        "id": "fox",
+        "name": "フォックス"
+      },
+      {
+        "id": "pikachu",
+        "name": "ピカチュウ"
+      },
+      {
+        "id": "luigi",
+        "name": "ルイージ"
+      },
+      {
+        "id": "ness",
+        "name": "ネス"
+      },
+      {
+        "id": "captain_falcon",
+        "name": "キャプテン・ファルコン"
+      },
+      {
+        "id": "jigglypuff",
+        "name": "プリン"
+      },
+      {
+        "id": "peach",
+        "name": "ピーチ"
+      },
+      {
+        "id": "daisy",
+        "name": "デイジー"
+      },
+      {
+        "id": "bowser",
+        "name": "クッパ"
+      },
+      {
+        "id": "ice_climbers",
+        "name": "アイスクライマー"
+      },
+      {
+        "id": "sheik",
+        "name": "シーク"
+      },
+      {
+        "id": "zelda",
+        "name": "ゼルダ"
+      },
+      {
+        "id": "dr_mario",
+        "name": "ドクターマリオ"
+      },
+      {
+        "id": "pichu",
+        "name": "ピチュー"
+      },
+      {
+        "id": "falco",
+        "name": "ファルコ"
+      },
+      {
+        "id": "marth",
+        "name": "マルス"
+      },
+      {
+        "id": "lucina",
+        "name": "ルキナ"
+      },
+      {
+        "id": "young_link",
+        "name": "こどもリンク"
+      },
+      {
+        "id": "ganondorf",
+        "name": "ガノンドロフ"
+      },
+      {
+        "id": "mewtwo",
+        "name": "ミュウツー"
+      },
+      {
+        "id": "roy",
+        "name": "ロイ"
+      },
+      {
+        "id": "chrom",
+        "name": "クロム"
+      },
+      {
+        "id": "mr_game_and_watch",
+        "name": "Mr.ゲーム＆ウォッチ"
+      },
+      {
+        "id": "meta_knight",
+        "name": "メタナイト"
+      },
+      {
+        "id": "pit",
+        "name": "ピット"
+      },
+      {
+        "id": "dark_pit",
+        "name": "ブラックピット"
+      },
+      {
+        "id": "zero_suit_samus",
+        "name": "ゼロスーツサムス"
+      },
+      {
+        "id": "wario",
+        "name": "ワリオ"
+      },
+      {
+        "id": "snake",
+        "name": "スネーク"
+      },
+      {
+        "id": "ike",
+        "name": "アイク"
+      },
+      {
+        "id": "pokemon_trainer",
+        "name": "ポケモントレーナー"
+      },
+      {
+        "id": "diddy_kong",
+        "name": "ディディーコング"
+      },
+      {
+        "id": "lucas",
+        "name": "リュカ"
+      },
+      {
+        "id": "sonic",
+        "name": "ソニック"
+      },
+      {
+        "id": "king_dedede",
+        "name": "デデデ"
+      },
+      {
+        "id": "olimar",
+        "name": "ピクミン＆オリマー"
+      },
+      {
+        "id": "lucario",
+        "name": "ルカリオ"
+      },
+      {
+        "id": "rob",
+        "name": "ロボット"
+      },
+      {
+        "id": "toon_link",
+        "name": "トゥーンリンク"
+      },
+      {
+        "id": "wolf",
+        "name": "ウルフ"
+      },
+      {
+        "id": "villager",
+        "name": "むらびと"
+      },
+      {
+        "id": "mega_man",
+        "name": "ロックマン"
+      },
+      {
+        "id": "wii_fit_trainer",
+        "name": "Wii Fit トレーナー"
+      },
+      {
+        "id": "rosalina",
+        "name": "ロゼッタ＆チコ"
+      },
+      {
+        "id": "little_mac",
+        "name": "リトル・マック"
+      },
+      {
+        "id": "greninja",
+        "name": "ゲッコウガ"
+      },
+      {
+        "id": "mii_brawler",
+        "name": "Mii 格闘タイプ"
+      },
+      {
+        "id": "mii_swordfighter",
+        "name": "Mii 剣術タイプ"
+      },
+      {
+        "id": "mii_gunner",
+        "name": "Mii 射撃タイプ"
+      },
+      {
+        "id": "palutena",
+        "name": "パルテナ"
+      },
+      {
+        "id": "pac_man",
+        "name": "パックマン"
+      },
+      {
+        "id": "robin",
+        "name": "ルフレ"
+      },
+      {
+        "id": "shulk",
+        "name": "シュルク"
+      },
+      {
+        "id": "bowser_jr",
+        "name": "クッパJr."
+      },
+      {
+        "id": "duck_hunt",
+        "name": "ダックハント"
+      },
+      {
+        "id": "ryu",
+        "name": "リュウ"
+      },
+      {
+        "id": "ken",
+        "name": "ケン"
+      },
+      {
+        "id": "cloud",
+        "name": "クラウド"
+      },
+      {
+        "id": "corrin",
+        "name": "カムイ"
+      },
+      {
+        "id": "bayonetta",
+        "name": "ベヨネッタ"
+      },
+      {
+        "id": "inkling",
+        "name": "インクリング"
+      },
+      {
+        "id": "ridley",
+        "name": "リドリー"
+      },
+      {
+        "id": "simon",
+        "name": "シモン"
+      },
+      {
+        "id": "richter",
+        "name": "リヒター"
+      },
+      {
+        "id": "king_k_rool",
+        "name": "キングクルール"
+      },
+      {
+        "id": "isabelle",
+        "name": "しずえ"
+      },
+      {
+        "id": "incineroar",
+        "name": "ガオガエン"
+      },
+      {
+        "id": "piranha_plant",
+        "name": "パックンフラワー"
+      },
+      {
+        "id": "joker",
+        "name": "ジョーカー"
+      },
+      {
+        "id": "hero",
+        "name": "勇者"
+      },
+      {
+        "id": "banjo_kazooie",
+        "name": "バンジョー＆カズーイ"
+      },
+      {
+        "id": "terry",
+        "name": "テリー"
+      },
+      {
+        "id": "byleth",
+        "name": "ベレト/ベレス"
+      },
+      {
+        "id": "min_min",
+        "name": "ミェンミェン"
+      },
+      {
+        "id": "steve",
+        "name": "スティーブ/アレックス"
+      },
+      {
+        "id": "sephiroth",
+        "name": "セフィロス"
+      },
+      {
+        "id": "pyra_mythra",
+        "name": "ホムラ/ヒカリ"
+      },
+      {
+        "id": "kazuya",
+        "name": "カズヤ"
+      },
+      {
+        "id": "sora",
+        "name": "ソラ"
+      }
     ],
-    [
-      "simon",
-      "richter"
-    ],
-    [
-      "samus",
-      "dark_samus"
+    "sharedBanGroups": [
+      [
+        "peach",
+        "daisy"
+      ],
+      [
+        "simon",
+        "richter"
+      ],
+      [
+        "samus",
+        "dark_samus"
+      ]
     ]
-  ],
+  },
   "stages": {
     "all": [
       {

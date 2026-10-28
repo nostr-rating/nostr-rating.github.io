@@ -1,12 +1,14 @@
 import { settleMatch, type GameDefinition, type MatchRecord, type Pubkey, type ReportResult, type ResultReport } from '@nostr-rating/core';
 
-export const RESULT_LABEL: Record<ReportResult, string> = { win: '勝ち', lose: '負け', cancel: '中止' };
+export const RESULT_LABEL: Record<ReportResult, string> = { win: '勝ち', lose: '負け', draw: '引き分け', cancel: '中止' };
 
 export function reportStatus(def: GameDefinition, match: MatchRecord, reports: ResultReport[], me: Pubkey, now: number): string {
-  const s = settleMatch(match, reports, now, def.report.deadlineSec);
+  const s = settleMatch(match, reports, now, def.report.deadlineSec, def.results.draw);
   switch (s.status) {
     case 'confirmed':
       return `結果が確定しました（${s.winner === me ? 'あなた' : '相手'}の勝ち）`;
+    case 'drawn':
+      return '結果が確定しました（引き分け）';
     case 'cancelled':
       return '対戦は中止になりました';
     case 'mismatch':
@@ -36,6 +38,8 @@ export function ReportPanel(props: {
   closed: boolean;
   mine: ReportResult | undefined;
   suggested: ReportResult | null;
+  /** 引き分けを報告できるゲームか */
+  allowDraw: boolean;
   busy: boolean;
   onReport: (r: ReportResult) => Promise<void>;
 }) {
@@ -59,7 +63,7 @@ export function ReportPanel(props: {
       ) : (
         <>
           <div className="row">
-            {(['win', 'lose', 'cancel'] as const).map((r) => (
+            {(props.allowDraw ? (['win', 'lose', 'draw', 'cancel'] as const) : (['win', 'lose', 'cancel'] as const)).map((r) => (
               <button
                 key={r}
                 type="button"
