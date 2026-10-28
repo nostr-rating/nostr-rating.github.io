@@ -7,3 +7,5 @@ test-results/
 .env*
 .DS_Store
 dist-types/
+# npm run dev:lan に渡す証明書と秘密鍵（README「スマホで確かめる」）
+*.pem

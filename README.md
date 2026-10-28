@@ -125,6 +125,28 @@ npm run dev                      # Web アプリ（ローカルリレーに接�
 
 ブラウザで表示された URL を2つの別ウィンドウ（片方はシークレットウィンドウ）で開くと、自分同士で対戦を試せます。
 
+### スマホで確かめる
+
+同じ LAN にあるスマホから開くときは、`npm run dev` の代わりに次を使います。
+
+```bash
+npm run relay:up
+npm run dev:lan                  # https で LAN に公開し、/relay をローカルリレーへ中継する
+```
+
+表示される `Network:` の URL（`https://192.168.x.x:5173/` など）をスマホで開きます。
+
+- 端末の鍵（WebCrypto）と記録の保存（OPFS）は https でしか動かないので、自己署名の証明書で配ります。初めて開くと「この接続ではプライバシーが保護されません」などの警告が出るので、詳細から進んでください。
+- リレーにはページと同じアドレスの `/relay` を通してつなぎます。スマホから Mac の 7777 番へ直接はつなぎません。
+- iPhone の Safari では、自己署名の証明書だとリレーにつながらないことがあります。そのときは [mkcert](https://github.com/FiloSottile/mkcert) で証明書を作って渡し、mkcert の CA（`mkcert -CAROOT` にある `rootCA.pem`）をスマホに入れて信頼させてください。
+
+  ```bash
+  mkcert -cert-file lan.pem -key-file lan-key.pem <MacのIP> localhost
+  NR_LAN_CERT=lan.pem NR_LAN_KEY=lan-key.pem npm run dev:lan
+  ```
+
+- つながらないときは、macOS のファイアウォールで node への着信を許可してください。
+
 ```bash
 npm test                         # ユニットテスト
 npm run typecheck                # 型検査

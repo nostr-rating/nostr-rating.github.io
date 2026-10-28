@@ -72,7 +72,7 @@ export async function relayUrls(fetchFn: typeof fetch = fetch): Promise<string[]
   const o = readOverrides().relays;
   if (o && o.length > 0) return o;
   const env = import.meta.env.VITE_RELAYS as string | undefined;
-  if (env) return env.split(',').map((s) => s.trim()).filter(Boolean);
+  if (env) return env.split(',').map((s) => s.trim()).filter(Boolean).map((u) => resolveRelayUrl(u, location.origin));
   try {
     const res = await fetchFn(`${snapshotBase()}configs/relays.json`);
     if (res.ok) {
@@ -83,6 +83,13 @@ export async function relayUrls(fetchFn: typeof fetch = fetch): Promise<string[]
     // 同梱の一覧を使う
   }
   return bundledRelays.relays;
+}
+
+/** `/relay` のようなパスは、ページと同じ配信元のリレーとして扱う（npm run dev:lan で、開発サーバーがリレーへ中継する） */
+export function resolveRelayUrl(url: string, origin: string): string {
+  if (!url.startsWith('/')) return url;
+  const o = new URL(origin);
+  return `${o.protocol === 'https:' ? 'wss' : 'ws'}://${o.host}${url}`;
 }
 
 export function currentOverrides(): Overrides {

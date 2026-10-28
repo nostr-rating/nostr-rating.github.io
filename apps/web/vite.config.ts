@@ -1,5 +1,6 @@
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { join, normalize, resolve } from 'node:path';
+import basicSsl from '@vitejs/plugin-basic-ssl';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
@@ -23,9 +24,25 @@ function serveRepoData(): Plugin {
   };
 }
 
+/**
+ * npm run dev:lan: 同じ LAN のスマホから開くための開発サーバー。
+ * 端末の鍵（WebCrypto）と OPFS は https でしか使えないので自己署名の証明書で配り、
+ * https のページから ws:// にはつなげないので、/relay をローカルのリレーへ中継する
+ */
+const lan = process.env.NR_LAN === '1';
+/** iPhone のように自己署名の証明書を受け付けない端末向けに、mkcert などで作った証明書を渡せる */
+const lanCert = process.env.NR_LAN_CERT && process.env.NR_LAN_KEY ? { cert: readFileSync(process.env.NR_LAN_CERT), key: readFileSync(process.env.NR_LAN_KEY) } : null;
+
 export default defineConfig({
   base: process.env.VITE_BASE ?? '/',
-  plugins: [react(), serveRepoData()],
+  plugins: [react(), serveRepoData(), ...(lan && !lanCert ? [basicSsl()] : [])],
+  server: lan
+    ? {
+        host: true,
+        ...(lanCert ? { https: lanCert } : {}),
+        proxy: { '/relay': { target: 'ws://localhost:7777', ws: true, rewrite: () => '/' } },
+      }
+    : {},
   optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },
   worker: { format: 'es' },
 });

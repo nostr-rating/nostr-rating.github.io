@@ -21,6 +21,7 @@
     "relay:up": "docker compose -f relay-server/docker-compose.yml up -d",
     "relay:down": "docker compose -f relay-server/docker-compose.yml down",
     "dev": "VITE_RELAYS=ws://localhost:7777 npm -w @nostr-rating/web run dev",
+    "dev:lan": "NR_LAN=1 VITE_RELAYS=/relay npm -w @nostr-rating/web run dev",
     "e2e": "npm -w @nostr-rating/web run e2e"
   },
   "devDependencies": {
