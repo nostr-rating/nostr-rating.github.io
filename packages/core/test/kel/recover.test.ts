@@ -80,4 +80,20 @@ describe('recovery', () => {
       'この復活の言葉では入れ替えられません（もう使えない言葉か、別のアカウントの言葉です）',
     );
   });
+
+  test('two of three cards rotate, one card does not', async () => {
+    const relay = new MemoryRelay(() => T0 + 100);
+    const phone = newDevice(T0 - 1000, 'スマホ');
+    const cards = [newRecoveryWords(), newRecoveryWords(), newRecoveryWords()];
+    const body = icp([phone.record], { keys: cards.map((w) => recoveryKey(w).pub), threshold: 2 }, 'y');
+    const aid = digestOf(body);
+    await relay.publish(finalizeEvent(kelEventTemplate(signed(body, [phone]), T0 - 1000), phone.publisherSk));
+    expect(await findAccountsByNextKeys(relay, [recoveryKey(cards[2]!).pub])).toEqual([aid]);
+    const { state, chain } = await loadKel(relay, aid);
+    const fresh = newDevice(T0, 'パソコン');
+    const next = { keys: [recoveryKey(newRecoveryWords()).pub], threshold: 1 };
+    expect(() => recoveryRotation(state!, [fresh.record], next, [recoveryKey(cards[0]!).sk], T0)).toThrow();
+    const rec = recoveryRotation(state!, [fresh.record], next, [recoveryKey(cards[0]!).sk, recoveryKey(cards[2]!).sk], T0);
+    expect(verifyRotation(aid, chain, rec.entry, rec.event.created_at)).not.toBeNull();
+  });
 });

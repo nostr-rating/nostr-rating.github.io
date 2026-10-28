@@ -35,7 +35,8 @@ interface Found {
 let relay: RelayClient | null = null;
 let found: Found | null = null;
 let request: DeviceRequest | null = null;
-let newWords: string | null = null;
+/** 新しい復活の言葉。前と同じ枚数としきい値で作る */
+let newWords: string[] = [];
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag);
@@ -120,7 +121,7 @@ function stepRequest(message?: string) {
     const r = decodeDeviceRequest(input.value);
     if (!r) return stepRequest('端末の申請を読み取れませんでした。nr-device: から最後まで、全部を貼ってください。');
     request = r;
-    newWords = newRecoveryWords();
+    newWords = Array.from({ length: Math.min(found!.state.next.keys.length, 3) }, () => newRecoveryWords());
     stepNewWords();
   };
   const scan = h('button', { textContent: 'カメラで QR コードを読み取る' });
@@ -173,22 +174,31 @@ async function scanInto(video: HTMLVideoElement, input: HTMLTextAreaElement, don
 // ---- 3. 新しい復活の言葉 ----
 
 function stepNewWords(message?: string) {
-  const list = newWords!.split(' ');
-  const positions = [...Array(12).keys()].sort(() => Math.random() - 0.5).slice(0, 3).sort((a, b) => a - b);
-  const inputs = positions.map(() => h('input', { autocomplete: 'off', autocapitalize: 'none' }));
+  const cards = newWords.map((w) => w.split(' '));
+  const threshold = Math.min(found!.state.next.threshold, cards.length);
+  // 1枚なら3語、分けているときは1枚につき1語を確かめる
+  const shuffled = () => [...Array(12).keys()].sort(() => Math.random() - 0.5);
+  const checks = cards.length === 1 ? shuffled().slice(0, 3).sort((a, b) => a - b).map((pos) => ({ card: 0, pos })) : cards.map((_, card) => ({ card, pos: shuffled()[0]! }));
+  const inputs = checks.map(() => h('input', { autocomplete: 'off', autocapitalize: 'none' }));
   const go = h('button', { className: 'primary', textContent: '書き写したので、入れ替える' });
   go.onclick = () => {
-    if (!positions.every((p, i) => inputs[i]!.value.trim().toLowerCase() === list[p])) {
+    if (!checks.every((c, i) => inputs[i]!.value.trim().toLowerCase() === cards[c.card]![c.pos])) {
       return stepNewWords('違う単語があります。新しい紙を見直してください。');
     }
-    void rotate(go);
+    void rotate(go, threshold);
   };
   show(
     h('h2', {}, '3. 新しい復活の言葉'),
-    h('p', {}, `入れ替えると、今の復活の言葉は使えなくなります。代わりに、次の12個の単語が新しい復活の言葉になります。新しい紙に書き写してください。追加する端末: ${request!.label}`),
-    h('ol', { className: 'words' }, ...list.map((w) => h('li', {}, w))),
-    h('p', {}, '書き写せたかを確かめます。次の番号の単語を入力してください。'),
-    ...positions.map((p, i) => h('label', { className: 'stack' }, `${p + 1}番目`, inputs[i]!)),
+    h(
+      'p',
+      {},
+      cards.length === 1
+        ? `入れ替えると、今の復活の言葉は使えなくなります。代わりに、次の12個の単語が新しい復活の言葉になります。新しい紙に書き写してください。追加する端末: ${request!.label}`
+        : `入れ替えると、今の復活の言葉は使えなくなります。代わりに、次の${cards.length}枚が新しい復活の言葉になります（${threshold}枚あれば戻せます）。1枚ずつ別の紙に書き写してください。追加する端末: ${request!.label}`,
+    ),
+    ...cards.flatMap((c, k) => [...(cards.length > 1 ? [h('h3', {}, `${k + 1}枚目`)] : []), h('ol', { className: 'words' }, ...c.map((w) => h('li', {}, w)))]),
+    h('p', {}, '書き写せたかを確かめます。次の単語を入力してください。'),
+    ...checks.map((c, i) => h('label', { className: 'stack' }, cards.length > 1 ? `${c.card + 1}枚目の${c.pos + 1}番目` : `${c.pos + 1}番目`, inputs[i]!)),
     go,
     ...(message ? [error(message)] : []),
   );
@@ -196,19 +206,19 @@ function stepNewWords(message?: string) {
 
 // ---- 4. 入れ替え ----
 
-async function rotate(button: HTMLButtonElement) {
+async function rotate(button: HTMLButtonElement, threshold: number) {
   const f = found!;
   button.disabled = true;
   button.textContent = '入れ替えています…';
   try {
     const at = Math.floor(Date.now() / 1000);
-    const { entry, event } = recoveryRotation(f.state, [deviceRecordFor(request!, at)], { keys: [recoveryKey(newWords!).pub], threshold: 1 }, f.signers, at, [request!.publisher]);
+    const { entry, event } = recoveryRotation(f.state, [deviceRecordFor(request!, at)], { keys: newWords.map((w) => recoveryKey(w).pub), threshold }, f.signers, at, [request!.publisher]);
     if (!verifyRotation(f.aid, f.chain, entry, event.created_at)) throw new Error('入れ替えのイベントを確かめられませんでした');
     await relay!.publish(event);
     show(
       h('h2', {}, '入れ替えました'),
       h('p', {}, `新しい端末（${request!.label}）の画面が自動で進みます。進まないときは、新しい端末でアプリを開き直してください。`),
-      h('p', {}, '古い復活の言葉の紙は、もう使えません。捨ててください。新しい紙は、写真やクラウドに残さずしまってください。'),
+      h('p', {}, '古い復活の言葉の紙は、もう使えません。捨ててください。新しい紙は、写真やクラウドに残さず、分けた場合は別々の場所にしまってください。'),
       h('p', {}, '乗っ取られて戻した場合、乗っ取った人が出した対戦の結果のうち、取り消すまでの分（最大でおよそ1日分）は残ることがあります。'),
     );
   } catch (e) {

@@ -48,12 +48,16 @@ try {
 
   const request = decodeDeviceRequest(await rl.question('新しい端末の「端末の申請」（nr-device: で始まる文字列）: '));
   if (!request) throw new Error('端末の申請を読み取れませんでした');
-  const fresh = newRecoveryWords();
-  console.log(`\n新しい復活の言葉（紙に書き写してください）:\n\n  ${fresh}\n`);
+  // 新しい言葉は、前と同じ枚数としきい値で作る
+  const fresh = Array.from({ length: Math.min(state.next.keys.length, 3) }, () => newRecoveryWords());
+  const threshold = Math.min(state.next.threshold, fresh.length);
+  console.log(`\n新しい復活の言葉（${fresh.length}枚。${threshold}枚あれば戻せます。1枚ずつ別の紙に書き写してください）:\n`);
+  fresh.forEach((w, i) => console.log(`  ${i + 1}枚目: ${w}`));
+  console.log('');
   if ((await rl.question('書き写したら、入れ替えるために yes と入力してください: ')).trim() !== 'yes') throw new Error('やめました');
 
   const at = Math.floor(Date.now() / 1000);
-  const { entry, event } = recoveryRotation(state, [deviceRecordFor(request, at)], { keys: [recoveryKey(fresh).pub], threshold: 1 }, keys.map((k) => k.sk), at, [request.publisher]);
+  const { entry, event } = recoveryRotation(state, [deviceRecordFor(request, at)], { keys: fresh.map((w) => recoveryKey(w).pub), threshold }, keys.map((k) => k.sk), at, [request.publisher]);
   if (!verifyRotation(state.aid, found.chain, entry, event.created_at)) throw new Error('入れ替えのイベントを確かめられませんでした');
   await relay.publish(event);
   console.log(`入れ替えました。新しい端末（${request.label}）の画面が自動で進みます。古い言葉の紙は捨ててください。`);

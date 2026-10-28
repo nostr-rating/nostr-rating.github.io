@@ -1,4 +1,4 @@
-import { KIND, MemoryRelay, parseKelEvent, verificationText } from '@nostr-rating/core';
+import { KIND, MemoryRelay, parseKelEvent, recoveryKey, verificationText } from '@nostr-rating/core';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
@@ -86,6 +86,31 @@ describe('Onboarding', () => {
     await user.click(await screen.findByRole('button', { name: 'あとで書く' }));
     expect(await screen.findByLabelText('表示名')).toBeTruthy();
     expect((await deps.keyStore.get<{ pendingWords: string | null }>('account'))!.pendingWords?.split(' ')).toHaveLength(12);
+  });
+
+  test('splitting the words into three cards needs two of them to recover', async () => {
+    const user = userEvent.setup();
+    const deps = makeDeps({ now: realNow });
+    renderWithApp(<Onboarding />, { deps });
+    await user.click(screen.getByRole('button', { name: 'この端末で始める' }));
+    await user.click(await screen.findByRole('button', { name: '3枚に分けて保管する（2枚あれば戻せる）' }));
+    const cards: string[][] = [];
+    for (let i = 0; i < 3; i++) {
+      await screen.findByText(new RegExp(`（${i + 1}枚目／3枚）`));
+      cards.push(within(screen.getByTestId('recovery-words')).getAllByRole('listitem').map((li) => li.textContent ?? ''));
+      await user.click(screen.getByRole('button', { name: i < 2 ? `${i + 1}枚目を書き写した` : '書き写した' }));
+    }
+    for (const input of await screen.findAllByLabelText(/枚目の\d+番目/)) {
+      const [, c, n] = (input.closest('label')?.textContent ?? '').match(/(\d+)枚目の(\d+)番目/)!;
+      await user.type(input, cards[Number(c) - 1]![Number(n) - 1]!);
+    }
+    await user.click(screen.getByRole('button', { name: '確かめる' }));
+    expect(await screen.findByLabelText('表示名')).toBeTruthy();
+    const stored = (await deps.keyStore.get<{ pendingWords: string | null; kel: { entry: { body: { t: string; next: { keys: string[]; threshold: number } } } }[] }>('account'))!;
+    expect(stored.pendingWords).toBeNull();
+    const rot = stored.kel[stored.kel.length - 1]!.entry.body;
+    expect([rot.t, rot.next.keys.length, rot.next.threshold]).toEqual(['rot', 3, 2]);
+    expect(rot.next.keys).toEqual(cards.map((w) => recoveryKey(w.join(' ')).pub));
   });
 
   test('a second device is registered by pasting its request on an existing device', async () => {

@@ -144,7 +144,7 @@ export function Settings() {
       {app.pendingWords && (
         <div className="card stack">
           <h2>復活の言葉</h2>
-          <RecoveryWords words={app.pendingWords} onConfirmed={() => void app.confirmWords()} />
+          <RecoveryWords key={app.pendingWords} words={app.pendingWords} onConfirmed={() => void app.confirmWords()} onSplit={app.splitWords} />
         </div>
       )}
 

@@ -63,6 +63,8 @@ export interface AppValue extends AppDeps {
   /** 書き写したと確かめていない復活の言葉 */
   pendingWords: string | null;
   confirmWords(): Promise<void>;
+  /** 書き写す前の復活の言葉を3枚に分ける（2枚あれば戻せる） */
+  splitWords(): Promise<void>;
   /** 有効な端末のうち、利用者がまだ知らないもの */
   unknownDevices: DeviceRecord[];
   acknowledgeDevices(): Promise<void>;
@@ -186,6 +188,12 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
   const confirmWords = useCallback(async () => {
     await account?.confirmWords();
     setPendingWords(null);
+  }, [account]);
+
+  const splitWords = useCallback(async () => {
+    if (!account) return;
+    await account.splitWords();
+    setPendingWords(account.pendingWords);
   }, [account]);
 
   const acknowledgeDevices = useCallback(async () => {
@@ -331,6 +339,7 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     author: resolver.author,
     pendingWords,
     confirmWords,
+    splitWords,
     unknownDevices,
     acknowledgeDevices,
     reloadAccount,

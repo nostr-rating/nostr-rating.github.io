@@ -15,7 +15,9 @@ import {
   newRecoveryWords,
   parseKelEvent,
   recoveryKey,
+  recoveryRotation,
   seenOrder,
+  verifyRotation,
   SESSION_LIFETIME_SEC,
   signAs,
   type DeviceRecord,
@@ -65,7 +67,7 @@ interface StoredAccount {
   device: StoredDevice;
   /** 手元で見た KEL（sn の順） */
   kel: KelInput[];
-  /** まだ書き写したと確かめていない復活の言葉。確かめたら消す */
+  /** まだ書き写したと確かめていない復活の言葉。分けたときは1枚ずつ改行で区切る。確かめたら消す */
   pendingWords: string | null;
   /** 利用者が知っている端末（知らない端末が増えたら知らせる） */
   knownDevices: string[];
@@ -195,6 +197,29 @@ export class Account {
   async acknowledgeDevices(): Promise<void> {
     this.#data.knownDevices = [...new Set([...this.#data.knownDevices, ...this.unknownDevices.map((d) => d.id)])];
     await this.#save();
+  }
+
+  /**
+   * まだ端末に残っている復活の言葉で入れ替えて、言葉を3枚に分ける（2枚あれば戻せる）。
+   * 端末はそのまま残す。書き写したと確かめる前だけできる
+   */
+  async splitWords(cards = 3, threshold = 2): Promise<string[]> {
+    const pending = this.#data.pendingWords;
+    if (!pending || pending.includes('\n')) throw new Error('書き写す前の1枚の言葉がありません');
+    await this.refreshKel();
+    const state = this.#state;
+    if (!state || !this.active) throw new Error('この端末は登録が切れています');
+    const at = Math.max(this.now(), state.at);
+    const words = Array.from({ length: cards }, () => newRecoveryWords());
+    const devices = [...state.devices.values()].filter((d) => deviceValidAt(state, d.record.id, at)).map((d) => d.record);
+    const { entry, event } = recoveryRotation(state, devices, { keys: words.map((w) => recoveryKey(w).pub), threshold }, [recoveryKey(pending).sk], at);
+    if (!verifyRotation(this.aid, this.#data.kel, entry, event.created_at)) throw new Error('入れ替えのイベントを確かめられませんでした');
+    await this.relay.publish(event);
+    this.#data.kel = [...this.#data.kel, { entry, at: event.created_at }];
+    this.#state = evaluateKel(this.aid, this.#data.kel);
+    this.#data.pendingWords = words.join('\n');
+    await this.#save();
+    return words;
   }
 
   /** 書き写したと確かめたら、端末から復活の言葉を消す */

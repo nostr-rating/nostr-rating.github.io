@@ -174,7 +174,13 @@ export function Onboarding() {
       {step === 'words' && words && (
         <div className="card stack">
           <h2>復活の言葉</h2>
-          <RecoveryWords words={words} onConfirmed={() => void app.confirmWords().then(() => setStep('name'))} onLater={() => setStep('name')} />
+          <RecoveryWords
+            key={app.pendingWords ?? words}
+            words={app.pendingWords ?? words}
+            onConfirmed={() => void app.confirmWords().then(() => setStep('name'))}
+            onLater={() => setStep('name')}
+            onSplit={app.splitWords}
+          />
         </div>
       )}
 
