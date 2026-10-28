@@ -17,3 +17,7 @@ export * from './rating/pipeline.js';
 export * from './snapshot/format.js';
 export * from './events/dm.js';
 export * from './relay/fetch.js';
+export * from './kel/kel.js';
+export * from './kel/cert.js';
+export * from './kel/event.js';
+export * from './kel/recovery.js';

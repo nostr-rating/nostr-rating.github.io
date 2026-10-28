@@ -7,8 +7,8 @@ export const KIND = {
   giftWrap: 1059,
   application: 3751,
   match: 3752,
-  /** 鍵の引き継ぎ用に予約（MVP では使わない） */
-  migration: 3753,
+  /** 鍵の出来事の記録（KEL。docs/adr/0008） */
+  kel: 3753,
   report: 3754,
   identities: 10011,
   settings: 30078,
