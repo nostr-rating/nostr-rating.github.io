@@ -107,6 +107,8 @@ npm run e2e                      # 2ブラウザの E2E（ローカルリレー�
 npm run snapshot -- --cutoff <UNIX秒> [--relays ws://localhost:7777]
 ```
 
+自分の GitHub アカウントでアプリを公開する手順は、[docs/self-hosting.md](docs/self-hosting.md) にあります。
+
 ## リポジトリ構成
 
 | パス | 内容 |
@@ -119,6 +121,7 @@ npm run snapshot -- --cutoff <UNIX秒> [--relays ws://localhost:7777]
 | `relay-server/` | 開発用ローカルリレー（nostr-rs-relay の Docker Compose） |
 | `docs/protocol.md` | イベントの形式と計算の決まり |
 | `docs/adr/` | 設計判断の記録 |
+| `docs/self-hosting.md` | 自分でアプリを動かす手順 |
 
 ## 参加する
 

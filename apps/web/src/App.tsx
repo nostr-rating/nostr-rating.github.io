@@ -23,6 +23,7 @@ export function App() {
           <a href="#/lobby">{app.search.waitingSince !== null ? '待機中' : 'ロビー'}</a>
           <a href="#/ranking">ランキング</a>
           <a href="#/settings">設定</a>
+          <a href={`${import.meta.env.BASE_URL}help/account.html`}>ヘルプ</a>
         </nav>
       </header>
       {!app.store.persistent && (
