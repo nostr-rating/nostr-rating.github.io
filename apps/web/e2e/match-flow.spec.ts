@@ -1,9 +1,28 @@
+import { execSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
-/** はじめに画面を通す。GitHub の Gist API は応答を差し替えて、自動検証済みにする */
-async function onboard(page: Page, name: string, gistUser: string) {
+const RELAY = process.env.E2E_RELAY ?? 'ws://localhost:7777';
+const REPO = resolve(import.meta.dirname, '../../..');
+
+/** 表示された12語を読み、確認で聞かれた番号の単語を入れる。読んだ12語を返す */
+async function writeDownWords(page: Page): Promise<string[]> {
+  const words = await page.getByTestId('recovery-words').getByRole('listitem').allTextContents();
+  expect(words).toHaveLength(12);
+  await page.getByRole('button', { name: '書き写した' }).click();
+  for (const input of await page.getByLabel(/番目/).all()) {
+    const label = await input.evaluate((el) => el.closest('label')?.textContent ?? '');
+    await input.fill(words[Number(label.match(/(\d+)番目/)![1]) - 1]!);
+  }
+  await page.getByRole('button', { name: '確かめる' }).click();
+  return words;
+}
+
+/** はじめに画面を通す。GitHub の Gist API は応答を差し替えて、確認済みにする */
+async function onboard(page: Page, name: string, gistUser: string): Promise<string[]> {
   await page.goto('/');
-  await page.getByRole('button', { name: 'はじめる' }).click();
+  await page.getByRole('button', { name: 'この端末で始める' }).click();
+  const words = await writeDownWords(page);
   await page.getByLabel('表示名').fill(name);
   await page.getByRole('button', { name: '次へ' }).click();
   const text = (await page.getByTestId('verification-text').textContent()) ?? '';
@@ -12,11 +31,10 @@ async function onboard(page: Page, name: string, gistUser: string) {
   );
   await page.getByLabel('投稿の URL').fill(`https://gist.github.com/${gistUser}/e2e${Date.now()}`);
   await page.getByRole('button', { name: '確認する' }).click();
-  await expect(page.getByText('自動検証済み')).toBeVisible();
+  await expect(page.getByText('確認済み')).toBeVisible();
   await page.getByRole('button', { name: '登録して次へ' }).click();
-  await page.getByRole('checkbox', { name: '安全な場所に保存しました' }).check();
-  await page.getByRole('button', { name: '対戦をはじめる' }).click();
   await expect(page).toHaveURL(/#\/lobby$/);
+  return words;
 }
 
 test('two players match, exchange the room id, play a set and confirm the result', async ({ browser }) => {
@@ -70,4 +88,92 @@ test('two players match, exchange the room id, play a set and confirm the result
 
   await ctxA.close();
   await ctxB.close();
+});
+
+test('a second device is added by pasting its request, and the first device revokes it', async ({ browser }) => {
+  const ctx1 = await browser.newContext();
+  const ctx2 = await browser.newContext();
+  const first = await ctx1.newPage();
+  const second = await ctx2.newPage();
+  first.on('dialog', (d) => void d.accept());
+  const suffix = Date.now().toString(36);
+  await onboard(first, `カオリ${suffix}`, `kaori${suffix}`);
+
+  await second.goto('/');
+  await second.getByRole('button', { name: 'すでにアカウントを持っている' }).click();
+  await expect(second.getByRole('img', { name: '端末の申請の QR コード' })).toBeVisible();
+  const request = (await second.getByTestId('device-request').textContent()) ?? '';
+  expect(request).toMatch(/^nr-device:/);
+
+  await first.goto('/#/settings');
+  await first.getByLabel('端末の申請').fill(request);
+  await first.getByRole('button', { name: 'この端末を追加' }).click();
+  // 表示名と紐づけがあるアカウントなので、2台目はそのままロビーへ進む
+  await expect(second).toHaveURL(/#\/lobby$/, { timeout: 20_000 });
+  await expect(second.getByText(`カオリ${suffix}`)).toBeVisible({ timeout: 20_000 });
+
+  // 1台目から2台目を取り消すと、2台目は開き直したときに使えないと分かる
+  const devices = first.getByTestId('devices');
+  await expect(devices.getByRole('listitem')).toHaveCount(2);
+  await devices.getByRole('button', { name: '取り消す' }).click();
+  await expect(devices.getByRole('listitem')).toHaveCount(1, { timeout: 20_000 });
+  await second.reload();
+  await expect(second.getByText('この端末の登録は取り消されたか、期限が切れています', { exact: false })).toBeVisible({ timeout: 20_000 });
+
+  await ctx1.close();
+  await ctx2.close();
+});
+
+test('the recovery tool moves the account to a new device and the old device stops working', async ({ browser }) => {
+  execSync('npm run -s recovery:build', { cwd: REPO, stdio: 'ignore' });
+  const toolUrl = `file://${REPO}/apps/recovery/dist/nostr-rating-recovery.html`;
+  const ctxOld = await browser.newContext();
+  const ctxNew = await browser.newContext();
+  const ctxTool = await browser.newContext();
+  const old = await ctxOld.newPage();
+  const fresh = await ctxNew.newPage();
+  const tool = await ctxTool.newPage();
+  const suffix = Date.now().toString(36);
+  const words = await onboard(old, `リク${suffix}`, `riku${suffix}`);
+
+  // 新しい端末で申請を出す
+  await fresh.goto('/');
+  await fresh.getByRole('button', { name: 'すでにアカウントを持っている' }).click();
+  await expect(fresh.getByTestId('device-request')).toHaveText(/^nr-device:/);
+  const request = (await fresh.getByTestId('device-request').textContent()) ?? '';
+
+  const openTool = async () => {
+    await tool.goto(toolUrl);
+    await tool.getByText('リレー（ふつうは変えません）').click();
+    await tool.locator('#relays').fill(RELAY);
+    await tool.locator('textarea.words-input').fill(words.join(' '));
+    await tool.getByRole('button', { name: 'アカウントを探す' }).click();
+  };
+
+  // 復活の道具（ダウンロードした HTML を file:// で開いたもの）で入れ替える
+  await openTool();
+  await expect(tool.getByText('アカウントが見つかりました', { exact: false })).toBeVisible({ timeout: 20_000 });
+  await tool.getByPlaceholder('nr-device: で始まる文字列').fill(request);
+  await tool.getByRole('button', { name: '次へ' }).click();
+  const newWords = await tool.locator('ol.words li').allTextContents();
+  expect(newWords).toHaveLength(12);
+  for (const label of await tool.locator('label').all()) {
+    const n = Number(((await label.textContent()) ?? '').match(/(\d+)番目/)![1]);
+    await label.locator('input').fill(newWords[n - 1]!);
+  }
+  await tool.getByRole('button', { name: '書き写したので、入れ替える' }).click();
+  await expect(tool.getByRole('heading', { name: '入れ替えました' })).toBeVisible({ timeout: 20_000 });
+
+  // 新しい端末はロビーへ進み、古い端末は使えなくなる
+  await expect(fresh).toHaveURL(/#\/lobby$/, { timeout: 20_000 });
+  await old.reload();
+  await expect(old.getByText('この端末の登録は取り消されたか、期限が切れています', { exact: false })).toBeVisible({ timeout: 20_000 });
+
+  // 古い言葉では、もう入れ替えられない
+  await openTool();
+  await expect(tool.getByText('この復活の言葉は、もう使えません', { exact: false })).toBeVisible({ timeout: 20_000 });
+
+  await ctxOld.close();
+  await ctxNew.close();
+  await ctxTool.close();
 });

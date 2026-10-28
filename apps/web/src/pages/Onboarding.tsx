@@ -9,7 +9,7 @@ import {
   type Pubkey,
   type VerifyStatus,
 } from '@nostr-rating/core';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Account } from '../account/account.js';
 import { StatusBadge } from '../components/IdentityBadge.js';
 import { QrCode } from '../components/QrCode.js';
@@ -40,6 +40,7 @@ export function Onboarding() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const label = useMemo(defaultDeviceLabel, []);
+  const lastPublished = useRef(0);
 
   /** 公開済みの表示名と紐づけを見て、どの手順から始めるかを決める */
   const continueFrom = async (aid: Pubkey) => {
@@ -102,7 +103,10 @@ export function Onboarding() {
   /** 表示名と紐づけをまとめて出し直す（アカウントの公開情報は丸ごと置き換わる） */
   const publish = async (next: { name: string; claims: IdentityClaim[] }) => {
     if (!app.signer || !app.pubkey) throw new Error('not ready');
-    const ev = await app.signer.signEvent(buildAccountInfo(app.def.id, { pubkey: app.pubkey, ...next }, app.now()));
+    // 置き換え可能なイベントは、同じ秒だと id の小さいほうが残る。前に出した版より必ず新しくする
+    const at = Math.max(app.now(), lastPublished.current + 1);
+    lastPublished.current = at;
+    const ev = await app.signer.signEvent(buildAccountInfo(app.def.id, { pubkey: app.pubkey, ...next }, at));
     await app.relay.publish(ev);
     await app.store.put([ev]);
     app.rememberProfile(app.pubkey, next.name);
