@@ -177,7 +177,7 @@ export function Onboarding() {
       {step === 'start' && (
         <div className="card stack">
           <h1>Nostr-Rating へようこそ</h1>
-          <p>運営のいない、スマブラSP のレート対戦です。対戦結果は誰でも確かめられる形で公開されます。個人情報は預かりません。</p>
+          <p>運営のいない、{app.def.name} のレート対戦です。対戦結果は誰でも確かめられる形で公開されます。個人情報は預かりません。</p>
           <button type="button" className="primary" disabled={busy} onClick={() => void start()}>
             この端末で始める
           </button>

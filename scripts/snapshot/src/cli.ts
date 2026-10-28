@@ -8,12 +8,13 @@ const { values } = parseArgs({
   options: {
     cutoff: { type: 'string' },
     relays: { type: 'string' },
+    game: { type: 'string', default: 'smash_sp' },
     root: { type: 'string', default: resolve(import.meta.dirname, '../../..') },
   },
 });
 
 if (!values.cutoff || !/^\d+$/.test(values.cutoff)) {
-  console.error('usage: npm run snapshot -- --cutoff <unix seconds> [--relays wss://a,wss://b] [--root .]');
+  console.error('usage: npm run snapshot -- --cutoff <unix seconds> [--game smash_sp] [--relays wss://a,wss://b] [--root .]');
   process.exit(2);
 }
 
@@ -24,7 +25,7 @@ const urls = values.relays
 
 const relay = createNostrRelayClient(urls);
 try {
-  const { path, snapshot } = await runSnapshot({ root, cutoff: Number(values.cutoff), relay });
+  const { path, snapshot } = await runSnapshot({ root, cutoff: Number(values.cutoff), relay, game: values.game });
   console.log(`wrote ${path} (players: ${Object.keys(snapshot.players).length}, events: ${snapshot.inputs.event_count})`);
   if (snapshot.inputs.event_count === 0) console.warn('warning: no events were used (relays unreachable or no matches)');
 } finally {
