@@ -95,3 +95,23 @@ export function resolveRelayUrl(url: string, origin: string): string {
 export function currentOverrides(): Overrides {
   return readOverrides();
 }
+
+const ROOM_PASSWORD_KEY = 'nostr-rating:default-room-password:';
+
+/** 部屋のパスワードの初期値（設定画面）。この端末にだけ置き、公開する設定のイベントには入れない */
+export function defaultRoomPassword(gameId: string): string {
+  try {
+    return localStorage.getItem(ROOM_PASSWORD_KEY + gameId) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function saveDefaultRoomPassword(gameId: string, password: string): void {
+  try {
+    if (password === '') localStorage.removeItem(ROOM_PASSWORD_KEY + gameId);
+    else localStorage.setItem(ROOM_PASSWORD_KEY + gameId, password);
+  } catch {
+    // 残せなければ、対戦ごとに作る
+  }
+}

@@ -152,6 +152,9 @@ input.big { padding: 6px 12px; }
 .send-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 
 .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 8px; }
+/* 「2戦目: あなたの勝ち」は途中で折り返さない。2つ並べて収まらない幅では1列にする */
+.choices.game-result { grid-template-columns: repeat(auto-fit, minmax(min(100%, 12.5em), 1fr)); }
+.choices.game-result > button { white-space: nowrap; }
 
 .qr { background: #fff; padding: 8px; border-radius: 8px; width: min(280px, 100%); aspect-ratio: 1; margin: 0 auto; display: grid; place-items: center; color: #5a6680; }
 .qr svg { display: block; width: 100%; height: auto; }

@@ -128,7 +128,7 @@ export function StageGuide(props: {
           {lastLoser === null && fighterSelect(me, 'キャラを変える', '2戦目からは、直前の敗者だけがキャラを変えられます。', true)}
           {lastLoser === me && fighterSelect(me, 'キャラを変える', '変えられるのは直前の敗者だけです。')}
           {lastLoser === other && fighterSelect(other, '相手のキャラ', '相手がキャラを変えたら、ここで選び直してください。')}
-          <div className="choices">
+          <div className="choices game-result">
             <button type="button" onClick={() => apply(() => recordGame(def, set, me))}>{gameNo}戦目: あなたの勝ち</button>
             <button type="button" onClick={() => apply(() => recordGame(def, set, other))}>{gameNo}戦目: 相手の勝ち</button>
           </div>

@@ -32,6 +32,7 @@ import { Dock } from '../components/Dock.js';
 import { IdentityBadge } from '../components/IdentityBadge.js';
 import { latestReports, ReportPanel, reportStatus } from '../components/ReportPanel.js';
 import { StageGuide } from '../components/StageGuide.js';
+import { defaultRoomPassword } from '../services/config.js';
 import { displayName, parseEach, useApp } from '../state/AppContext.js';
 
 /** NIP-17 は gift wrap の時刻を最大2日前までずらすので、その分さかのぼって購読する */
@@ -469,7 +470,9 @@ function roomPassword(def: GameDefinition, matchId: string): string {
   } catch {
     // 残せなくても、その場で作った値で進める
   }
-  const made = generateRoomPassword(def);
+  // 設定画面で固定の初期値を決めていれば、それを使う
+  const fixed = defaultRoomPassword(def.id);
+  const made = validRoomPassword(def, fixed) ? fixed : generateRoomPassword(def);
   savePassword(matchId, made);
   return made;
 }

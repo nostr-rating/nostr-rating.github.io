@@ -68,6 +68,12 @@ describe('MatchRoom', () => {
     expect((await guest.findByTestId('room-password', {}, { timeout: 5000 })).textContent).toBe('12345678');
   });
 
+  test('the fixed room password from the settings is used instead of a random one', async () => {
+    localStorage.setItem('nostr-rating:default-room-password:smash_sp', '24680');
+    const { host } = await setup();
+    expect(((await host.findByLabelText('パスワード')) as HTMLInputElement).value).toBe('24680');
+  });
+
   test('the generated password stays the same when the room is opened again', async () => {
     const { relay, match, host, hostAccount } = await setup();
     const first = ((await host.findByLabelText('パスワード')) as HTMLInputElement).value;

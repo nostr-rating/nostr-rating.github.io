@@ -1,8 +1,8 @@
-import { buildSettings, parseSettings, validateStageBans, banGroupKey, type StageBans, type StageId } from '@nostr-rating/core';
+import { buildSettings, parseSettings, validateStageBans, validRoomPassword, banGroupKey, type StageBans, type StageId } from '@nostr-rating/core';
 import { useEffect, useState } from 'react';
 import { Devices } from '../components/Devices.js';
 import { RecoveryWords } from '../components/RecoveryWords.js';
-import { currentOverrides, saveOverrides } from '../services/config.js';
+import { currentOverrides, defaultRoomPassword, saveDefaultRoomPassword, saveOverrides } from '../services/config.js';
 import { useApp } from '../state/AppContext.js';
 
 export function rangeLabel(v: number | null): string {
@@ -18,6 +18,7 @@ export function Settings() {
   const [fighter, setFighter] = useState<string>('');
   const [message, setMessage] = useState<string | null>(null);
   const [overrideMessage, setOverrideMessage] = useState<string | null>(null);
+  const [fixedPassword, setFixedPassword] = useState(() => defaultRoomPassword(def.id));
   const overrides = currentOverrides();
   const [relays, setRelays] = useState((overrides.relays ?? []).join('\n'));
   const [snapBase, setSnapBase] = useState(overrides.snapshotBase ?? '');
@@ -29,6 +30,9 @@ export function Settings() {
     setRematch(app.mySettings.rematchHours);
   }, [app.mySettings]);
 
+  // ゲームを切り替えたら、そのゲームの初期値を読み直す
+  useEffect(() => setFixedPassword(defaultRoomPassword(def.id)), [def.id]);
+
   const key = fighter ? banGroupKey(def, fighter) : '';
   const current = key ? (bans[key] ?? []) : [];
   const toggle = (stage: StageId) => {
@@ -38,6 +42,7 @@ export function Settings() {
     setBans(updated);
   };
   const errors = validateStageBans(def, bans);
+  const passwordError = fixedPassword !== '' && !validRoomPassword(def, fixedPassword);
 
   const save = async () => {
     if (!app.signer) return;
@@ -48,6 +53,7 @@ export function Settings() {
       await app.store.put([ev]);
       const parsed = parseSettings(def.id, ev, app.pubkey);
       if (parsed) app.setMySettings(parsed);
+      saveDefaultRoomPassword(def.id, fixedPassword);
       setMessage('保存しました');
     } catch {
       setMessage('保存できませんでした。電波のよい場所でもう一度押してください。');
@@ -135,7 +141,26 @@ export function Settings() {
             ))}
           </select>
         </div>
-        <button type="button" className="primary wide" disabled={errors.length > 0 || !app.signer} onClick={() => void save()}>
+        {def.room.kind === 'code' && (
+          <div className="field">
+            <label htmlFor="fixed-password">部屋のパスワードの初期値</label>
+            <input
+              id="fixed-password"
+              inputMode="numeric"
+              autoComplete="off"
+              value={fixedPassword}
+              maxLength={def.room.password.maxDigits}
+              onChange={(e) => setFixedPassword(e.target.value.replace(/[^0-9]/g, ''))}
+            />
+            <p className="hint" data-testid="password-hint">
+              空にしておくと、対戦ごとに数字{def.room.password.generatedDigits}桁を作ります。この端末にだけ保存し、公開はしません。
+            </p>
+            <p className="slot error" data-testid="password-error">
+              {passwordError ? `数字${def.room.password.minDigits}〜${def.room.password.maxDigits}桁で入力してください。` : ''}
+            </p>
+          </div>
+        )}
+        <button type="button" className="primary wide" disabled={errors.length > 0 || passwordError || !app.signer} onClick={() => void save()}>
           設定を保存
         </button>
         <p className="slot" role="status">{message ?? ''}</p>

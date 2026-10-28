@@ -149,6 +149,26 @@ describe('Settings', () => {
     });
   });
 
+  test('a fixed room password is kept only on this device and never published', async () => {
+    localStorage.clear();
+    const user = userEvent.setup();
+    const relay = new MemoryRelay(realNow);
+    const p = await newPlayer(relay, realNow);
+    renderWithApp(<Settings />, { deps: makeDeps({ relay, now: realNow }), account: p.account });
+    const input = await screen.findByLabelText('部屋のパスワードの初期値');
+    expect(screen.getByTestId('password-hint').textContent).toBe('空にしておくと、対戦ごとに数字4桁を作ります。この端末にだけ保存し、公開はしません。');
+    await user.type(input, '123');
+    expect(screen.getByTestId('password-error').textContent).toBe('数字4〜8桁で入力してください。');
+    expect((screen.getByRole('button', { name: '設定を保存' }) as HTMLButtonElement).disabled).toBe(true);
+    await user.type(input, '4');
+    expect(screen.getByTestId('password-error').textContent).toBe('');
+    await waitFor(() => expect((screen.getByRole('button', { name: '設定を保存' }) as HTMLButtonElement).disabled).toBe(false));
+    await user.click(screen.getByRole('button', { name: '設定を保存' }));
+    await waitFor(() => expect(localStorage.getItem('nostr-rating:default-room-password:smash_sp')).toBe('1234'));
+    const ev = relay.all().find((e) => e.kind === KIND.settings)!;
+    expect(ev.content.includes('1234')).toBe(false);
+  });
+
   test('lists this device and revokes another one', async () => {
     const user = userEvent.setup();
     const relay = new MemoryRelay(realNow);
