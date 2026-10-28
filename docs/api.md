@@ -38,6 +38,7 @@ GitHub Pages は `Access-Control-Allow-Origin: *` を返すので、ブラウザ
 | `manners` | 未報告・中止・食い違いの回数 |
 | `accounts` | 紐づけた外部アカウント。`platform`（`twitter` か `github`）、`identity`、`proof_url`、`verified` |
 | `past_seasons` | 終わったシーズンの成績。シーズンの番号ごとに `final_rating`、`peak_rating`、`matches`、`wins`、`losses` |
+| `linked_accounts` | 同じ X か GitHub を紐づけた別のアカウント（復活の言葉を失くして作り直す前のアカウントなど）。双方の紐づけを確かめられたものだけで、`aid`、`name`、`via`（共通の外部アカウント）、`past_seasons` を持つ |
 | `snapshot` | 元にしたスナップショットの `path`、`sha256`、`cutoff` |
 
 ## 使い方
