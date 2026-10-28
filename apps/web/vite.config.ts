@@ -1,4 +1,5 @@
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { join, normalize, resolve } from 'node:path';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import react from '@vitejs/plugin-react';
@@ -33,12 +34,22 @@ const lan = process.env.NR_LAN === '1';
 /** iPhone のように自己署名の証明書を受け付けない端末向けに、mkcert などで作った証明書を渡せる */
 const lanCert = process.env.NR_LAN_CERT && process.env.NR_LAN_KEY ? { cert: readFileSync(process.env.NR_LAN_CERT), key: readFileSync(process.env.NR_LAN_KEY) } : null;
 
+/**
+ * IP アドレスと localhost 以外の名前で開くと、Vite は画面の自動更新の接続を断る（DNS リバインディング対策）。
+ * 開発機のホスト名（とその .local）と、NR_LAN_HOSTS に書いた名前だけを許す
+ */
+const lanHosts = (() => {
+  const name = hostname().replace(/\.local$/, '');
+  return [name, `${name}.local`, ...(process.env.NR_LAN_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean)];
+})();
+
 export default defineConfig({
   base: process.env.VITE_BASE ?? '/',
   plugins: [react(), serveRepoData(), ...(lan && !lanCert ? [basicSsl()] : [])],
   server: lan
     ? {
         host: true,
+        allowedHosts: lanHosts,
         ...(lanCert ? { https: lanCert } : {}),
         proxy: { '/relay': { target: 'ws://localhost:7777', ws: true, rewrite: () => '/' } },
       }

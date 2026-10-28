@@ -145,6 +145,7 @@ npm run dev:lan                  # https で LAN に公開し、/relay をロー
   NR_LAN_CERT=lan.pem NR_LAN_KEY=lan-key.pem npm run dev:lan
   ```
 
+- IP の代わりに開発機のホスト名（`<ホスト名>` や `<ホスト名>.local`）でも開けます。それ以外の名前で開くと、保存したときの画面の自動更新がつながりません。その名前を `NR_LAN_HOSTS=<名前> npm run dev:lan` のように渡してください。
 - つながらないときは、macOS のファイアウォールで node への着信を許可してください。
 
 ```bash
