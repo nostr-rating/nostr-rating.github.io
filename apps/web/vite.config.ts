@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join, normalize, resolve } from 'node:path';
 import basicSsl from '@vitejs/plugin-basic-ssl';
@@ -26,6 +26,56 @@ function serveRepoData(): Plugin {
 }
 
 /**
+ * 文字のフォント（Zen Kaku Gothic New）を、アプリとヘルプの両方から fonts/ で読めるように配る。
+ * 外部のフォント配信を使うと、開くたびに利用者の IP がそこへ届くため、同じ配信元から出す
+ */
+const FONT_DIR = resolve(REPO, 'node_modules/@fontsource/zen-kaku-gothic-new');
+const FONT_CSS = 'fonts/zen-kaku-gothic-new.css';
+
+function fontCss(): string {
+  return ['400', '700']
+    .map((w) => readFileSync(join(FONT_DIR, `${w}.css`), 'utf8'))
+    .join('\n')
+    .replace(/, url\([^)]*\.woff\) format\('woff'\)/g, '')
+    .replace(/url\(\.\/files\//g, 'url(./zen-kaku-gothic-new/')
+    // 字の範囲ごとの宣言が数百あるので、コメントと空白を落として小さくする
+    .replace(/\/\*[^*]*\*\//g, '')
+    .replace(/\s*([{};:,])\s*/g, '$1')
+    .trim();
+}
+
+function fontFiles(): string[] {
+  const used = new Set([...fontCss().matchAll(/zen-kaku-gothic-new\/([^)]+\.woff2)/g)].map((m) => m[1]!));
+  return readdirSync(join(FONT_DIR, 'files')).filter((f) => used.has(f));
+}
+
+function serveFonts(): Plugin {
+  let base = '/';
+  return {
+    name: 'serve-fonts',
+    configResolved: (c) => void (base = c.base),
+    configureServer: (s) =>
+      void s.middlewares.use((req, res, next) => {
+        const path = (req.url ?? '').split('?')[0]!;
+        if (path === `${base}${FONT_CSS}`) {
+          res.setHeader('Content-Type', 'text/css');
+          return void res.end(fontCss());
+        }
+        const m = path.match(/\/fonts\/zen-kaku-gothic-new\/([\w.-]+\.woff2)$/);
+        if (!m || !existsSync(join(FONT_DIR, 'files', m[1]!))) return next();
+        res.setHeader('Content-Type', 'font/woff2');
+        createReadStream(join(FONT_DIR, 'files', m[1]!)).pipe(res);
+      }),
+    transformIndexHtml: () => [{ tag: 'link', attrs: { rel: 'stylesheet', href: `${base}${FONT_CSS}` }, injectTo: 'head-prepend' }],
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: FONT_CSS, source: fontCss() });
+      this.emitFile({ type: 'asset', fileName: 'fonts/zen-kaku-gothic-new/LICENSE.txt', source: readFileSync(join(FONT_DIR, 'LICENSE')) });
+      for (const f of fontFiles()) this.emitFile({ type: 'asset', fileName: `fonts/zen-kaku-gothic-new/${f}`, source: readFileSync(join(FONT_DIR, 'files', f)) });
+    },
+  };
+}
+
+/**
  * npm run dev:lan: 同じ LAN のスマホから開くための開発サーバー。
  * 端末の鍵（WebCrypto）と OPFS は https でしか使えないので自己署名の証明書で配り、
  * https のページから ws:// にはつなげないので、/relay をローカルのリレーへ中継する
@@ -45,7 +95,7 @@ const lanHosts = (() => {
 
 export default defineConfig({
   base: process.env.VITE_BASE ?? '/',
-  plugins: [react(), serveRepoData(), ...(lan && !lanCert ? [basicSsl()] : [])],
+  plugins: [react(), serveRepoData(), serveFonts(), ...(lan && !lanCert ? [basicSsl()] : [])],
   server: lan
     ? {
         host: true,

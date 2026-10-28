@@ -10,6 +10,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@fontsource/zen-kaku-gothic-new": "^5.3.1",
     "@nostr-rating/core": "*",
     "@sqlite.org/sqlite-wasm": "^3.54.1-build1",
     "jsqr": "^1.4.0",

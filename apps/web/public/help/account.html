@@ -4,17 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>アカウントの守り方 | Nostr-Rating</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="../fonts/zen-kaku-gothic-new.css">
 <style>
 /* 1段組みのヘルプページ。見出しの左に節の印、要点は「カード」、困ったときは開閉式 */
 :root{
   --paper:#f5f7fa; --surface:#ffffff; --ink:#18223a; --muted:#5a6680;
   --line:#d9dfea; --accent:#2f4fd8; --accent-soft:#e6ebfd; --warn:#b4560a; --warn-soft:#fdf0e3;
-  --display:"Dela Gothic One", "Zen Kaku Gothic New", "Hiragino Sans", sans-serif;
+  --display:"Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
   --body:"Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
-  --mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --mono:ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --paper:#10141f; --surface:#171d2c; --ink:#e7ebf5; --muted:#9aa5be;
@@ -29,8 +27,8 @@ body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:
 .proto{background:var(--warn-soft);color:var(--ink);border:1px solid var(--warn);border-radius:8px;padding:10px 14px;font-size:14px}
 .proto b{color:var(--warn)}
 header .app{font-size:13px;letter-spacing:.12em;color:var(--muted);margin:0 0 6px}
-h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,7vw,44px);line-height:1.25;margin:0 0 16px;text-wrap:balance}
-h2{font-family:var(--display);font-weight:400;font-size:22px;line-height:1.4;margin:0 0 16px;text-wrap:balance;
+h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,7vw,44px);line-height:1.25;margin:0 0 16px;text-wrap:balance}
+h2{font-family:var(--display);font-weight:700;font-size:22px;line-height:1.4;margin:0 0 16px;text-wrap:balance;
   display:flex;gap:10px;align-items:baseline}
 h2::before{content:"";flex:none;width:10px;height:10px;background:var(--accent);transform:translateY(-2px) rotate(45deg)}
 h3{font-size:17px;font-weight:700;margin:0}
@@ -42,7 +40,7 @@ ol,ul{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:6px}
 .quick ol{counter-reset:q;list-style:none;padding:0;gap:12px}
 .quick li{counter-increment:q;display:grid;grid-template-columns:32px 1fr;gap:10px;align-items:start}
 .quick li::before{content:counter(q);font-family:var(--display);color:var(--accent);background:var(--accent-soft);
-  width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:15px}
+  width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:15px;font-weight:700}
 .note{color:var(--muted);font-size:15px}
 .keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
 .key{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px;min-width:0}
@@ -70,9 +68,9 @@ summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-of
 .tablebox{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 table{border-collapse:collapse;width:100%;min-width:480px;font-size:15px}
 th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-thead th{font-family:var(--display);font-weight:400;font-size:15px}
+thead th{font-family:var(--display);font-weight:700;font-size:15px}
 thead th:nth-child(3){color:var(--accent)}
-tbody th{color:var(--muted);font-weight:500;white-space:nowrap}
+tbody th{color:var(--muted);font-weight:700;white-space:nowrap}
 tr:last-child th,tr:last-child td{border-bottom:none}
 .move{min-width:560px}
 .move tbody th{white-space:normal;min-width:9em}
