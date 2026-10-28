@@ -12,6 +12,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { Account } from '../account/account.js';
 import { StatusBadge } from '../components/IdentityBadge.js';
+import { QrCode } from '../components/QrCode.js';
 import { RecoveryWords } from '../components/RecoveryWords.js';
 import { navigate } from '../router.js';
 import { useApp } from '../state/AppContext.js';
@@ -176,7 +177,9 @@ export function Onboarding() {
       {step === 'join' && (
         <div className="card stack">
           <h2>この端末を登録する</h2>
-          <p>下の「端末の申請」をコピーして、次のどちらかに貼ってください。貼った側で登録が終わると、この画面は自動で進みます。</p>
+          <p>登録済みの端末で、設定の「QR を読み取る」からこの QR コードを読み取ってください。読み取れないときは、下の「端末の申請」をコピーして貼ってください。登録が終わると、この画面は自動で進みます。</p>
+          {requestCode && <QrCode text={requestCode} label="端末の申請の QR コード" />}
+          <p>文字列を貼る場所は、次のどちらかです。</p>
           <ul>
             <li>登録済みの端末: 設定の「端末を追加」</li>
             <li>端末を全部失くしたとき: 復活の道具</li>

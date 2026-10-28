@@ -1,4 +1,6 @@
 import { deviceValidAt } from '@nostr-rating/core';
+import { decodeDeviceRequest } from '../account/account.js';
+import { QrScanner } from './QrScanner.js';
 import { useState } from 'react';
 import { useApp } from '../state/AppContext.js';
 
@@ -10,10 +12,12 @@ export function Devices() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
   const state = app.account?.state;
   if (!app.account || !state) return null;
   const t = app.now();
   const devices = [...state.devices.values()].filter((d) => deviceValidAt(state, d.record.id, t));
+  const request = decodeDeviceRequest(code);
 
   const run = async (f: () => Promise<void>, done: string) => {
     setBusy(true);
@@ -55,9 +59,26 @@ export function Devices() {
           </li>
         ))}
       </ul>
-      <label htmlFor="device-request-input">端末を追加（新しい端末に表示された「端末の申請」を貼る）</label>
+      <h3>端末を追加</h3>
+      <p className="muted">新しい端末で「すでにアカウントを持っている」を選ぶと表示される QR コードを読み取るか、「端末の申請」の文字列を貼ってください。</p>
+      {scanning ? (
+        <QrScanner
+          accept={(t) => decodeDeviceRequest(t) !== null}
+          onResult={(t) => {
+            setCode(t);
+            setScanning(false);
+          }}
+          onClose={() => setScanning(false)}
+        />
+      ) : (
+        <button type="button" onClick={() => setScanning(true)}>
+          QR を読み取る
+        </button>
+      )}
+      <label htmlFor="device-request-input">端末の申請</label>
       <textarea id="device-request-input" rows={3} autoComplete="off" value={code} onChange={(e) => setCode(e.target.value)} />
-      <button type="button" disabled={busy || code.trim() === ''} onClick={() => void run(async () => void (await app.account!.addDevice(code)), 'この端末を追加しました')}>
+      {request && <p>追加する端末: {request.label}</p>}
+      <button type="button" disabled={busy || !request} onClick={() => void run(async () => void (await app.account!.addDevice(code)), 'この端末を追加しました')}>
         この端末を追加
       </button>
       {message && <p role="status">{message}</p>}

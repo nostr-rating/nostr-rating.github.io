@@ -95,6 +95,7 @@ describe('Onboarding', () => {
     renderWithApp(<Onboarding />, { deps: makeDeps({ relay, now: realNow }) });
     await user.click(screen.getByRole('button', { name: 'すでにアカウントを持っている' }));
     await waitFor(() => expect(screen.getByTestId('device-request').textContent).toMatch(/^nr-device:/));
+    expect((await screen.findByRole('img', { name: '端末の申請の QR コード' })).querySelector('svg')).toBeTruthy();
     await existing.account.addDevice(screen.getByTestId('device-request').textContent!);
     // 表示名と紐づけがあるアカウントなので、そのままロビーへ進む
     await waitFor(() => expect(location.hash).toBe('#/lobby'), { timeout: 5000 });
