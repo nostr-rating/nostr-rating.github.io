@@ -1,7 +1,7 @@
 import type { NostrEvent } from 'nostr-tools/pure';
 import { describe, expect, test } from 'vitest';
 import { MemoryRelay } from '../../src/relay/memory.js';
-import { newUser } from '../helpers/keys.js';
+import { newKeys as newUser } from '../helpers/keys.js';
 
 const alice = newUser();
 

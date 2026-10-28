@@ -3,17 +3,18 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import {
+  buildAccountInfo,
   buildApplication,
-  buildIdentities,
   buildMatch,
   buildReport,
-  LocalSigner,
+  KIND,
   MemoryRelay,
   type Filter,
   type NostrEvent,
   type RelayClient,
 } from '@nostr-rating/core';
 import { runSnapshot } from '../src/run.js';
+import { fixedAccount } from './account.js';
 
 const REPO = resolve(__dirname, '../../..');
 const FIXTURES = resolve(__dirname, 'fixtures');
@@ -27,31 +28,35 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-/** 固定の鍵（golden を作れるように） */
-const signer = (n: number) => new LocalSigner(new Uint8Array(32).fill(n));
-
 /** リレーごとに返す順番が違っても結果が変わらないことを確かめるため、問い合わせ結果を逆順にする */
 function reversed(inner: RelayClient): RelayClient {
   return { ...inner, query: async (f: Filter[]) => (await inner.query(f)).reverse(), subscribe: inner.subscribe.bind(inner), publish: inner.publish.bind(inner), close: () => inner.close() };
 }
 
 async function seededEvents(): Promise<NostrEvent[]> {
-  const a = signer(1);
-  const b = signer(2);
-  const [pa, pb] = [await a.getPublicKey(), await b.getPublicKey()];
-  const evs: NostrEvent[] = [];
-  for (const [s, proof] of [[a, 'a1'], [b, 'b1'], [b, 'b2']] as const) {
-    evs.push(await s.signEvent(buildIdentities([{ platform: 'github', identity: proof, proof }], T0 - (proof === 'b2' ? 5 : 10))));
+  const a = fixedAccount(1, T0 - DAY);
+  const b = fixedAccount(2, T0 - DAY);
+  const evs: NostrEvent[] = [a.kelEvent, b.kelEvent, a.certAnnouncement(T0), b.certAnnouncement(T0)];
+  for (const [acc, proof] of [[a, 'a1'], [b, 'b1'], [b, 'b2']] as const) {
+    evs.push(acc.sign(buildAccountInfo('smash_sp', { pubkey: acc.aid, name: '', claims: [{ platform: 'github', identity: proof, proof }] }, T0 - (proof === 'b2' ? 5 : 10))));
   }
-  const app = await b.signEvent(
-    buildApplication('smash_sp', { recruiter: pa, firstFighter: 'fox', settingsId: '2'.repeat(64), rangeChoice: null, rematchHours: 0, waitingSince: T0 - 30 }, T0 - 1),
+  const app = b.sign(
+    buildApplication(
+      'smash_sp',
+      { recruiter: a.aid, recruiterSession: a.session(T0), firstFighter: 'fox', settingsId: '2'.repeat(64), rangeChoice: null, rematchHours: 0, waitingSince: T0 - 30 },
+      T0 - 1,
+    ),
   );
-  const m = await a.signEvent(
-    buildMatch('smash_sp', { p1: pa, p2: pb, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: app.id }, T0),
+  const m = a.sign(
+    buildMatch(
+      'smash_sp',
+      { p1: a.aid, p2: b.aid, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: app.id, sessions: [a.session(T0), b.session(T0)] },
+      T0,
+    ),
   );
   evs.push(app, m);
-  evs.push(await a.signEvent(buildReport('smash_sp', { matchId: m.id, opponent: pb, result: 'win' }, T0 + 60)));
-  evs.push(await b.signEvent(buildReport('smash_sp', { matchId: m.id, opponent: pa, result: 'lose' }, T0 + 61)));
+  evs.push(a.sign(buildReport('smash_sp', { matchId: m.id, opponent: b.session(T0), result: 'win' }, T0 + 60)));
+  evs.push(b.sign(buildReport('smash_sp', { matchId: m.id, opponent: a.session(T0), result: 'lose' }, T0 + 61)));
   return evs;
 }
 
@@ -59,8 +64,9 @@ async function seededEvents(): Promise<NostrEvent[]> {
 async function relaysWith(evs: NostrEvent[]): Promise<RelayClient> {
   const r1 = new MemoryRelay(() => T0 + 10 * DAY);
   const r2 = new MemoryRelay(() => T0 + 10 * DAY);
-  for (const e of evs) await (e.content === '' && e.tags[0]?.[2] === 'b2' ? r2 : r1).publish(e);
-  for (const e of evs) if (e.kind !== 10011) await r2.publish(e);
+  const isB2 = (e: NostrEvent) => e.kind === KIND.account && e.content.includes('"b2"');
+  for (const e of evs) await (isB2(e) ? r2 : r1).publish(e);
+  for (const e of evs) if (e.kind !== KIND.account) await r2.publish(e);
   return {
     publish: async (e) => r1.publish(e),
     query: async (f) => [...(await r1.query(f)), ...(await r2.query(f))],

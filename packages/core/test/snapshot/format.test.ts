@@ -46,6 +46,7 @@ const fixtureState: RatingState = {
   },
   recentPairs: [{ a: A, b: B, settledAt: 1790850000 }],
   seasonSummaries: {},
+  kels: {},
 };
 
 const meta = {
@@ -74,6 +75,7 @@ describe('snapshot format', () => {
       cutoff: fixtureState.cutoff,
       season: 1,
       seasonSummaries: {},
+      kels: {},
     };
     expect(serializeSnapshot(stateToSnapshot(reordered, meta))).toBe(serializeSnapshot(stateToSnapshot(fixtureState, meta)));
   });

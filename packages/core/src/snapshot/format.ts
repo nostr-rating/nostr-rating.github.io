@@ -1,6 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import type { GameDefinition } from '../game/definition.js';
+import type { KelRecords } from '../kel/book.js';
 import type { RatingState } from '../rating/pipeline.js';
 import type { Pubkey } from '../types.js';
 
@@ -15,12 +16,11 @@ export interface SnapshotPlayer {
   manners: { no_report: number; cancel: number; mismatch: number };
   last_match_at: number | null;
   has_identity: boolean;
-  migrated_to: Pubkey | null;
 }
 
 /** docs/protocol.md「スナップショット」。キーは snake_case で、JSON とそのまま対応する */
 export interface Snapshot {
-  schema_version: 1;
+  schema_version: 2;
   game: string;
   season: number;
   kind: 'rolling' | 'final';
@@ -30,11 +30,15 @@ export interface Snapshot {
   /** 計算に使った設定値（ratingConfigHash）。シーズン途中で変わっていないかの確認に使う */
   config_sha256: string;
   inputs: { event_count: number; event_ids_sha256: string };
+  /** キーは aid（docs/adr/0008） */
   players: Record<Pubkey, SnapshotPlayer>;
   recent_pairs: { a: Pubkey; b: Pubkey; settled_at: number }[];
-  migrations: unknown[];
-  /** シーズン id → 公開鍵 → 成績 */
+  /** シーズン id → aid → 成績 */
   season_summaries: Record<string, Record<Pubkey, SnapshotSeasonSummary>>;
+  /** aid → 採用した KEL（sn の順）。全員の「先に見た版」になる */
+  kels: KelRecords;
+  /** 取り切れなかったので、この回はイベントを無視したアカウント（作り直して確かめるときに使う） */
+  excluded: Pubkey[];
 }
 
 export interface SnapshotSeasonSummary {
@@ -67,6 +71,7 @@ export function stateToSnapshot(
     eventIds: string[];
     configSha256: string;
     kind?: Snapshot['kind'];
+    excluded?: Pubkey[];
   },
 ): Snapshot {
   const players: Record<Pubkey, SnapshotPlayer> = {};
@@ -82,11 +87,10 @@ export function stateToSnapshot(
       manners: { no_report: p.manners.noReport, cancel: p.manners.cancel, mismatch: p.manners.mismatch },
       last_match_at: p.lastMatchAt,
       has_identity: p.hasIdentity,
-      migrated_to: null,
     };
   }
   return {
-    schema_version: 1,
+    schema_version: 2,
     game: meta.game,
     season: state.season,
     kind: meta.kind ?? 'rolling',
@@ -97,7 +101,6 @@ export function stateToSnapshot(
     inputs: { event_count: meta.eventIds.length, event_ids_sha256: eventIdsHash(meta.eventIds) },
     players,
     recent_pairs: state.recentPairs.map((p) => ({ a: p.a, b: p.b, settled_at: p.settledAt })),
-    migrations: [],
     season_summaries: Object.fromEntries(
       Object.entries(state.seasonSummaries).map(([season, players]) => [
         season,
@@ -109,6 +112,8 @@ export function stateToSnapshot(
         ),
       ]),
     ),
+    kels: state.kels,
+    excluded: [...(meta.excluded ?? [])].sort(),
   };
 }
 
@@ -144,6 +149,7 @@ export function snapshotToState(s: Snapshot): RatingState {
         ),
       ]),
     ),
+    kels: s.kels ?? {},
   };
 }
 

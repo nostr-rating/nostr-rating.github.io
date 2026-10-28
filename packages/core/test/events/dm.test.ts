@@ -4,7 +4,7 @@ import { describe, expect, test } from 'vitest';
 import { unwrapRoomMessage, validRoomId, wrapRoomMessage } from '../../src/events/dm.js';
 import { KIND } from '../../src/events/kinds.js';
 import { def } from '../helpers/def.js';
-import { newUser } from '../helpers/keys.js';
+import { newKeys as newUser } from '../helpers/keys.js';
 
 const NOW = 1_790_800_000;
 const MATCH = 'f'.repeat(64);

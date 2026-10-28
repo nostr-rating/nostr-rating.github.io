@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { buildIdentities, buildMatch, buildRecruitment, parseApplication, type MatchRecord } from '../../src/events/codec.js';
+import { buildAccountInfo, buildMatch, buildRecruitment, parseApplication, type MatchRecord } from '../../src/events/codec.js';
 import { KIND } from '../../src/events/kinds.js';
 import type { LocalView } from '../../src/match/conditions.js';
 import { Matchmaker } from '../../src/match/matchmaker.js';
 import { MemoryRelay } from '../../src/relay/memory.js';
 import { def } from '../helpers/def.js';
 import { newUser } from '../helpers/keys.js';
+import { authorOf } from '../helpers/state.js';
 
 const now = () => Math.floor(Date.now() / 1000);
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -19,15 +20,16 @@ function flatView(ratings: Record<string, number> = {}): LocalView {
   };
 }
 
-/** NIP-39 の主張をリレーに出したユーザー（手元の view はまだ知らない状態） */
+type U = ReturnType<typeof newUser>;
+const claimFor = (u: U, at: number) =>
+  u.signer.signEvent(buildAccountInfo('smash_sp', { pubkey: u.pk, name: '', claims: [{ platform: 'github', identity: u.pk.slice(0, 6), proof: 'abc' }] }, at));
+
+/** 紐づけをリレーに出したユーザー（手元の view はまだ知らない状態） */
 function maker(relay: MemoryRelay, view: LocalView = flatView(), withIdentity = true) {
   const u = newUser();
-  if (withIdentity) {
-    void u.signer
-      .signEvent(buildIdentities([{ platform: 'github', identity: u.pk.slice(0, 6), proof: 'abc' }], now() - 100))
-      .then((e) => relay.publish(e));
-  }
-  const mm = new Matchmaker({ relay, signer: u.signer, def, view, now, sleep });
+  if (withIdentity) void claimFor(u, now() - 100).then((e) => relay.publish(e));
+  const author = async (ev: Parameters<typeof authorOf>[0]) => authorOf(ev);
+  const mm = new Matchmaker({ relay, identity: u.identityAt(now()), author, def, view, now, sleep });
   return { ...u, mm };
 }
 
@@ -131,7 +133,7 @@ describe('Matchmaker', () => {
     ctrl.abort();
     await vi.advanceTimersByTimeAsync(2000);
     expect(await pa).toBe('AbortError');
-    const recs = await relay.query([{ kinds: [KIND.recruitment], authors: [a.pk] }]);
+    const recs = await relay.query([{ kinds: [KIND.recruitment], authors: [a.sessionAt(now())] }]);
     expect(recs.map((e) => JSON.parse(e.content).status)).toEqual(['closed']);
   });
 
@@ -141,12 +143,12 @@ describe('Matchmaker', () => {
     const b = maker(relay);
     const mallory = newUser();
     relay.subscribe([{ kinds: [KIND.application] }], (ev) => {
-      const app = parseApplication('smash_sp', ev)!;
+      const app = parseApplication('smash_sp', ev, authorOf(ev))!;
       void mallory.signer
         .signEvent(
           buildMatch(
             'smash_sp',
-            { p1: mallory.pk, p2: app.pubkey, p1Fighter: 'mario', p2Fighter: app.firstFighter, p1SettingsId: 'a'.repeat(64), p2SettingsId: app.settingsId, applicationId: app.eventId },
+            { p1: mallory.pk, p2: app.pubkey, p1Fighter: 'mario', p2Fighter: app.firstFighter, p1SettingsId: 'a'.repeat(64), p2SettingsId: app.settingsId, applicationId: app.eventId, sessions: [mallory.sessionAt(now()), app.session] },
             now(),
           ),
         )
@@ -170,14 +172,14 @@ describe('Matchmaker', () => {
         buildRecruitment('smash_sp', { firstFighter: 'mario', rating: 1500, rangeChoice: null, rematchHours: 0, settingsId: 'a'.repeat(64), waitingSince: now(), status: 'open' }, now(), 600),
       ),
     );
-    await relay.publish(await mallory.signer.signEvent(buildIdentities([{ platform: 'github', identity: 'm', proof: 'abc' }], now() - 100)));
-    relay.subscribe([{ kinds: [KIND.application], '#p': [mallory.pk] }], (ev) => {
-      const app = parseApplication('smash_sp', ev)!;
+    await relay.publish(await claimFor(mallory, now() - 100));
+    relay.subscribe([{ kinds: [KIND.application], '#p': [mallory.sessionAt(now())] }], (ev) => {
+      const app = parseApplication('smash_sp', ev, authorOf(ev))!;
       void mallory.signer
         .signEvent(
           buildMatch(
             'smash_sp',
-            { p1: mallory.pk, p2: app.pubkey, p1Fighter: 'mario', p2Fighter: app.firstFighter, p1SettingsId: 'a'.repeat(64), p2SettingsId: app.settingsId, applicationId: app.eventId },
+            { p1: mallory.pk, p2: app.pubkey, p1Fighter: 'mario', p2Fighter: app.firstFighter, p1SettingsId: 'a'.repeat(64), p2SettingsId: app.settingsId, applicationId: app.eventId, sessions: [mallory.sessionAt(now()), app.session] },
             now() + 3600,
           ),
         )
@@ -191,7 +193,7 @@ describe('Matchmaker', () => {
     const relay = new MemoryRelay(now);
     const b = maker(relay);
     const spammer = newUser();
-    await relay.publish(await spammer.signer.signEvent(buildIdentities([{ platform: 'github', identity: 's', proof: 'abc' }], now() - 100)));
+    await relay.publish(await claimFor(spammer, now() - 100));
     await relay.publish(
       await spammer.signer.signEvent(
         buildRecruitment('smash_sp', { firstFighter: 'mario', rating: 1500, rangeChoice: null, rematchHours: 0, settingsId: 'a'.repeat(64), waitingSince: 0, status: 'open' }, now(), 120),
@@ -223,7 +225,7 @@ describe('Matchmaker', () => {
       await a.signer.signEvent(
         buildMatch(
           'smash_sp',
-          { p1: a.pk, p2: b.pk, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: 'a'.repeat(64), p2SettingsId: 'b'.repeat(64), applicationId: 'c'.repeat(64) },
+          { p1: a.pk, p2: b.pk, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: 'a'.repeat(64), p2SettingsId: 'b'.repeat(64), applicationId: 'c'.repeat(64), sessions: [a.sessionAt(now()), b.sessionAt(now())] },
           now() - 3600,
         ),
       ),

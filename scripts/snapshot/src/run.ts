@@ -60,14 +60,14 @@ function loadPrevious(root: string): Previous | null {
   };
 }
 
-/** スナップショットは取りこぼしが永久に残るので、プレイヤー1人ずつ問い合わせ、取り切れなければ失敗させる */
+/**
+ * スナップショットは取りこぼしが永久に残るので、アカウントごとに取り切る。
+ * 取り切れなかったアカウントは、その回はイベントを出さなかったものとして扱い、スナップショットに残す
+ */
 async function advance(def: GameDefinition, relay: RelayClient, prev: RatingState, cutoff: number) {
-  const events = await fetchRatingEvents(relay, def, prev.cutoff - def.report.deadlineSec, cutoff, {
-    strict: true,
-    knownPlayers: Object.keys(prev.players),
-    authorsPerQuery: 1,
-  });
-  return advanceRatings(def, prev, events, cutoff);
+  const { events, incomplete } = await fetchRatingEvents(relay, def, prev.kels, prev.cutoff - def.report.deadlineSec, cutoff, { strict: true });
+  const excluded = [...incomplete].sort();
+  return { ...advanceRatings(def, prev, events, cutoff, { exclude: incomplete }), excluded };
 }
 
 function write(root: string, path: string, snapshot: Snapshot, usedEventIds: string[]): void {
@@ -98,8 +98,9 @@ export async function runSnapshot(opts: RunOptions): Promise<{ path: string; sna
 
   const prev = loadPrevious(opts.root);
   const configSha256 = ratingConfigHash(def);
-  const meta = (eventIds: string[], kind: Snapshot['kind']) => ({
+  const meta = (eventIds: string[], kind: Snapshot['kind'], excluded: string[]) => ({
     game: def.id,
+    excluded,
     previous: prev?.path ?? null,
     previousSha256: prev?.sha256 ?? null,
     eventIds,
@@ -114,10 +115,10 @@ export async function runSnapshot(opts: RunOptions): Promise<{ path: string; sna
   // 前のシーズンが終わっていれば、まずその最終スナップショットだけを作る
   if (prev && prev.kind !== 'final' && prev.state.season < season.id) {
     const ended = seasonById(def, prev.state.season);
-    const { state, usedEventIds } = await advance(def, opts.relay, prev.state, ended.endsAt);
+    const { state, usedEventIds, excluded } = await advance(def, opts.relay, prev.state, ended.endsAt);
     const finalState = { ...state, seasonSummaries: summarizeSeason(state) };
     const path = `snapshots/season_${ended.id}/final.json`;
-    const snapshot = stateToSnapshot(finalState, meta(usedEventIds, 'final'));
+    const snapshot = stateToSnapshot(finalState, meta(usedEventIds, 'final', excluded));
     write(opts.root, path, snapshot, usedEventIds);
     return { path, snapshot };
   }
@@ -127,16 +128,16 @@ export async function runSnapshot(opts: RunOptions): Promise<{ path: string; sna
     start = initialState(def, season.id, season.startsAt);
   } else if (prev.state.season < season.id) {
     // 新しいシーズンは全員が初期値から。過去のシーズンの成績だけを引き継ぐ
-    start = initialState(def, season.id, season.startsAt, prev.state.seasonSummaries);
+    start = initialState(def, season.id, season.startsAt, prev.state.seasonSummaries, prev.state.kels);
   } else {
     if (prev.state.cutoff >= opts.cutoff) throw new Error(`cutoff must be after the previous one (${prev.state.cutoff})`);
     start = prev.state;
   }
 
-  const { state, usedEventIds } = await advance(def, opts.relay, start, opts.cutoff);
+  const { state, usedEventIds, excluded } = await advance(def, opts.relay, start, opts.cutoff);
   const path = `snapshots/season_${season.id}/${jstDate(opts.cutoff)}.json`;
   if (prev?.path === path) throw new Error(`${path} is the previous snapshot; use a cutoff on a later date`);
-  const snapshot = stateToSnapshot(state, meta(usedEventIds, 'rolling'));
+  const snapshot = stateToSnapshot(state, meta(usedEventIds, 'rolling', excluded));
   write(opts.root, path, snapshot, usedEventIds);
   return { path, snapshot };
 }

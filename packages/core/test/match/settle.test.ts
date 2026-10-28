@@ -18,6 +18,7 @@ const match: MatchRecord = {
   p1SettingsId: '1'.repeat(64),
   p2SettingsId: '2'.repeat(64),
   applicationId: '3'.repeat(64),
+  sessions: [],
 };
 
 let seq = 0;

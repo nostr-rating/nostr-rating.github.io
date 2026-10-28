@@ -21,10 +21,11 @@ import {
 export function newDevice(at: number, label = 'dev', lifetime = DEVICE_LIFETIME_SEC) {
   const sk = p256.utils.randomSecretKey();
   const key: KeyRef = { type: 'p256', pub: bytesToHex(p256.getPublicKey(sk, false)) };
+  const publisherSk = generateSecretKey();
   const record: DeviceRecord = {
     id: deviceId(key),
     key,
-    publisher: getPublicKey(generateSecretKey()),
+    publisher: getPublicKey(publisherSk),
     label,
     expiresAt: at + lifetime,
   };
@@ -32,7 +33,7 @@ export function newDevice(at: number, label = 'dev', lifetime = DEVICE_LIFETIME_
     signer: record.id,
     p256: bytesToHex(p256.sign(hexToBytes(digest), sk, { format: 'compact', lowS: false })),
   });
-  return { record, sign };
+  return { record, sign, publisherSk };
 }
 
 /** 復活の言葉の鍵（secp256k1） */
@@ -43,7 +44,7 @@ export function newNextKey() {
     const ev = finalizeEvent(attestationTemplate(digest, createdAt), sk);
     return { signer: pub, created_at: ev.created_at, sig: ev.sig };
   };
-  return { pub, sign };
+  return { pub, sign, sk };
 }
 
 type Signer = { sign: (digest: string) => KelSig };

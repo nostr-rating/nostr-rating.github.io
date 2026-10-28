@@ -1,8 +1,14 @@
 import type { EventTemplate, NostrEvent } from 'nostr-tools/pure';
-import { claimToTag, tagToClaim, type IdentityClaim } from '../identity/nip39.js';
+import { parseClaim, type IdentityClaim } from '../identity/claims.js';
 import type { StageBans } from '../match/stages.js';
 import type { FighterId, Pubkey, StageId } from '../types.js';
-import { appTags, isAppEvent, isValidEvent, KIND, recruitmentAddr, settingsD, tagValue, tagValues } from './kinds.js';
+import { appTags, isAppEvent, KIND, recruitmentAddr, settingsD, tagValue, tagValues } from './kinds.js';
+
+/**
+ * docs/adr/0008。アプリのイベントは使い捨ての鍵が署名し、証明書でアカウント（aid）に結び付く。
+ * parse は、呼び出し側が証明書を確かめて求めた author（aid）を受け取る。null なら読まない。
+ * 各レコードの pubkey・p1・p2・recruiter・reporter は aid で、session は署名した使い捨ての鍵。
+ */
 
 export interface Settings {
   pubkey: Pubkey;
@@ -15,6 +21,7 @@ export interface Settings {
 
 export interface Recruitment {
   pubkey: Pubkey;
+  session: Pubkey;
   eventId: string;
   createdAt: number;
   firstFighter: FighterId;
@@ -31,8 +38,11 @@ export interface Recruitment {
 export interface Application {
   eventId: string;
   pubkey: Pubkey;
+  session: Pubkey;
   createdAt: number;
   recruiter: Pubkey;
+  /** 募集を署名した使い捨ての鍵 */
+  recruiterSession: Pubkey;
   recruitmentAddr: string;
   firstFighter: FighterId;
   settingsId: string;
@@ -52,6 +62,8 @@ export interface MatchRecord {
   p1SettingsId: string;
   p2SettingsId: string;
   applicationId: string;
+  /** p タグの使い捨ての鍵（購読と DM の宛先） */
+  sessions: Pubkey[];
 }
 
 export type ReportResult = 'win' | 'lose' | 'cancel';
@@ -64,16 +76,13 @@ export interface ResultReport {
   createdAt: number;
 }
 
-export interface Identities {
+/** アカウントの公開情報（kind 30756、d は aid）。表示名と、外部アカウントの紐づけ */
+export interface AccountInfo {
   pubkey: Pubkey;
-  createdAt: number;
-  claims: IdentityClaim[];
-}
-
-export interface Profile {
-  pubkey: Pubkey;
+  eventId: string;
   createdAt: number;
   name: string;
+  claims: IdentityClaim[];
 }
 
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -112,12 +121,12 @@ export function buildSettings(
   };
 }
 
-export function parseSettings(game: string, ev: NostrEvent): Settings | null {
-  if (!isAppEvent(ev, KIND.settings, game) || tagValue(ev, 'd') !== settingsD(game)) return null;
+export function parseSettings(game: string, ev: NostrEvent, author: Pubkey | null): Settings | null {
+  if (!author || !isAppEvent(ev, KIND.settings, game) || tagValue(ev, 'd') !== settingsD(game)) return null;
   const c = json(ev);
   if (!c || !isStageBans(c.stageBans) || !isRange(c.rangeChoice) || !isNum(c.rematchHours)) return null;
   return {
-    pubkey: ev.pubkey,
+    pubkey: author,
     eventId: ev.id,
     createdAt: ev.created_at,
     stageBans: c.stageBans as Record<string, StageId[]>,
@@ -150,15 +159,16 @@ export function buildRecruitment(
   };
 }
 
-export function parseRecruitment(game: string, ev: NostrEvent): Recruitment | null {
-  if (!isAppEvent(ev, KIND.recruitment, game) || tagValue(ev, 'd') !== game) return null;
+export function parseRecruitment(game: string, ev: NostrEvent, author: Pubkey | null): Recruitment | null {
+  if (!author || !isAppEvent(ev, KIND.recruitment, game) || tagValue(ev, 'd') !== game) return null;
   const c = json(ev);
   const expiresAt = Number(tagValue(ev, 'expiration'));
   if (!c || !Number.isFinite(expiresAt)) return null;
   if (!isStr(c.firstFighter) || !isNum(c.rating) || !isRange(c.rangeChoice) || !isNum(c.rematchHours)) return null;
   if (!isHex(c.settingsId) || !isNum(c.waitingSince) || (c.status !== 'open' && c.status !== 'closed')) return null;
   return {
-    pubkey: ev.pubkey,
+    pubkey: author,
+    session: ev.pubkey,
     eventId: ev.id,
     createdAt: ev.created_at,
     firstFighter: c.firstFighter,
@@ -176,14 +186,15 @@ export function parseRecruitment(game: string, ev: NostrEvent): Recruitment | nu
 
 export function buildApplication(
   game: string,
-  a: Pick<Application, 'recruiter' | 'firstFighter' | 'settingsId' | 'rangeChoice' | 'rematchHours' | 'waitingSince'>,
+  a: Pick<Application, 'recruiter' | 'recruiterSession' | 'firstFighter' | 'settingsId' | 'rangeChoice' | 'rematchHours' | 'waitingSince'>,
   now: number,
 ): EventTemplate {
   return {
     kind: KIND.application,
     created_at: now,
-    tags: [['a', recruitmentAddr(a.recruiter, game)], ['p', a.recruiter], ...appTags(game)],
+    tags: [['a', recruitmentAddr(a.recruiterSession, game)], ['p', a.recruiterSession], ...appTags(game)],
     content: JSON.stringify({
+      recruiter: a.recruiter,
       firstFighter: a.firstFighter,
       settingsId: a.settingsId,
       rangeChoice: a.rangeChoice,
@@ -193,19 +204,21 @@ export function buildApplication(
   };
 }
 
-export function parseApplication(game: string, ev: NostrEvent): Application | null {
-  if (!isAppEvent(ev, KIND.application, game)) return null;
-  const recruiter = tagValue(ev, 'p');
+export function parseApplication(game: string, ev: NostrEvent, author: Pubkey | null): Application | null {
+  if (!author || !isAppEvent(ev, KIND.application, game)) return null;
+  const recruiterSession = tagValue(ev, 'p');
   const addr = tagValue(ev, 'a');
   const c = json(ev);
-  if (!isHex(recruiter) || addr !== recruitmentAddr(recruiter, game) || recruiter === ev.pubkey) return null;
-  if (!c || !isStr(c.firstFighter) || !isHex(c.settingsId)) return null;
+  if (!isHex(recruiterSession) || addr !== recruitmentAddr(recruiterSession, game)) return null;
+  if (!c || !isHex(c.recruiter) || c.recruiter === author || !isStr(c.firstFighter) || !isHex(c.settingsId)) return null;
   if (!isRange(c.rangeChoice) || !isNum(c.rematchHours) || !isNum(c.waitingSince)) return null;
   return {
     eventId: ev.id,
-    pubkey: ev.pubkey,
+    pubkey: author,
+    session: ev.pubkey,
     createdAt: ev.created_at,
-    recruiter,
+    recruiter: c.recruiter,
+    recruiterSession,
     recruitmentAddr: addr,
     firstFighter: c.firstFighter,
     settingsId: c.settingsId,
@@ -221,7 +234,7 @@ export function buildMatch(game: string, m: Omit<MatchRecord, 'id' | 'createdAt'
   return {
     kind: KIND.match,
     created_at: now,
-    tags: [['e', m.applicationId], ['p', m.p1], ['p', m.p2], ...appTags(game)],
+    tags: [['e', m.applicationId], ...m.sessions.map((s) => ['p', s]), ...appTags(game)],
     content: JSON.stringify({
       p1: m.p1,
       p2: m.p2,
@@ -233,25 +246,26 @@ export function buildMatch(game: string, m: Omit<MatchRecord, 'id' | 'createdAt'
   };
 }
 
-export function parseMatch(game: string, ev: NostrEvent): MatchRecord | null {
-  if (!isAppEvent(ev, KIND.match, game)) return null;
+export function parseMatch(game: string, ev: NostrEvent, author: Pubkey | null): MatchRecord | null {
+  if (!author || !isAppEvent(ev, KIND.match, game)) return null;
   const c = json(ev);
   const applicationId = tagValue(ev, 'e');
-  if (!c || !isHex(applicationId) || c.p1 !== ev.pubkey || !isHex(c.p2) || c.p2 === c.p1) return null;
-  // 相手が購読で気づけるよう、p タグに双方を必ず含める
-  const pTags = tagValues(ev, 'p');
-  if (!pTags.includes(c.p1) || !pTags.includes(c.p2)) return null;
+  if (!c || !isHex(applicationId) || c.p1 !== author || !isHex(c.p2) || c.p2 === c.p1) return null;
+  // 相手が購読で気づけるよう、p タグに双方の使い捨ての鍵を入れる
+  const sessions = tagValues(ev, 'p').filter(isHex);
+  if (!sessions.includes(ev.pubkey) || sessions.length < 2) return null;
   if (!isStr(c.p1Fighter) || !isStr(c.p2Fighter) || !isHex(c.p1SettingsId) || !isHex(c.p2SettingsId)) return null;
   return {
     id: ev.id,
     createdAt: ev.created_at,
-    p1: ev.pubkey,
+    p1: author,
     p2: c.p2,
     p1Fighter: c.p1Fighter,
     p2Fighter: c.p2Fighter,
     p1SettingsId: c.p1SettingsId,
     p2SettingsId: c.p2SettingsId,
     applicationId,
+    sessions,
   };
 }
 
@@ -270,37 +284,30 @@ export function buildReport(
   };
 }
 
-export function parseReport(game: string, ev: NostrEvent): ResultReport | null {
-  if (!isAppEvent(ev, KIND.report, game)) return null;
+export function parseReport(game: string, ev: NostrEvent, author: Pubkey | null): ResultReport | null {
+  if (!author || !isAppEvent(ev, KIND.report, game)) return null;
   const c = json(ev);
   const matchId = tagValue(ev, 'e');
   if (!c || !isHex(matchId)) return null;
   if (c.result !== 'win' && c.result !== 'lose' && c.result !== 'cancel') return null;
-  return { id: ev.id, matchId, reporter: ev.pubkey, result: c.result, createdAt: ev.created_at };
+  return { id: ev.id, matchId, reporter: author, result: c.result, createdAt: ev.created_at };
 }
 
-// ---- identities (kind 10011, NIP-39) ----
+// ---- account info (kind 30756) ----
 
-export function buildIdentities(claims: IdentityClaim[], now: number): EventTemplate {
-  return { kind: KIND.identities, created_at: now, tags: claims.map(claimToTag), content: '' };
+export function buildAccountInfo(game: string, a: Pick<AccountInfo, 'pubkey' | 'name' | 'claims'>, now: number): EventTemplate {
+  return {
+    kind: KIND.account,
+    created_at: now,
+    tags: [['d', a.pubkey], ...appTags(game)],
+    content: JSON.stringify({ name: a.name, claims: a.claims }),
+  };
 }
 
-export function parseIdentities(ev: NostrEvent): Identities | null {
-  if (!isValidEvent(ev) || ev.kind !== KIND.identities) return null;
-  const claims = ev.tags.map(tagToClaim).filter((c): c is IdentityClaim => c !== null);
-  return { pubkey: ev.pubkey, createdAt: ev.created_at, claims };
-}
-
-// ---- profile (kind 0) ----
-
-export function buildProfile(p: { name: string }, now: number): EventTemplate {
-  return { kind: KIND.profile, created_at: now, tags: [], content: JSON.stringify({ name: p.name }) };
-}
-
-export function parseProfile(ev: NostrEvent): Profile | null {
-  if (!isValidEvent(ev) || ev.kind !== KIND.profile) return null;
+export function parseAccountInfo(game: string, ev: NostrEvent, author: Pubkey | null): AccountInfo | null {
+  if (!author || !isAppEvent(ev, KIND.account, game) || tagValue(ev, 'd') !== author) return null;
   const c = json(ev);
-  if (!c) return null;
-  const name = typeof c.name === 'string' ? c.name : typeof c.display_name === 'string' ? c.display_name : '';
-  return { pubkey: ev.pubkey, createdAt: ev.created_at, name };
+  if (!c || typeof c.name !== 'string' || c.name.length > 64 || !Array.isArray(c.claims)) return null;
+  const claims = c.claims.map(parseClaim).filter((x): x is IdentityClaim => x !== null);
+  return { pubkey: author, eventId: ev.id, createdAt: ev.created_at, name: c.name, claims };
 }

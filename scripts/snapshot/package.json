@@ -10,6 +10,9 @@
     "@nostr-rating/core": "*"
   },
   "devDependencies": {
-    "tsx": "^4.20.0"
+    "tsx": "^4.20.0",
+    "@noble/curves": "^2.0.1",
+    "@noble/hashes": "^2.0.1",
+    "nostr-tools": "^2.25.2"
   }
 }

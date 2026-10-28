@@ -2,7 +2,8 @@ import type { NostrEvent } from 'nostr-tools/pure';
 import { beforeAll, describe, expect, test } from 'vitest';
 import { buildMatch, buildReport } from '../../src/events/codec.js';
 import { seasonById } from '../../src/game/definition.js';
-import { advanceRatings, initialState, provisionalRatings, toLocalView } from '../../src/rating/pipeline.js';
+import { advanceRatings, provisionalRatings, toLocalView } from '../../src/rating/pipeline.js';
+import { initialState } from '../helpers/state.js';
 import { def } from '../helpers/def.js';
 import { newUser } from '../helpers/keys.js';
 import { application, DAY, identity, matchFor, p1Wins, played, type User } from '../helpers/scenario.js';
@@ -119,7 +120,7 @@ describe('advanceRatings', () => {
     const forged = await alice.signer.signEvent(
       buildMatch(
         'smash_sp',
-        { p1: alice.pk, p2: bob.pk, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: 'a'.repeat(64) },
+        { p1: alice.pk, p2: bob.pk, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: 'a'.repeat(64), sessions: [alice.sessionAt(T0), bob.sessionAt(T0)] },
         T0,
       ),
     );
@@ -133,7 +134,7 @@ describe('advanceRatings', () => {
     const wrongP2 = await alice.signer.signEvent(
       buildMatch(
         'smash_sp',
-        { p1: alice.pk, p2: bob.pk, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: app.id },
+        { p1: alice.pk, p2: bob.pk, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: app.id, sessions: [alice.sessionAt(T0), bob.sessionAt(T0)] },
         T0,
       ),
     );

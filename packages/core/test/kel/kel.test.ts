@@ -206,7 +206,7 @@ describe('verifyKeySig', () => {
 describe('session certificates', () => {
   function issue(dev: ReturnType<typeof newDevice>, aid: string, from: number, until = from + SESSION_LIFETIME_SEC) {
     const sk = generateSecretKey();
-    const cert: SessionCert = { v: 1, aid, device: dev.record.id, session: getPublicKey(sk), tip: '', from, until };
+    const cert: SessionCert = { v: 1, aid, device: dev.record.id, publisher: dev.record.publisher, session: getPublicKey(sk), tip: '', from, until };
     return { sk, signedCert: { cert, sig: dev.sign(digestOf(cert)) } };
   }
 

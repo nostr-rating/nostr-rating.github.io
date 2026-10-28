@@ -1,19 +1,13 @@
 import { getPublicKey } from 'nostr-tools/pure';
 import { describe, expect, test } from 'vitest';
 import { decodeNsec, encodeNsec, generateSecretKey, npubOf } from '../../src/identity/keys.js';
-import {
-  claimToTag,
-  parseProofUrl,
-  proofUrl,
-  tagToClaim,
-  verificationText,
-  verifyClaim,
-} from '../../src/identity/nip39.js';
+import { parseClaim, parseProofUrl, proofUrl, verificationText, verifyClaim } from '../../src/identity/claims.js';
 import { LocalSigner } from '../../src/identity/signer.js';
 
 const SK = generateSecretKey();
 const PK = getPublicKey(SK);
-const TEXT = verificationText(PK);
+const AID = 'a'.repeat(64);
+const TEXT = verificationText(AID);
 
 function stubFetch(routes: Record<string, unknown>): typeof fetch {
   return (async (input: string | URL | Request) => {
@@ -39,8 +33,8 @@ describe('keys', () => {
 });
 
 describe('verificationText', () => {
-  test('is the NIP-39 sentence', () => {
-    expect(TEXT).toBe(`Verifying that I control the following Nostr public key: ${npubOf(PK)}`);
+  test('names the account id', () => {
+    expect(TEXT).toBe(`Verifying my Nostr-Rating account: ${AID}`);
   });
 });
 
@@ -49,7 +43,7 @@ describe('parseProofUrl', () => {
     ['https://gist.github.com/alice/abc123', { platform: 'github', identity: 'alice', proof: 'abc123' }],
     ['https://x.com/alice/status/123', { platform: 'twitter', identity: 'alice', proof: '123' }],
     ['https://twitter.com/alice/status/123?s=20', { platform: 'twitter', identity: 'alice', proof: '123' }],
-    ['https://mstdn.jp/@alice/111', { platform: 'mastodon', identity: 'mstdn.jp/@alice', proof: '111' }],
+    ['https://mstdn.jp/@alice/111', null],
     ['https://example.com/foo', null],
     ['not a url', null],
   ])('%s', (url, expected) => {
@@ -57,88 +51,63 @@ describe('parseProofUrl', () => {
   });
 });
 
-describe('tags', () => {
-  test('claim ↔ tag roundtrip', () => {
-    const c = { platform: 'mastodon', identity: 'mstdn.jp/@alice', proof: '111' } as const;
-    expect(claimToTag(c)).toEqual(['i', 'mastodon:mstdn.jp/@alice', '111']);
-    expect(tagToClaim(claimToTag(c))).toEqual(c);
-  });
-
-  test('identities that do not match the platform format are ignored', () => {
-    expect(tagToClaim(['i', 'mastodon:evil.example/phish?x=@a', '1'])).toBeNull();
-    expect(tagToClaim(['i', 'mastodon:mstdn.jp/@alice/../x', '1'])).toBeNull();
-    expect(tagToClaim(['i', 'github:alice/../x', '1'])).toBeNull();
-    expect(tagToClaim(['i', 'twitter:alice', '12a'])).toBeNull();
-    expect(tagToClaim(['i', 'github:alice', 'abc/def'])).toBeNull();
-  });
-
-  test('unknown platform tag is ignored', () => {
-    expect(tagToClaim(['i', 'telegram:123', 'x/1'])).toBeNull();
-    expect(tagToClaim(['p', 'github:alice', '1'])).toBeNull();
+describe('parseClaim', () => {
+  test('accepts well-formed claims only', () => {
+    expect(parseClaim({ platform: 'github', identity: 'alice', proof: 'abc' })).toEqual({ platform: 'github', identity: 'alice', proof: 'abc' });
+    expect(parseClaim({ platform: 'github', identity: 'alice/../x', proof: '1' })).toBeNull();
+    expect(parseClaim({ platform: 'twitter', identity: 'alice', proof: '12a' })).toBeNull();
+    expect(parseClaim({ platform: 'mastodon', identity: 'mstdn.jp/@alice', proof: '1' })).toBeNull();
+    expect(parseClaim(null)).toBeNull();
   });
 
   test('proofUrl', () => {
     expect(proofUrl({ platform: 'twitter', identity: 'alice', proof: '123' })).toBe('https://x.com/alice/status/123');
     expect(proofUrl({ platform: 'github', identity: 'alice', proof: 'abc' })).toBe('https://gist.github.com/alice/abc');
-    expect(proofUrl({ platform: 'mastodon', identity: 'mstdn.jp/@alice', proof: '111' })).toBe('https://mstdn.jp/@alice/111');
   });
 });
 
 describe('verifyClaim', () => {
   const gh = { platform: 'github', identity: 'Alice', proof: 'abc' } as const;
   const gistUrl = 'https://api.github.com/gists/abc';
+  const x = { platform: 'twitter', identity: 'Alice', proof: '123' } as const;
+  const oembed = `https://publish.x.com/oembed?omit_script=true&url=${encodeURIComponent('https://x.com/Alice/status/123')}`;
 
   test('github ok', async () => {
     const f = stubFetch({ [gistUrl]: { owner: { login: 'alice' }, files: { 'nostr.txt': { content: `${TEXT}\n` } } } });
-    expect(await verifyClaim(gh, PK, f)).toBe('verified');
+    expect(await verifyClaim(gh, AID, f)).toBe('verified');
   });
 
   test('github owner mismatch', async () => {
     const f = stubFetch({ [gistUrl]: { owner: { login: 'mallory' }, files: { a: { content: TEXT } } } });
-    expect(await verifyClaim(gh, PK, f)).toBe('failed');
+    expect(await verifyClaim(gh, AID, f)).toBe('failed');
   });
 
-  test('github text missing', async () => {
-    const f = stubFetch({ [gistUrl]: { owner: { login: 'alice' }, files: { a: { content: 'hello' } } } });
-    expect(await verifyClaim(gh, PK, f)).toBe('failed');
+  test('github text for another account', async () => {
+    const f = stubFetch({ [gistUrl]: { owner: { login: 'alice' }, files: { a: { content: verificationText('b'.repeat(64)) } } } });
+    expect(await verifyClaim(gh, AID, f)).toBe('failed');
   });
 
-  test('mastodon strips html', async () => {
-    const npub = npubOf(PK);
+  test('x ok through oEmbed, ignoring html', async () => {
     const f = stubFetch({
-      'https://mstdn.jp/api/v1/statuses/111': {
-        account: { username: 'alice', acct: 'alice', url: 'https://mstdn.jp/@alice' },
-        content: `<p>Verifying that I control the following Nostr public key: <a href="x">${npub}</a></p>`,
+      [oembed]: {
+        author_url: 'https://twitter.com/alice',
+        html: `<blockquote class="twitter-tweet"><p lang="en" dir="ltr">${TEXT}</p>&mdash; alice (@alice)</blockquote>`,
       },
     });
-    expect(await verifyClaim({ platform: 'mastodon', identity: 'mstdn.jp/@alice', proof: '111' }, PK, f)).toBe('verified');
+    expect(await verifyClaim(x, AID, f)).toBe('verified');
   });
 
-  test('mastodon post from a remote account with the same username is failed', async () => {
-    const f = stubFetch({
-      'https://mstdn.jp/api/v1/statuses/111': {
-        account: { username: 'alice', acct: 'alice@evil.example', url: 'https://evil.example/@alice' },
-        content: `<p>${TEXT}</p>`,
-      },
-    });
-    expect(await verifyClaim({ platform: 'mastodon', identity: 'mstdn.jp/@alice', proof: '111' }, PK, f)).toBe('failed');
+  test('x post by someone else is failed', async () => {
+    const f = stubFetch({ [oembed]: { author_url: 'https://twitter.com/mallory', html: `<p>${TEXT}</p>` } });
+    expect(await verifyClaim(x, AID, f)).toBe('failed');
   });
 
   test('network error is failed', async () => {
     const f = (async () => {
       throw new TypeError('network');
     }) as unknown as typeof fetch;
-    expect(await verifyClaim(gh, PK, f)).toBe('failed');
-  });
-
-  test('twitter is link_only without fetching', async () => {
-    let called = false;
-    const f = (async () => {
-      called = true;
-      return new Response('{}');
-    }) as unknown as typeof fetch;
-    expect(await verifyClaim({ platform: 'twitter', identity: 'alice', proof: '1' }, PK, f)).toBe('link_only');
-    expect(called).toBe(false);
+    expect(await verifyClaim(gh, AID, f)).toBe('failed');
+    expect(await verifyClaim(x, AID, f)).toBe('failed');
   });
 });
 

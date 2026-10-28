@@ -10,8 +10,11 @@ export const KIND = {
   /** 鍵の出来事の記録（KEL。docs/adr/0008） */
   kel: 3753,
   report: 3754,
-  identities: 10011,
+  /** 使い捨ての鍵の証明書のお知らせ（掲載用の鍵が載せる） */
+  cert: 3755,
   settings: 30078,
+  /** アカウントの公開情報（表示名と紐づけ）。d は aid */
+  account: 30756,
   recruitment: 31751,
 } as const;
 

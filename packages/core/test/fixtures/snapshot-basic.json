@@ -1,13 +1,14 @@
 {
   "config_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
   "cutoff": 1790900000,
+  "excluded": [],
   "game": "smash_sp",
   "inputs": {
     "event_count": 2,
     "event_ids_sha256": "f010287b35f18d5064ad68310c9178d47eb3b893105a97ad86cdd2a4d9db62cc"
   },
+  "kels": {},
   "kind": "rolling",
-  "migrations": [],
   "players": {
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
       "has_identity": true,
@@ -19,7 +20,6 @@
         "no_report": 0
       },
       "matches": 1,
-      "migrated_to": null,
       "peak_rating": 1579.876544,
       "rating": 1579.876544,
       "rd": 290.5,
@@ -36,7 +36,6 @@
         "no_report": 1
       },
       "matches": 1,
-      "migrated_to": null,
       "peak_rating": 1500,
       "rating": 1420.123456,
       "rd": 290.5,
@@ -53,7 +52,7 @@
       "settled_at": 1790850000
     }
   ],
-  "schema_version": 1,
+  "schema_version": 2,
   "season": 1,
   "season_summaries": {}
 }

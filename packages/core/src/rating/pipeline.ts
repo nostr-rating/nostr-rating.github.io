@@ -1,7 +1,7 @@
 import type { NostrEvent } from 'nostr-tools/pure';
 import {
+  parseAccountInfo,
   parseApplication,
-  parseIdentities,
   parseMatch,
   parseReport,
   type Application,
@@ -9,6 +9,7 @@ import {
   type ResultReport,
 } from '../events/codec.js';
 import { isValidEvent } from '../events/kinds.js';
+import { attributor, buildKelBook, type Attributor, type KelRecords } from '../kel/book.js';
 import { seasonById, type GameDefinition } from '../game/definition.js';
 import type { LocalView } from '../match/conditions.js';
 import { mannersDelta, settleMatch, type MannersCount, type Settlement } from '../match/settle.js';
@@ -49,8 +50,10 @@ export interface RatingState {
   cutoff: number;
   players: Record<Pubkey, PlayerState>;
   recentPairs: RecentPair[];
-  /** シーズン id → 公開鍵 → 成績 */
+  /** シーズン id → aid → 成績 */
   seasonSummaries: Record<string, Record<Pubkey, SeasonSummary>>;
+  /** aid → 採用した KEL（docs/adr/0008）。シーズンをまたいで引き継ぐ */
+  kels: KelRecords;
 }
 
 export function initialState(
@@ -58,8 +61,9 @@ export function initialState(
   season: number,
   cutoff: number,
   seasonSummaries: RatingState['seasonSummaries'] = {},
+  kels: KelRecords = {},
 ): RatingState {
-  return { season, cutoff, players: {}, recentPairs: [], seasonSummaries };
+  return { season, cutoff, players: {}, recentPairs: [], seasonSummaries, kels };
 }
 
 /** シーズンを締めくくり、レートを持つプレイヤーの成績をサマリーに加える */
@@ -121,7 +125,7 @@ interface Linked {
 }
 
 interface Inputs {
-  /** 公開鍵ごとの、主張が1つ以上ある 10011 のうち (created_at, id) が最小のもの */
+  /** aid ごとの、紐づけが1つ以上あるアカウントの公開情報のうち (created_at, id) が最小のもの */
   identities: Map<Pubkey, string>;
   /** p2 の申し込みに結び付いた対戦（作成時刻順） */
   linked: Linked[];
@@ -132,7 +136,7 @@ interface Inputs {
  * 対戦が有効なのは、p2 が署名して p1 の募集を指した申し込みに、成立待ちの時間内に応えたものだけ。
  * 1つの申し込みには最小 id の対戦だけを結び付ける。
  */
-function collect(def: GameDefinition, season: number, events: NostrEvent[]): Inputs {
+function collect(def: GameDefinition, season: number, events: NostrEvent[], author: Attributor): Inputs {
   const unique = dedupeById(events.filter((e) => isValidEvent(e)));
   const { startsAt, endsAt } = seasonById(def, season);
 
@@ -141,7 +145,9 @@ function collect(def: GameDefinition, season: number, events: NostrEvent[]): Inp
   const matches: MatchRecord[] = [];
   const reports = new Map<string, ResultReport[]>();
   for (const ev of unique) {
-    const ids = parseIdentities(ev);
+    const by = author(ev);
+    if (!by) continue;
+    const ids = parseAccountInfo(def.id, ev, by);
     if (ids) {
       if (ids.claims.length === 0) continue;
       const cur = identities.get(ids.pubkey);
@@ -150,17 +156,17 @@ function collect(def: GameDefinition, season: number, events: NostrEvent[]): Inp
       }
       continue;
     }
-    const app = parseApplication(def.id, ev);
+    const app = parseApplication(def.id, ev, by);
     if (app) {
       applications.set(app.eventId, app);
       continue;
     }
-    const m = parseMatch(def.id, ev);
+    const m = parseMatch(def.id, ev, by);
     if (m) {
       matches.push(m);
       continue;
     }
-    const r = parseReport(def.id, ev);
+    const r = parseReport(def.id, ev, by);
     if (r) reports.set(r.matchId, [...(reports.get(r.matchId) ?? []), r]);
   }
 
@@ -255,6 +261,11 @@ class Applier {
   }
 }
 
+export interface AdvanceOptions {
+  /** 取り切れなかったアカウント。その回は、これらが署名したイベントをすべて無視する（docs/adr/0008） */
+  exclude?: ReadonlySet<string>;
+}
+
 /**
  * docs/protocol.md「レート計算」。締め切り（作成時刻 + deadlineSec）が (prev.cutoff, cutoff] に入る対戦を、
  * (作成時刻, 対戦 ID) の昇順に1件ずつ、1回だけ評価する。締め切り後に評価するので、
@@ -266,8 +277,11 @@ export function advanceRatings(
   prev: RatingState,
   events: NostrEvent[],
   cutoff: number,
+  opts: AdvanceOptions = {},
 ): { state: RatingState; usedEventIds: string[] } {
-  const { identities, linked } = collect(def, prev.season, events);
+  const book = buildKelBook(prev.kels, events, prev.cutoff - def.report.deadlineSec, cutoff);
+  const author = attributor(book.states, opts.exclude);
+  const { identities, linked } = collect(def, prev.season, events, author);
   const ap = new Applier(def, prev);
   ap.markIdentities(identities);
 
@@ -286,8 +300,9 @@ export function advanceRatings(
       players: ap.players,
       recentPairs: ap.recentPairs.filter((p) => cutoff - p.settledAt < keep),
       seasonSummaries: prev.seasonSummaries,
+      kels: book.records,
     },
-    usedEventIds: [...ap.used].sort(byId),
+    usedEventIds: [...ap.used, ...book.usedEventIds].sort(byId),
   };
 }
 
@@ -297,7 +312,8 @@ export function advanceRatings(
  * マナーの回数は締め切りまで決まらないので加えない。保存や共有には使わない。
  */
 export function provisionalRatings(def: GameDefinition, state: RatingState, events: NostrEvent[], now: number): RatingState {
-  const { identities, linked } = collect(def, state.season, events);
+  const book = buildKelBook(state.kels, events, state.cutoff - def.report.deadlineSec, now);
+  const { identities, linked } = collect(def, state.season, events, attributor(book.states));
   const ap = new Applier(def, state);
   ap.markIdentities(identities);
   for (const l of linked) {
@@ -305,7 +321,7 @@ export function provisionalRatings(def: GameDefinition, state: RatingState, even
     const s = settleMatch(l.match, l.reports, now, def.report.deadlineSec);
     if (s.status === 'confirmed') ap.apply(l, s, false);
   }
-  return { ...state, players: ap.players, recentPairs: ap.recentPairs };
+  return { ...state, players: ap.players, recentPairs: ap.recentPairs, kels: book.records };
 }
 
 export function toLocalView(def: GameDefinition, state: RatingState): LocalView {

@@ -3,8 +3,8 @@ import {
   buildApplication,
   buildMatch,
   buildRecruitment,
+  parseAccountInfo,
   parseApplication,
-  parseIdentities,
   parseMatch,
   parseRecruitment,
   type Application,
@@ -13,14 +13,17 @@ import {
 } from '../events/codec.js';
 import { KIND } from '../events/kinds.js';
 import { acceptsNewMatches, type GameDefinition } from '../game/definition.js';
-import type { Signer } from '../identity/signer.js';
+import { signAs, type SessionIdentity } from '../kel/book.js';
 import type { RelayClient } from '../relay/client.js';
 import type { FighterId, Pubkey } from '../types.js';
 import { canMatch, type LocalView, type SeekerView } from './conditions.js';
 
 export interface MatchmakerDeps {
   relay: RelayClient;
-  signer: Signer;
+  /** 自分のアカウントとして署名するための使い捨ての鍵 */
+  identity: SessionIdentity;
+  /** 他人のイベントを証明書から aid に結び付ける。分からなければ null */
+  author: (ev: NostrEvent) => Promise<Pubkey | null>;
   def: GameDefinition;
   view: LocalView;
   now: () => number;
@@ -71,9 +74,10 @@ export class Matchmaker {
   }
 
   async search(p: SearchParams, signal: AbortSignal): Promise<MatchRecord> {
-    const { relay, signer, def, now } = this.#d;
+    const { relay, identity, author, def, now } = this.#d;
     const game = def.id;
-    const me = await signer.getPublicKey();
+    const me = identity.aid;
+    const mySession = await identity.signer.getPublicKey();
     const waitingSince = now();
     if (!acceptsNewMatches(def, waitingSince).ok) throw new Error('new matches are not accepted until the next season starts');
 
@@ -91,17 +95,21 @@ export class Matchmaker {
     const sentApplications = new Map<string, Application>();
     const matches = new Map<string, MatchRecord>();
     const since = waitingSince - 5;
-    const recent = await this.#recentOpponents(me);
+    const recent = await this.#recentOpponents(me, mySession);
     const unsubs = [
-      relay.subscribe([{ kinds: [KIND.application], '#p': [me], since }], (ev) => {
-        const a = parseApplication(game, ev);
-        if (a && a.recruiter === me) applications.push(a);
+      relay.subscribe([{ kinds: [KIND.application], '#p': [mySession], since }], (ev) => {
+        void author(ev).then((by) => {
+          const a = parseApplication(game, ev, by);
+          if (a && a.recruiter === me) applications.push(a);
+        });
       }),
-      relay.subscribe([{ kinds: [KIND.match], '#p': [me], since }], (ev) => {
-        const m = parseMatch(game, ev);
-        if (!m || m.p2 !== me || matches.has(m.applicationId)) return;
-        const app = sentApplications.get(m.applicationId);
-        if (app && this.#answers(m, app)) matches.set(m.applicationId, m);
+      relay.subscribe([{ kinds: [KIND.match], '#p': [mySession], since }], (ev) => {
+        void author(ev).then((by) => {
+          const m = parseMatch(game, ev, by);
+          if (!m || m.p2 !== me || matches.has(m.applicationId)) return;
+          const app = sentApplications.get(m.applicationId);
+          if (app && this.#answers(m, app)) matches.set(m.applicationId, m);
+        });
       }),
     ];
 
@@ -119,7 +127,7 @@ export class Matchmaker {
         t,
         def.matching.recruitmentTtlSec,
       );
-      await relay.publish(await signer.signEvent(tmpl));
+      await relay.publish(await signAs(identity, tmpl));
       recruiting = status === 'open';
       if (recruiting) hasRecruited = true;
       lastHeartbeat = t;
@@ -159,13 +167,13 @@ export class Matchmaker {
   }
 
   async #candidates(self: SeekerView, onlyOlder: boolean, recent: Map<Pubkey, number>): Promise<Recruitment[]> {
-    const { relay, def, view, now } = this.#d;
+    const { relay, def, view, now, author } = this.#d;
     const t = now();
     const events: NostrEvent[] = await relay.query([
       { kinds: [KIND.recruitment], '#d': [def.id], since: t - def.matching.heartbeatSec * 2 },
     ]);
-    const plausible = events
-      .map((e) => parseRecruitment(def.id, e))
+    const parsed = await Promise.all(events.map(async (e) => parseRecruitment(def.id, e, await author(e))));
+    const plausible = parsed
       .filter((r): r is Recruitment => r !== null && r.status === 'open' && r.pubkey !== self.pubkey && r.expiresAt > t)
       .filter(
         (r) =>
@@ -202,7 +210,7 @@ export class Matchmaker {
     applications: Application[],
     recent: Map<Pubkey, number>,
   ): Promise<MatchRecord | null> {
-    const { relay, signer, def, now } = this.#d;
+    const { relay, identity, def, now } = this.#d;
     const t = now();
     // 申込者が待ちをやめた後に成立させないよう、成立待ちの時間内に届いたものだけを受ける
     const fresh = applications
@@ -213,12 +221,14 @@ export class Matchmaker {
     for (const a of fresh) {
       if (!canMatch(def, self, this.#viewOf(a.pubkey, a), t, this.#lastBetween(self.pubkey, a.pubkey, recent))) continue;
       if (!(await this.#hasIdentity(a.pubkey))) continue;
-      const ev = await signer.signEvent(
+      const ev = await signAs(
+        identity,
         buildMatch(
           def.id,
           {
             p1: self.pubkey,
             p2: a.pubkey,
+            sessions: [await identity.signer.getPublicKey(), a.session],
             p1Fighter: p.firstFighter,
             p2Fighter: a.firstFighter,
             p1SettingsId: p.settingsId,
@@ -229,7 +239,7 @@ export class Matchmaker {
         ),
       );
       await relay.publish(ev);
-      return parseMatch(def.id, ev);
+      return parseMatch(def.id, ev, identity.aid);
     }
     return null;
   }
@@ -242,15 +252,16 @@ export class Matchmaker {
     matches: Map<string, MatchRecord>,
     signal: AbortSignal,
   ): Promise<MatchRecord | null> {
-    const { relay, signer, def, now, sleep } = this.#d;
-    const ev = await signer.signEvent(
+    const { relay, identity, def, now, sleep } = this.#d;
+    const ev = await signAs(
+      identity,
       buildApplication(
         def.id,
-        { recruiter: r.pubkey, firstFighter: p.firstFighter, settingsId: p.settingsId, rangeChoice: p.rangeChoice, rematchHours: p.rematchHours, waitingSince },
+        { recruiter: r.pubkey, recruiterSession: r.session, firstFighter: p.firstFighter, settingsId: p.settingsId, rangeChoice: p.rangeChoice, rematchHours: p.rematchHours, waitingSince },
         now(),
       ),
     );
-    const app = parseApplication(def.id, ev);
+    const app = parseApplication(def.id, ev, identity.aid);
     if (!app) return null;
     sent.set(app.eventId, app);
     await relay.publish(ev);
@@ -279,24 +290,29 @@ export class Matchmaker {
 
   readonly #identityCache = new Map<Pubkey, boolean>();
 
-  /** 手元の計算で分からなければ、リレーに NIP-39 の主張を問い合わせる */
+  /** 手元の計算で分からなければ、リレーにアカウントの公開情報を問い合わせる */
   async #hasIdentity(pk: Pubkey): Promise<boolean> {
     if (this.#d.view.hasIdentity(pk)) return true;
     const cached = this.#identityCache.get(pk);
     if (cached !== undefined) return cached;
-    const evs = await this.#d.relay.query([{ kinds: [KIND.identities], authors: [pk] }]);
-    const ok = evs.some((e) => (parseIdentities(e)?.claims.length ?? 0) > 0);
+    const { relay, def, author } = this.#d;
+    const evs = await relay.query([{ kinds: [KIND.account], '#d': [pk] }]);
+    let ok = false;
+    for (const e of evs) {
+      const by = await author(e);
+      if (by === pk && (parseAccountInfo(def.id, e, by)?.claims.length ?? 0) > 0) ok = true;
+    }
     this.#identityCache.set(pk, ok);
     return ok;
   }
 
   /** まだスナップショットに入っていない最近の対戦も、連戦の判定に使う */
-  async #recentOpponents(me: Pubkey): Promise<Map<Pubkey, number>> {
-    const { relay, def, now } = this.#d;
-    const evs = await relay.query([{ kinds: [KIND.match], '#p': [me], since: now() - REMATCH_LOOKBACK_SEC }]);
+  async #recentOpponents(me: Pubkey, mySession: Pubkey): Promise<Map<Pubkey, number>> {
+    const { relay, def, now, author } = this.#d;
+    const evs = await relay.query([{ kinds: [KIND.match], '#p': [mySession], since: now() - REMATCH_LOOKBACK_SEC }]);
     const out = new Map<Pubkey, number>();
     for (const ev of evs) {
-      const m = parseMatch(def.id, ev);
+      const m = parseMatch(def.id, ev, await author(ev));
       if (!m || (m.p1 !== me && m.p2 !== me)) continue;
       const other = m.p1 === me ? m.p2 : m.p1;
       out.set(other, Math.max(out.get(other) ?? 0, m.createdAt));

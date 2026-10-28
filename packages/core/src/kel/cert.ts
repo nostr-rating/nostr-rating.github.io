@@ -10,6 +10,8 @@ export interface SessionCert {
   aid: string;
   /** 証明書を出した端末の id */
   device: string;
+  /** その端末の掲載用の鍵。まだ知らないアカウントの KEL を探す手がかり（有効性には使わない） */
+  publisher: Pubkey;
   /** 使い捨ての鍵（secp256k1 の公開鍵） */
   session: Pubkey;
   /** 出したときの KEL の先端（見つけるための手がかり。有効性には使わない） */
@@ -50,6 +52,7 @@ export function certTags(signed: SignedCert): string[][] {
 
 /** イベントのタグから証明書を取り出す。形が合わなければ null */
 export function certOf(event: Pick<NostrEvent, 'tags'>): SignedCert | null {
+  if (!Array.isArray(event?.tags)) return null;
   const raw = event.tags.find((t) => t[0] === CERT_TAG)?.[1];
   const aid = event.tags.find((t) => t[0] === AID_TAG)?.[1];
   if (!raw || !aid) return null;
