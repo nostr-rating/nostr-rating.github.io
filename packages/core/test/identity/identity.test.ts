@@ -1,6 +1,6 @@
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { describe, expect, test } from 'vitest';
-import { parseClaim, parseProofUrl, proofUrl, verificationText, verifyClaim } from '../../src/identity/claims.js';
+import { accountsSharingClaims, parseClaim, parseProofUrl, proofUrl, verificationText, verifyClaim } from '../../src/identity/claims.js';
 import { LocalSigner } from '../../src/identity/signer.js';
 
 const SK = generateSecretKey();
@@ -109,5 +109,18 @@ describe('LocalSigner', () => {
     const b = new LocalSigner(bSk);
     const cipher = await a.nip44Encrypt(getPublicKey(bSk), 'こんにちは');
     expect(await b.nip44Decrypt(PK, cipher)).toBe('こんにちは');
+  });
+});
+
+describe('accountsSharingClaims', () => {
+  test('finds other accounts that linked the same external account, ignoring case', () => {
+    const accounts = {
+      a: { claims: [{ platform: 'twitter' as const, identity: 'Alice', proof: '1' }] },
+      b: { claims: [{ platform: 'twitter' as const, identity: 'alice', proof: '2' }, { platform: 'github' as const, identity: 'x', proof: 'f' }] },
+      c: { claims: [{ platform: 'github' as const, identity: 'alice', proof: 'e' }] },
+    };
+    expect(accountsSharingClaims(accounts, 'a')).toEqual([{ aid: 'b', claims: [{ platform: 'twitter', identity: 'alice', proof: '2' }] }]);
+    expect(accountsSharingClaims(accounts, 'c')).toEqual([]);
+    expect(accountsSharingClaims(accounts, 'zzz')).toEqual([]);
   });
 });

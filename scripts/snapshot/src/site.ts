@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
+  claimKey,
   proofUrl,
   sha256Hex,
   snapshotToState,
@@ -34,6 +35,11 @@ export interface PlayerDoc {
   manners: { no_report: number; cancel: number; mismatch: number };
   accounts: { platform: IdentityClaim['platform']; identity: string; proof_url: string; verified: boolean }[];
   past_seasons: Record<string, { final_rating: number; peak_rating: number; matches: number; wins: number; losses: number }>;
+  /**
+   * 同じ外部アカウントを、双方とも確かめられた形で紐づけた別のアカウント（作り直す前のアカウントなど）。
+   * 過去のシーズンの成績を引き継いで見せるのに使う
+   */
+  linked_accounts: { aid: string; name: string; via: { platform: IdentityClaim['platform']; identity: string }[]; past_seasons: PlayerDoc['past_seasons'] }[];
   snapshot: { path: string; sha256: string; cutoff: number };
 }
 
@@ -155,9 +161,29 @@ export async function buildSite(opts: SiteOptions): Promise<{ players: number }>
       manners: p?.manners ?? { no_report: 0, cancel: 0, mismatch: 0 },
       accounts: claims.map((c, i) => ({ platform: c.platform, identity: c.identity, proof_url: proofUrl(c), verified: verified[i] === 'verified' })),
       past_seasons: pastOf(aid),
+      linked_accounts: [],
       snapshot: ref,
     };
   });
+
+  // 確かめられた紐づけが同じなら、同じ人の別のアカウント
+  const owners = new Map<string, PlayerDoc[]>();
+  for (const doc of docs) {
+    for (const a of doc.accounts) if (a.verified) owners.set(claimKey(a), [...(owners.get(claimKey(a)) ?? []), doc]);
+  }
+  for (const doc of docs) {
+    const linked = new Map<string, PlayerDoc['linked_accounts'][number]>();
+    for (const a of doc.accounts) {
+      if (!a.verified) continue;
+      for (const other of owners.get(claimKey(a)) ?? []) {
+        if (other.aid === doc.aid) continue;
+        const cur = linked.get(other.aid) ?? { aid: other.aid, name: other.name, via: [], past_seasons: other.past_seasons };
+        cur.via.push({ platform: a.platform, identity: a.identity });
+        linked.set(other.aid, cur);
+      }
+    }
+    doc.linked_accounts = [...linked.values()].sort((x, y) => (x.aid < y.aid ? -1 : 1));
+  }
 
   const index = new Map<string, PlayerDoc[]>();
   for (const doc of docs) {

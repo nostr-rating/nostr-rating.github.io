@@ -74,4 +74,29 @@ describe('buildSite', () => {
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
   });
+
+  test('links another account that verifiably shares an external account and shows its past seasons', async () => {
+    const { writeFileSync } = await import('node:fs');
+    const { sha256Hex } = await import('@nostr-rating/core');
+    const s = snapshot();
+    const [a, b] = Object.entries(s.accounts).sort(([, x], [, y]) => (x.claims[0]!.identity < y.claims[0]!.identity ? -1 : 1)).map(([aid]) => aid);
+    // b は a と同じ GitHub アカウント（A1、大文字小文字は違う）を、別の Gist で紐づけた。b には過去のシーズンの成績がある
+    s.accounts[b!]!.claims = [{ platform: 'github', identity: 'A1', proof: 'b9' }];
+    s.season_summaries = { '0': { [b!]: { final_rating: 1700, peak_rating: 1750, matches: 9, wins: 6, losses: 3 } } };
+    const text = JSON.stringify(s);
+    writeFileSync(join(root, 'snapshots/season_1/2026-10-02.json'), text);
+    writeFileSync(join(root, 'snapshots/latest.json'), JSON.stringify({ path: 'snapshots/season_1/2026-10-02.json', sha256: sha256Hex(text) }));
+    const fetchFn = (async (input: string | URL | Request) => {
+      const url = String(input);
+      const gist = (aid: string) => new Response(JSON.stringify({ owner: { login: 'a1' }, files: { f: { content: verificationText(aid) } } }));
+      if (url === 'https://api.github.com/gists/a1') return gist(a!);
+      if (url === 'https://api.github.com/gists/b9') return gist(b!);
+      return new Response('not found', { status: 404 });
+    }) as typeof fetch;
+    await buildSite({ root, out, appUrl: 'https://example.github.io/nostr-rating/', fetchFn });
+    expect(read<PlayerDoc>(`api/v1/players/${a}.json`).linked_accounts).toEqual([
+      { aid: b, name: '', via: [{ platform: 'github', identity: 'a1' }], past_seasons: { '0': { final_rating: 1700, peak_rating: 1750, matches: 9, wins: 6, losses: 3 } } },
+    ]);
+    expect(read<{ players: PlayerDoc[] }>('api/v1/by/github/a1.json').players.map((p) => p.aid).sort()).toEqual([a, b].sort());
+  });
 });

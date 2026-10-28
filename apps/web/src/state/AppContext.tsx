@@ -210,11 +210,11 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
       for (const pk of unique) {
         const a = latest[pk];
         if (a?.name) names[pk] = a.name;
-        // 紐づけが1つもない人は「なし」と分かったことを残す
-        ids[pk] = a?.claims ?? [];
+        if (a) ids[pk] = a.claims;
       }
       setProfiles((prev) => ({ ...prev, ...names }));
-      setIdentities((prev) => ({ ...prev, ...ids }));
+      // リレーで見つからなかった人は、手元の値（スナップショットの値など）を残す。何もなければ「なし」と分かったことを残す
+      setIdentities((prev) => ({ ...Object.fromEntries(unique.map((pk) => [pk, prev[pk] ?? []])), ...prev, ...ids }));
     },
     [deps.def.id, deps.relay, resolver],
   );
@@ -234,7 +234,10 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
       resolver.setKnown({ ...shown.kels, ...(account ? { [account.aid]: account.kel } : {}) });
       // スナップショットにある名前と紐づけを先に出す（リレーの最新はこのあと読む）
       setProfiles((prev) => ({ ...Object.fromEntries(Object.entries(shown.accounts).filter(([, a]) => a.name).map(([pk, a]) => [pk, a.name])), ...prev }));
-      setIdentities((prev) => ({ ...Object.fromEntries(Object.entries(shown.accounts).map(([pk, a]) => [pk, a.claims])), ...prev }));
+      setIdentities((prev) => ({
+        ...prev,
+        ...Object.fromEntries(Object.entries(shown.accounts).filter(([pk]) => !(prev[pk]?.length)).map(([pk, a]) => [pk, a.claims])),
+      }));
       setSyncError(null);
       await loadPeople([...Object.keys(shown.players), ...(pubkey ? [pubkey] : [])]);
     } catch (e) {

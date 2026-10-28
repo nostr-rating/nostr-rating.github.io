@@ -34,8 +34,9 @@ jobs:
           file=apps/recovery/dist/nostr-rating-recovery.html
           sum=$(sha256sum "$file" | cut -d' ' -f1)
           notes="復活の道具です。ダウンロードしてブラウザで開いてください。sha256: ${sum}"
+          # 一度出した道具は差し替えない（利用者が持っているファイルと sha256 が食い違わないように）。直すときは新しいタグで出す
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$file" --clobber
-          else
-            gh release create "$TAG" "$file" --title "復活の道具 ${TAG}" --notes "$notes" --target "${GITHUB_SHA}"
+            echo "release $TAG already exists; use a new tag" >&2
+            exit 1
           fi
+          gh release create "$TAG" "$file" --title "復活の道具 ${TAG}" --notes "$notes" --target "${GITHUB_SHA}"

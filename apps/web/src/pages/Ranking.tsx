@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { LinkedAccounts } from '../components/LinkedAccounts.js';
 import { IdentityBadge } from '../components/IdentityBadge.js';
 import { displayName, useApp } from '../state/AppContext.js';
 
@@ -94,6 +95,7 @@ export function Player({ pubkey }: { pubkey: string }) {
             </p>
           );
         })}
+      <LinkedAccounts pubkey={pubkey} />
     </section>
   );
 }

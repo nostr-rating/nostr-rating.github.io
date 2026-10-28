@@ -96,3 +96,25 @@ export async function verifyClaim(c: IdentityClaim, aid: string, fetchFn: typeof
   const files = Object.values((gist.files ?? {}) as Record<string, { content?: string }>);
   return files.some((f) => normalize(f.content ?? '').includes(text)) ? 'verified' : 'failed';
 }
+
+/** 同じ外部アカウントかを比べるためのキー（ユーザー名の大文字小文字は区別しない） */
+export function claimKey(c: Pick<IdentityClaim, 'platform' | 'identity'>): string {
+  return `${c.platform}:${c.identity.toLowerCase()}`;
+}
+
+/**
+ * aid と同じ外部アカウントを紐づけた、ほかのアカウント。復活の言葉を失くして作り直した人の、
+ * 前のアカウントを見つけるのに使う。紐づけが本物かは、呼び出し側が双方を verifyClaim で確かめる
+ */
+export function accountsSharingClaims(
+  accounts: Record<string, { claims: IdentityClaim[] }>,
+  aid: string,
+): { aid: string; claims: IdentityClaim[] }[] {
+  const mine = new Set((accounts[aid]?.claims ?? []).map(claimKey));
+  if (mine.size === 0) return [];
+  return Object.entries(accounts)
+    .filter(([other]) => other !== aid)
+    .map(([other, a]) => ({ aid: other, claims: a.claims.filter((c) => mine.has(claimKey(c))) }))
+    .filter((x) => x.claims.length > 0)
+    .sort((a, b) => (a.aid < b.aid ? -1 : 1));
+}
