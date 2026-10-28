@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "snapshot": "tsx src/cli.ts"
+    "snapshot": "tsx src/cli.ts",
+    "site": "tsx src/site-cli.ts"
   },
   "dependencies": {
     "@nostr-rating/core": "*"

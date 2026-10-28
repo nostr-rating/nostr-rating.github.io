@@ -4,6 +4,7 @@ import {
   parseApplication,
   parseMatch,
   parseReport,
+  type AccountInfo,
   type Application,
   type MatchRecord,
   type ResultReport,
@@ -54,6 +55,15 @@ export interface RatingState {
   seasonSummaries: Record<string, Record<Pubkey, SeasonSummary>>;
   /** aid → 採用した KEL（docs/adr/0008）。シーズンをまたいで引き継ぐ */
   kels: KelRecords;
+  /** aid → 最新のアカウントの公開情報（表示名と紐づけ）。選手ページと公開 API に使う */
+  accounts: Record<Pubkey, AccountSummary>;
+}
+
+export interface AccountSummary {
+  name: string;
+  claims: AccountInfo['claims'];
+  eventId: string;
+  createdAt: number;
 }
 
 export function initialState(
@@ -62,8 +72,9 @@ export function initialState(
   cutoff: number,
   seasonSummaries: RatingState['seasonSummaries'] = {},
   kels: KelRecords = {},
+  accounts: RatingState['accounts'] = {},
 ): RatingState {
-  return { season, cutoff, players: {}, recentPairs: [], seasonSummaries, kels };
+  return { season, cutoff, players: {}, recentPairs: [], seasonSummaries, kels, accounts };
 }
 
 /** シーズンを締めくくり、レートを持つプレイヤーの成績をサマリーに加える */
@@ -129,6 +140,8 @@ interface Inputs {
   identities: Map<Pubkey, string>;
   /** p2 の申し込みに結び付いた対戦（作成時刻順） */
   linked: Linked[];
+  /** aid ごとの、until 以前で (created_at, id) が最大のアカウントの公開情報 */
+  latest: Map<Pubkey, AccountInfo>;
 }
 
 /**
@@ -136,11 +149,12 @@ interface Inputs {
  * 対戦が有効なのは、p2 が署名して p1 の募集を指した申し込みに、成立待ちの時間内に応えたものだけ。
  * 1つの申し込みには最小 id の対戦だけを結び付ける。
  */
-function collect(def: GameDefinition, season: number, events: NostrEvent[], author: Attributor): Inputs {
+function collect(def: GameDefinition, season: number, events: NostrEvent[], author: Attributor, until: number): Inputs {
   const unique = dedupeById(events.filter((e) => isValidEvent(e)));
   const { startsAt, endsAt } = seasonById(def, season);
 
   const identities = new Map<Pubkey, { id: string; createdAt: number }>();
+  const latest = new Map<Pubkey, AccountInfo>();
   const applications = new Map<string, Application>();
   const matches: MatchRecord[] = [];
   const reports = new Map<string, ResultReport[]>();
@@ -149,6 +163,10 @@ function collect(def: GameDefinition, season: number, events: NostrEvent[], auth
     if (!by) continue;
     const ids = parseAccountInfo(def.id, ev, by);
     if (ids) {
+      const last = latest.get(ids.pubkey);
+      if (ids.createdAt <= until && (!last || byTimeThenId({ createdAt: last.createdAt, id: last.eventId }, { createdAt: ids.createdAt, id: ids.eventId }) < 0)) {
+        latest.set(ids.pubkey, ids);
+      }
       if (ids.claims.length === 0) continue;
       const cur = identities.get(ids.pubkey);
       if (!cur || byTimeThenId({ createdAt: ev.created_at, id: ev.id }, cur) < 0) {
@@ -182,7 +200,19 @@ function collect(def: GameDefinition, season: number, events: NostrEvent[], auth
   return {
     identities: new Map([...identities].map(([pk, v]) => [pk, v.id])),
     linked: [...byApplication.values()].sort((a, b) => byTimeThenId(a.match, b.match)),
+    latest,
   };
+}
+
+/** 前の状態に、それより新しい公開情報だけを重ねる */
+function mergeAccounts(prev: RatingState['accounts'], latest: Map<Pubkey, AccountInfo>): RatingState['accounts'] {
+  const out = { ...prev };
+  for (const [aid, a] of latest) {
+    const cur = out[aid];
+    if (cur && byTimeThenId({ createdAt: cur.createdAt, id: cur.eventId }, { createdAt: a.createdAt, id: a.eventId }) >= 0) continue;
+    out[aid] = { name: a.name, claims: a.claims, eventId: a.eventId, createdAt: a.createdAt };
+  }
+  return out;
 }
 
 class Applier {
@@ -281,9 +311,11 @@ export function advanceRatings(
 ): { state: RatingState; usedEventIds: string[] } {
   const book = buildKelBook(prev.kels, events, prev.cutoff - def.report.deadlineSec, cutoff);
   const author = attributor(book.states, opts.exclude);
-  const { identities, linked } = collect(def, prev.season, events, author);
+  const { identities, linked, latest } = collect(def, prev.season, events, author, cutoff);
   const ap = new Applier(def, prev);
   ap.markIdentities(identities);
+  const accounts = mergeAccounts(prev.accounts, latest);
+  for (const [aid, a] of Object.entries(accounts)) if (a !== prev.accounts[aid]) ap.used.add(a.eventId);
 
   for (const l of linked) {
     const deadline = l.match.createdAt + def.report.deadlineSec;
@@ -301,6 +333,7 @@ export function advanceRatings(
       recentPairs: ap.recentPairs.filter((p) => cutoff - p.settledAt < keep),
       seasonSummaries: prev.seasonSummaries,
       kels: book.records,
+      accounts,
     },
     usedEventIds: [...ap.used, ...book.usedEventIds].sort(byId),
   };
@@ -313,7 +346,7 @@ export function advanceRatings(
  */
 export function provisionalRatings(def: GameDefinition, state: RatingState, events: NostrEvent[], now: number): RatingState {
   const book = buildKelBook(state.kels, events, state.cutoff - def.report.deadlineSec, now);
-  const { identities, linked } = collect(def, state.season, events, attributor(book.states));
+  const { identities, linked, latest } = collect(def, state.season, events, attributor(book.states), now);
   const ap = new Applier(def, state);
   ap.markIdentities(identities);
   for (const l of linked) {
@@ -321,7 +354,7 @@ export function provisionalRatings(def: GameDefinition, state: RatingState, even
     const s = settleMatch(l.match, l.reports, now, def.report.deadlineSec);
     if (s.status === 'confirmed') ap.apply(l, s, false);
   }
-  return { ...state, players: ap.players, recentPairs: ap.recentPairs, kels: book.records };
+  return { ...state, players: ap.players, recentPairs: ap.recentPairs, kels: book.records, accounts: mergeAccounts(state.accounts, latest) };
 }
 
 export function toLocalView(def: GameDefinition, state: RatingState): LocalView {

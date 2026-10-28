@@ -1,11 +1,37 @@
 {
+  "accounts": {
+    "2194c5697a79ff437b6ddaf8d19b7e99ad26f7d780d7d89a3afa210949868d5a": {
+      "claims": [
+        {
+          "identity": "b2",
+          "platform": "github",
+          "proof": "b2"
+        }
+      ],
+      "created_at": 1790799995,
+      "event_id": "d056e6eca00ab8779f4088ed6e5ca4934f66efd91182b299f42a7f126effe2f1",
+      "name": ""
+    },
+    "dfade8c674edf7c084b04a6e3eacbe2be1d163f9d3b363bfa3abe2b8745f0214": {
+      "claims": [
+        {
+          "identity": "a1",
+          "platform": "github",
+          "proof": "a1"
+        }
+      ],
+      "created_at": 1790799990,
+      "event_id": "821443c35ebc786ab7f0b51c3a614bf264acc307719d8fbd0ca6a02e5c97506c",
+      "name": ""
+    }
+  },
   "config_sha256": "dec305f780f61d60007c1dbaeccfbdbba162de9e57a065fb477e02c3fed225a2",
   "cutoff": 1790886400,
   "excluded": [],
   "game": "smash_sp",
   "inputs": {
-    "event_count": 8,
-    "event_ids_sha256": "01181d5371255217dfc02204e41d45a18c44c4d47fb7eb8c57f7ad6f7179e0dd"
+    "event_count": 9,
+    "event_ids_sha256": "878ad43af06bb4ff17e4ad890ee47ad7449ea6ce962dd9080e722ce4faf27cbf"
   },
   "kels": {
     "2194c5697a79ff437b6ddaf8d19b7e99ad26f7d780d7d89a3afa210949868d5a": [

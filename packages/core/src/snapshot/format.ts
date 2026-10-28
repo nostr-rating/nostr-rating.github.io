@@ -1,6 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import type { GameDefinition } from '../game/definition.js';
+import { parseClaim } from '../identity/claims.js';
 import type { KelRecords } from '../kel/book.js';
 import type { RatingState } from '../rating/pipeline.js';
 import type { Pubkey } from '../types.js';
@@ -39,6 +40,8 @@ export interface Snapshot {
   kels: KelRecords;
   /** 取り切れなかったので、この回はイベントを無視したアカウント（作り直して確かめるときに使う） */
   excluded: Pubkey[];
+  /** aid → 最新のアカウントの公開情報 */
+  accounts: Record<Pubkey, { name: string; claims: { platform: string; identity: string; proof: string }[]; event_id: string; created_at: number }>;
 }
 
 export interface SnapshotSeasonSummary {
@@ -114,6 +117,9 @@ export function stateToSnapshot(
     ),
     kels: state.kels,
     excluded: [...(meta.excluded ?? [])].sort(),
+    accounts: Object.fromEntries(
+      Object.entries(state.accounts).map(([aid, a]) => [aid, { name: a.name, claims: a.claims, event_id: a.eventId, created_at: a.createdAt }]),
+    ),
   };
 }
 
@@ -150,6 +156,12 @@ export function snapshotToState(s: Snapshot): RatingState {
       ]),
     ),
     kels: s.kels ?? {},
+    accounts: Object.fromEntries(
+      Object.entries(s.accounts ?? {}).map(([aid, a]) => [
+        aid,
+        { name: a.name, claims: a.claims.map((c) => parseClaim(c)).filter((c) => c !== null), eventId: a.event_id, createdAt: a.created_at },
+      ]),
+    ),
   };
 }
 

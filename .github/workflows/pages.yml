@@ -30,7 +30,12 @@ jobs:
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
           VITE_SNAPSHOT_BASE: https://raw.githubusercontent.com/${{ github.repository }}/main/
-      - uses: actions/configure-pages@v5
+      # 最新のスナップショットから、選手ページ（p/）と公開 API（api/v1/）を書き出す（docs/api.md）
+      - id: pages
+        uses: actions/configure-pages@v5
+      - run: npm run site -- --out apps/web/dist --app-url "${{ steps.pages.outputs.base_url }}/"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: apps/web/dist

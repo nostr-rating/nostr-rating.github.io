@@ -122,6 +122,7 @@ npm run snapshot -- --cutoff <UNIX秒> [--relays ws://localhost:7777]
 | `docs/protocol.md` | イベントの形式と計算の決まり |
 | `docs/adr/` | 設計判断の記録 |
 | `docs/self-hosting.md` | 自分でアプリを動かす手順 |
+| `docs/api.md` | ほかのサイトからレートを読む公開 API |
 
 ## 参加する
 

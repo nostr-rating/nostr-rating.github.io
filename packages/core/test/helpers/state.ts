@@ -6,7 +6,7 @@ import { registeredKels } from './keys.js';
 
 /** テスト用。作ったアカウントの KEL を記録済みとして入れた初期状態 */
 export function initialState(def: GameDefinition, season: number, cutoff: number, summaries: RatingState['seasonSummaries'] = {}): RatingState {
-  return realInitialState(def, season, cutoff, summaries, registeredKels());
+  return realInitialState(def, season, cutoff, summaries, registeredKels(), {});
 }
 
 /** テスト用。作ったアカウントの KEL で、イベントを aid に結び付ける */

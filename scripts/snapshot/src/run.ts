@@ -128,7 +128,7 @@ export async function runSnapshot(opts: RunOptions): Promise<{ path: string; sna
     start = initialState(def, season.id, season.startsAt);
   } else if (prev.state.season < season.id) {
     // 新しいシーズンは全員が初期値から。過去のシーズンの成績だけを引き継ぐ
-    start = initialState(def, season.id, season.startsAt, prev.state.seasonSummaries, prev.state.kels);
+    start = initialState(def, season.id, season.startsAt, prev.state.seasonSummaries, prev.state.kels, prev.state.accounts);
   } else {
     if (prev.state.cutoff >= opts.cutoff) throw new Error(`cutoff must be after the previous one (${prev.state.cutoff})`);
     start = prev.state;
