@@ -37,7 +37,8 @@ export function ReportPanel(props: {
   /** 確定・中止・締め切り後は報告できない */
   closed: boolean;
   mine: ReportResult | undefined;
-  suggested: ReportResult | null;
+  /** ステージ案内で記録した勝敗の数（ステージ案内のないゲームでは null） */
+  record: { mine: number; theirs: number } | null;
   /** 引き分けを報告できるゲームか */
   allowDraw: boolean;
   busy: boolean;
@@ -72,17 +73,17 @@ export function ReportPanel(props: {
                 key={r}
                 type="button"
                 disabled={props.busy}
-                className={props.suggested === r ? 'primary' : ''}
-                aria-describedby={props.suggested === r ? 'suggested-note' : undefined}
                 onClick={() => choose(r)}
               >
                 {RESULT_LABEL[r]}
               </button>
             ))}
           </div>
-          <p id="suggested-note" className="slot muted">
-            {props.suggested ? `ステージ案内の記録から「${RESULT_LABEL[props.suggested]}」を勧めています。` : ''}
-          </p>
+          {props.record && (
+            <p className="muted" data-testid="stage-record">
+              ステージ案内の記録: あなた {props.record.mine} - {props.record.theirs} 相手
+            </p>
+          )}
           <p className="hint">
             中止は、相手と連絡が取れない・続けられない事情があるときだけ選んでください。食い違ったときは正しい結果を送り直せますが、前に送った報告も有効なまま残り、相手の報告と噛み合えばそちらで確定します。
           </p>

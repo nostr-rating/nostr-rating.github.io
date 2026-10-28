@@ -7,7 +7,6 @@ import {
   parseMatch,
   parseReport,
   parseSettings,
-  setWinner,
   settleMatch,
   unwrapRoomMessage,
   sideOf,
@@ -286,8 +285,10 @@ export function MatchRoom({ matchId }: { matchId: string }) {
       await app.relay.publish(await signer.signEvent(buildReport(def.id, { matchId: match.id, opponent: opponentSession, result }, app.now())));
     });
 
-  const decided = set ? setWinner(def, set) : null;
-  const suggested: ReportResult | null = decided === null ? null : decided === side ? 'win' : 'lose';
+  // ステージ案内で記録した勝敗の数。どちらの結果を報告するかは、本人が決める。
+  // ステージ案内のあるゲームでは最初から 0 - 0 を出し、記録が届いても下の要素を動かさない
+  const games = set?.games ?? [];
+  const record = def.stages && def.characters ? { mine: games.filter((g) => g.winner === side).length, theirs: games.filter((g) => g.winner !== side).length } : null;
   const closed = settlement !== null && settlement.status !== 'pending';
 
   const format = (
@@ -444,7 +445,7 @@ export function MatchRoom({ matchId }: { matchId: string }) {
         status={reportStatus(def, match, reports, me, app.now())}
         closed={closed}
         mine={latestReports(match, reports).get(me)}
-        suggested={suggested}
+        record={record}
         allowDraw={def.results.draw}
         busy={busy}
         onReport={report}

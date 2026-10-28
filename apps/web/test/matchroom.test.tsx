@@ -74,6 +74,17 @@ describe('MatchRoom', () => {
     expect(((await host.findByLabelText('パスワード')) as HTMLInputElement).value).toBe('24680');
   });
 
+  test('the report panel shows the score recorded in the stage guide without recommending a result', async () => {
+    const user = userEvent.setup();
+    const { host } = await setup();
+    expect((await host.findByTestId('stage-record')).textContent).toBe('ステージ案内の記録: あなた 0 - 0 相手');
+    await user.click(await host.findByRole('button', { name: '1戦目: あなたの勝ち' }));
+    await user.click(await host.findByRole('button', { name: '2戦目: 相手の勝ち' }));
+    await user.click(await host.findByRole('button', { name: '3戦目: あなたの勝ち' }));
+    expect(host.getByTestId('stage-record').textContent).toBe('ステージ案内の記録: あなた 2 - 1 相手');
+    expect(['勝ち', '負け', '中止'].map((n) => host.getByRole('button', { name: n }).className)).toEqual(['', '', '']);
+  });
+
   test('the generated password stays the same when the room is opened again', async () => {
     const { relay, match, host, hostAccount } = await setup();
     const first = ((await host.findByLabelText('パスワード')) as HTMLInputElement).value;
