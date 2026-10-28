@@ -1,29 +1,25 @@
-import { buildIdentities, KIND, LocalSigner, MemoryRelay } from '@nostr-rating/core';
+import { KIND, MemoryRelay } from '@nostr-rating/core';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { generateSecretKey } from 'nostr-tools/pure';
 import { afterEach, describe, expect, test } from 'vitest';
 import { Lobby } from '../src/pages/Lobby.js';
 import { Ranking } from '../src/pages/Ranking.js';
-import { makeDeps, renderWithApp } from './helpers.js';
+import { makeDeps, newPlayer, renderWithApp } from './helpers.js';
 
 afterEach(cleanup);
 
 const realNow = () => Math.floor(Date.now() / 1000);
 
-async function userWithIdentity(relay: MemoryRelay) {
-  const signer = new LocalSigner(generateSecretKey());
-  await relay.publish(await signer.signEvent(buildIdentities([{ platform: 'github', identity: 'u', proof: 'abc' }], realNow() - 100)));
-  return signer;
-}
+const userWithIdentity = async (relay: MemoryRelay, now = realNow, keepWords = false) =>
+  (await newPlayer(relay, now, { name: 'u', claims: [{ platform: 'github', identity: 'u', proof: 'abc' }], keepWords })).account;
 
 describe('Lobby', () => {
   test('two lobbies on the same relay end up in the same match room', async () => {
     const user = userEvent.setup();
     const relay = new MemoryRelay(realNow);
     const [a, b] = [await userWithIdentity(relay), await userWithIdentity(relay)];
-    const viewA = renderWithApp(<Lobby />, { deps: makeDeps({ relay, now: realNow }), signer: { signer: a, kind: 'local' }, backedUp: true });
-    const viewB = renderWithApp(<Lobby />, { deps: makeDeps({ relay, now: realNow }), signer: { signer: b, kind: 'local' }, backedUp: true });
+    const viewA = renderWithApp(<Lobby />, { deps: makeDeps({ relay, now: realNow }), account: a });
+    const viewB = renderWithApp(<Lobby />, { deps: makeDeps({ relay, now: realNow }), account: b });
     const inA = within(viewA.container);
     const inB = within(viewB.container);
 
@@ -46,28 +42,28 @@ describe('Lobby', () => {
     const user = userEvent.setup();
     const relay = new MemoryRelay(realNow);
     const a = await userWithIdentity(relay);
-    renderWithApp(<Lobby />, { deps: makeDeps({ relay, now: realNow }), signer: { signer: a, kind: 'local' }, backedUp: true });
+    renderWithApp(<Lobby />, { deps: makeDeps({ relay, now: realNow }), account: a });
     await user.click(await screen.findByRole('button', { name: '対戦相手を探す' }));
     expect(await screen.findByText(/待機中/)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'やめる' }));
     expect(await screen.findByRole('button', { name: '対戦相手を探す' })).toBeTruthy();
   }, 15_000);
 
-  test('search is disabled until an SNS account is linked', async () => {
+  test('search is disabled until an external account is linked', async () => {
     const relay = new MemoryRelay(realNow);
-    const signer = new LocalSigner(generateSecretKey());
-    renderWithApp(<Lobby />, { deps: makeDeps({ relay, now: realNow }), signer: { signer, kind: 'local' }, backedUp: true });
+    const { account } = await newPlayer(relay, realNow);
+    renderWithApp(<Lobby />, { deps: makeDeps({ relay, now: realNow }), account });
     await waitFor(() => expect((screen.getByRole('button', { name: '対戦相手を探す' }) as HTMLButtonElement).disabled).toBe(true));
-    expect(screen.getByText('対戦するには SNS アカウントの紐づけが必要です。')).toBeTruthy();
+    expect(screen.getByText('対戦するには X か GitHub の紐づけが必要です。')).toBeTruthy();
   });
 
-  test('backup reminder is shown for an app key that is not backed up', async () => {
+  test('reminds to write down the recovery words while they are still on the device', async () => {
     const relay = new MemoryRelay(realNow);
-    const signer = await userWithIdentity(relay);
-    renderWithApp(<Lobby />, { deps: makeDeps({ relay, now: realNow }), signer: { signer, kind: 'local' }, backedUp: false });
+    const account = await userWithIdentity(relay, realNow, true);
+    renderWithApp(<Lobby />, { deps: makeDeps({ relay, now: realNow }), account });
     await waitFor(() =>
       expect(document.querySelector('.notice')?.textContent).toBe(
-        '引き継ぎコードをまだ保存していません。機種変更やブラウザのデータ削除で戦績が消えないよう、設定画面から保存してください。',
+        '復活の言葉をまだ書き写していません。端末を全部失くしたときに戻せるよう、設定画面から書き写してください。',
       ),
     );
   });
@@ -78,9 +74,8 @@ describe('Lobby near the season end', () => {
     const end = 1_798_729_200; // シーズン1の終わり（2027-01-01 JST）
     const now = () => end - 3600;
     const relay = new MemoryRelay(now);
-    const signer = new LocalSigner(generateSecretKey());
-    await relay.publish(await signer.signEvent(buildIdentities([{ platform: 'github', identity: 'u', proof: 'abc' }], now() - 100)));
-    renderWithApp(<Lobby />, { deps: makeDeps({ relay, now }), signer: { signer, kind: 'local' }, backedUp: true });
+    const account = await userWithIdentity(relay, now);
+    renderWithApp(<Lobby />, { deps: makeDeps({ relay, now }), account });
     expect(await screen.findByText('シーズン 1 は 1/1 0:00 に終わります。結果報告の締め切りがシーズン内に収まらないため、新しい対戦はシーズン 2 から受け付けます。')).toBeTruthy();
     expect((screen.getByRole('button', { name: '対戦相手を探す' }) as HTMLButtonElement).disabled).toBe(true);
   });

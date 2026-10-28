@@ -18,13 +18,14 @@ import {
   type SetState,
   type Side,
   type StageBans,
+  type Signer,
 } from '@nostr-rating/core';
 import { useEffect, useId, useState } from 'react';
 import { ChatPanel, type ChatLine } from '../components/ChatPanel.js';
 import { IdentityBadge } from '../components/IdentityBadge.js';
 import { latestReports, ReportPanel, reportStatus } from '../components/ReportPanel.js';
 import { StageGuide } from '../components/StageGuide.js';
-import { displayName, useApp } from '../state/AppContext.js';
+import { displayName, parseEach, useApp } from '../state/AppContext.js';
 
 /** NIP-17 は gift wrap の時刻を最大2日前までずらすので、その分さかのぼって購読する */
 const WRAP_LOOKBACK_SEC = 2 * 24 * 3600 + 600;
@@ -45,6 +46,12 @@ function cachedBans(matchId: string): { p1: StageBans; p2: StageBans } | null {
   } catch {
     return null;
   }
+}
+
+/** 対戦に使った使い捨ての鍵の署名者（古い日の鍵でも、残っていれば使う） */
+async function sessionSignerFor(signers: Signer[], pk: string): Promise<Signer | null> {
+  for (const s of signers) if ((await s.getPublicKey()) === pk) return s;
+  return null;
 }
 
 export function MatchRoom({ matchId }: { matchId: string }) {
@@ -71,8 +78,8 @@ export function MatchRoom({ matchId }: { matchId: string }) {
     let alive = true;
     void app.relay
       .query([{ kinds: [KIND.match], ids: [matchId] }])
-      .then((evs) => {
-        const m = evs.map((e) => parseMatch(def.id, e)).find((x) => x !== null);
+      .then(async (evs) => {
+        const m = (await parseEach(app, evs, (e, by) => parseMatch(def.id, e, by)))[0];
         if (!alive) return;
         if (m) setMatch(m);
         else setNotFound(true);
@@ -86,6 +93,20 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   const me = app.pubkey;
   const side: Side | null = match && me ? (match.p1 === me ? 'p1' : match.p2 === me ? 'p2' : null) : null;
   const opponent = match && side ? (side === 'p1' ? match.p2 : match.p1) : null;
+  // 部屋 ID・チャット・報告の宛先は、対戦の p タグにある使い捨ての鍵
+  const [mySessionPk, setMySessionPk] = useState<string | null>(null);
+  useEffect(() => {
+    if (!match) return;
+    let alive = true;
+    void Promise.all(app.sessionSigners.map((s) => s.getPublicKey())).then((pks) => {
+      if (alive) setMySessionPk(match.sessions.find((s) => pks.includes(s)) ?? null);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [app.sessionSigners, match]);
+  const opponentSession = match && mySessionPk ? (match.sessions.find((s) => s !== mySessionPk) ?? null) : null;
+  const p1Session = match ? (side === 'p1' ? mySessionPk : opponentSession) : null;
 
   // 第三者が勝手に作った対戦でないか（申し込みに結び付いているか）を確かめる
   useEffect(() => {
@@ -93,8 +114,8 @@ export function MatchRoom({ matchId }: { matchId: string }) {
     let alive = true;
     void app.relay
       .query([{ kinds: [KIND.application], ids: [match.applicationId] }])
-      .then((evs) => {
-        const a = evs.map((e) => parseApplication(def.id, e)).find((x) => x !== null);
+      .then(async (evs) => {
+        const a = (await parseEach(app, evs, (e, by) => parseApplication(def.id, e, by)))[0];
         if (alive) setLinked(isLinkedMatch(def, match, a));
       })
       .catch(() => alive && setLinked(null));
@@ -114,8 +135,8 @@ export function MatchRoom({ matchId }: { matchId: string }) {
     if (!match || bans) return;
     void app.relay
       .query([{ kinds: [KIND.settings], ids: [match.p1SettingsId, match.p2SettingsId] }])
-      .then((evs) => {
-        const s = evs.map((e) => parseSettings(def.id, e)).filter((x) => x !== null);
+      .then(async (evs) => {
+        const s = await parseEach(app, evs, (e, by) => parseSettings(def.id, e, by));
         const p1 = s.find((x) => x.eventId === match.p1SettingsId && x.pubkey === match.p1);
         const p2 = s.find((x) => x.eventId === match.p2SettingsId && x.pubkey === match.p2);
         const got = { p1: p1?.stageBans ?? {}, p2: p2?.stageBans ?? {} };
@@ -134,38 +155,41 @@ export function MatchRoom({ matchId }: { matchId: string }) {
 
   // 部屋 ID とチャット（暗号化 DM）
   useEffect(() => {
-    if (!match || !me || !app.signer || !side) return;
-    const signer = app.signer;
+    if (!match || !me || !side || !mySessionPk || !opponentSession) return;
+    const signer = sessionSignerFor(app.sessionSigners, mySessionPk);
+    if (!signer) return;
     const seen = new Set<string>();
     const lines: ChatLine[] = [];
     let latestRoom = -1;
-    return app.relay.subscribe([{ kinds: [KIND.giftWrap], '#p': [me], since: match.createdAt - WRAP_LOOKBACK_SEC }], (ev) => {
+    return app.relay.subscribe([{ kinds: [KIND.giftWrap], '#p': [mySessionPk], since: match.createdAt - WRAP_LOOKBACK_SEC }], (ev) => {
       if (seen.has(ev.id)) return;
       seen.add(ev.id);
-      void unwrapRoomMessage(signer, ev).then((got) => {
+      void signer.then((s) => (s ? unwrapRoomMessage(s, ev) : null)).then((got) => {
         if (!got || got.matchId !== match.id) return;
-        if (got.from !== match.p1 && got.from !== match.p2) return;
+        if (got.from !== mySessionPk && got.from !== opponentSession) return;
         if (got.msg.type === 'room') {
-          if (got.from !== match.p1 || got.createdAt < latestRoom || !validRoomId(def, got.msg.roomId)) return;
+          if (got.from !== p1Session || got.createdAt < latestRoom || !validRoomId(def, got.msg.roomId)) return;
           latestRoom = got.createdAt;
           setRoom({ roomId: got.msg.roomId, password: got.msg.password });
         } else {
-          lines.push({ mine: got.from === me, text: got.msg.text.slice(0, 500), at: got.createdAt });
+          lines.push({ mine: got.from === mySessionPk, text: got.msg.text.slice(0, 500), at: got.createdAt });
           setChat([...lines].sort((a, b) => a.at - b.at));
         }
       });
     });
-  }, [app.relay, app.signer, def, match, me, side]);
+  }, [app.relay, app.sessionSigners, def, match, me, side, mySessionPk, opponentSession, p1Session]);
 
   // 結果報告
   useEffect(() => {
     if (!match) return;
     const got = new Map<string, ResultReport>();
     return app.relay.subscribe([{ kinds: [KIND.report], '#e': [match.id] }], (ev) => {
-      const r = parseReport(def.id, ev);
-      if (!r || r.matchId !== match.id || got.has(r.id)) return;
-      got.set(r.id, r);
-      setReports([...got.values()]);
+      void app.author(ev).then((by) => {
+        const r = parseReport(def.id, ev, by);
+        if (!r || r.matchId !== match.id || got.has(r.id)) return;
+        got.set(r.id, r);
+        setReports([...got.values()]);
+      });
     });
   }, [app.relay, def.id, match]);
 
@@ -204,6 +228,8 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   }
   if (!side || !opponent || !app.signer) return <p className="error">この対戦の参加者ではありません。</p>;
   const signer = app.signer;
+  if (!mySessionPk || !opponentSession) return <p className="loading">対戦を読み込み中…</p>;
+  const sealSigner = sessionSignerFor(app.sessionSigners, mySessionPk);
 
   const guarded = async (f: () => Promise<void>) => {
     setBusy(true);
@@ -220,13 +246,15 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   const send = (msg: RoomMessage) =>
     guarded(async () => {
       const t = app.now();
-      await app.relay.publish(await wrapRoomMessage(signer, opponent, match.id, msg, t));
-      await app.relay.publish(await wrapRoomMessage(signer, me, match.id, msg, t, opponent));
+      const s = await sealSigner;
+      if (!s) throw new Error('no session key for this match');
+      await app.relay.publish(await wrapRoomMessage(s, opponentSession, match.id, msg, t));
+      await app.relay.publish(await wrapRoomMessage(s, mySessionPk, match.id, msg, t, opponentSession));
     });
 
   const report = (result: ReportResult) =>
     guarded(async () => {
-      await app.relay.publish(await signer.signEvent(buildReport(def.id, { matchId: match.id, opponent, result }, app.now())));
+      await app.relay.publish(await signer.signEvent(buildReport(def.id, { matchId: match.id, opponent: opponentSession, result }, app.now())));
     });
 
   const decided = set ? setWinner(def, set) : null;

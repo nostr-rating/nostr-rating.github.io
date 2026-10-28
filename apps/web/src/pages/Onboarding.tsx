@@ -1,151 +1,117 @@
 import {
-  claimToTag,
-  decodeNsec,
-  generateSecretKey,
+  buildAccountInfo,
   KIND,
-  npubOf,
-  parseIdentities,
-  parseProfile,
+  parseAccountInfo,
   parseProofUrl,
   verificationText,
   verifyClaim,
   type IdentityClaim,
-  type NostrEvent,
   type Pubkey,
-  type Signer,
   type VerifyStatus,
 } from '@nostr-rating/core';
-import { useEffect, useState } from 'react';
-import { KeyBackup } from '../components/KeyBackup.js';
+import { useEffect, useMemo, useState } from 'react';
+import { Account } from '../account/account.js';
 import { StatusBadge } from '../components/IdentityBadge.js';
+import { RecoveryWords } from '../components/RecoveryWords.js';
 import { navigate } from '../router.js';
-import { rememberSignerKind } from '../services/boot.js';
-import { markBackedUp, saveLocalSigner } from '../services/signer-local.js';
-import { nip07Signer } from '../services/signer-nip07.js';
 import { useApp } from '../state/AppContext.js';
 
-type Step = 'checking' | 'start' | 'restore' | 'name' | 'identity' | 'backup';
+type Step = 'checking' | 'start' | 'words' | 'join' | 'name' | 'identity';
 
-/** 貼り付けやファイルの中から nsec を取り出す（説明の行が一緒に入っていてもよい） */
-function extractNsec(text: string): string {
-  return text.match(/nsec1[02-9ac-hj-np-z]+/)?.[0] ?? text.trim();
+/** この端末の名前の既定値（端末の一覧で見分けるため） */
+function defaultDeviceLabel(): string {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+  if (/iPhone|Android.*Mobile/.test(ua)) return 'スマホ';
+  if (/iPad|Android/.test(ua)) return 'タブレット';
+  return 'パソコン';
 }
-
-const newest = (evs: NostrEvent[], kind: number) => evs.filter((e) => e.kind === kind).sort((a, b) => b.created_at - a.created_at)[0];
 
 export function Onboarding() {
   const app = useApp();
-  const [step, setStep] = useState<Step>(app.signer ? 'checking' : 'start');
+  const [step, setStep] = useState<Step>(app.account ? 'checking' : 'start');
+  const [words, setWords] = useState<string | null>(null);
+  const [requestCode, setRequestCode] = useState<string | null>(null);
   const [name, setName] = useState('');
+  const [claims, setClaims] = useState<IdentityClaim[]>([]);
   const [url, setUrl] = useState('');
-  const [nsecInput, setNsecInput] = useState('');
-  const [restoreInput, setRestoreInput] = useState('');
   const [claim, setClaim] = useState<IdentityClaim | null>(null);
   const [status, setStatus] = useState<VerifyStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const label = useMemo(defaultDeviceLabel, []);
 
-  /** 公開済みのプロフィールと紐づけを見て、どの手順から始めるかを決める */
-  const continueFrom = async (pk: Pubkey, restored: boolean) => {
-    if (restored) {
-      await markBackedUp();
-      app.setBackedUp(true);
-    }
-    let evs: NostrEvent[] = [];
+  /** 公開済みの表示名と紐づけを見て、どの手順から始めるかを決める */
+  const continueFrom = async (aid: Pubkey) => {
+    let latest: { name: string; claims: IdentityClaim[]; at: number } | null = null;
     try {
-      evs = await app.relay.query([{ kinds: [KIND.profile, KIND.identities], authors: [pk] }]);
+      for (const ev of await app.relay.query([{ kinds: [KIND.account], '#d': [aid] }])) {
+        const a = parseAccountInfo(app.def.id, ev, await app.author(ev));
+        if (a && a.pubkey === aid && (!latest || latest.at < a.createdAt)) latest = { name: a.name, claims: a.claims, at: a.createdAt };
+      }
     } catch {
       // 読めなければ最初の手順から
     }
-    const profile = newest(evs, KIND.profile);
-    const ids = newest(evs, KIND.identities);
-    const existingName = profile ? (parseProfile(profile)?.name ?? '') : '';
-    const claims = ids ? (parseIdentities(ids)?.claims ?? []) : [];
-    if (existingName) app.rememberProfile(pk, existingName);
-    if (ids) app.rememberIdentities(pk, claims);
-    if (existingName && claims.length > 0) {
-      if (app.signerKind === 'local' && !restored && !app.backedUp) setStep('backup');
-      else navigate({ name: 'lobby' });
-      return;
-    }
-    setName(existingName);
-    setStep(existingName ? 'identity' : 'name');
+    if (latest?.name) app.rememberProfile(aid, latest.name);
+    if (latest) app.rememberIdentities(aid, latest.claims);
+    setName(latest?.name ?? '');
+    setClaims(latest?.claims ?? []);
+    if (latest?.name && latest.claims.length > 0) navigate({ name: 'lobby' });
+    else setStep(latest?.name ? 'identity' : 'name');
   };
 
   useEffect(() => {
-    if (step === 'checking' && app.pubkey) void continueFrom(app.pubkey, false);
+    if (step === 'checking' && app.pubkey && app.signer) void continueFrom(app.pubkey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, app.pubkey]);
+  }, [step, app.pubkey, app.signer]);
 
-  const signIn = async (signer: Signer, kind: 'local' | 'nip07', restored: boolean) => {
-    rememberSignerKind(kind);
-    await app.setSigner(signer, kind);
-    await continueFrom(await signer.getPublicKey(), restored);
-  };
+  // 2台目・復活: 申請した端末が KEL に載るのを待つ
+  useEffect(() => {
+    if (step !== 'join') return;
+    let alive = true;
+    let stop = () => undefined as void;
+    // 申請の鍵を作り終えてから待ち受ける（先に待つと、鍵がまだなくて何も届かない）
+    void Account.prepareDevice(app.keyStore, label).then((code) => {
+      if (!alive) return;
+      setRequestCode(code);
+      stop = Account.waitForRegistration(app.keyStore, app.relay, app.now, (a) => {
+        void app.setAccount(a).then(() => setStep('checking'));
+      });
+    });
+    return () => {
+      alive = false;
+      stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
-  const createKey = async () => {
-    const signer = await saveLocalSigner(generateSecretKey());
-    rememberSignerKind('local');
-    await app.setSigner(signer, 'local');
-    setStep('name');
-  };
-
-  const importKey = async (text: string, restored: boolean, failMessage: string) => {
-    let sk: Uint8Array;
-    try {
-      sk = decodeNsec(extractNsec(text));
-    } catch {
-      setError(failMessage);
-      return;
-    }
-    setError(null);
-    await signIn(await saveLocalSigner(sk), 'local', restored);
-  };
-
-  const readFile = async (file: File | undefined) => {
-    if (!file) return;
-    setRestoreInput(extractNsec(await file.text()));
-  };
-
-  const useNip07 = async () => {
-    const s = nip07Signer();
-    if (!s) {
-      setError('NIP-07 対応の拡張機能が見つかりません');
-      return;
-    }
-    if (!window.nostr?.nip44) {
-      setError('この拡張機能は暗号化（NIP-44）に対応していないため、部屋 ID のやり取りができません。別の拡張機能を使ってください。');
-      return;
-    }
-    app.setBackedUp(true);
-    try {
-      await signIn(s, 'nip07', false);
-    } catch {
-      setError('拡張機能でログインできませんでした');
-    }
-  };
-
-  /** 既存のプロフィールの項目（画像や自己紹介）は残し、名前だけを書き換える */
-  const saveName = async () => {
-    if (!app.signer || !app.pubkey) return;
+  const start = async () => {
     setBusy(true);
     try {
-      const latest = newest(await app.relay.query([{ kinds: [KIND.profile], authors: [app.pubkey] }]), KIND.profile);
-      let content: Record<string, unknown> = {};
-      try {
-        const parsed = latest ? (JSON.parse(latest.content) as unknown) : {};
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) content = parsed as Record<string, unknown>;
-      } catch {
-        content = {};
-      }
-      const ev = await app.signer.signEvent({
-        kind: KIND.profile,
-        created_at: app.now(),
-        tags: latest?.tags ?? [],
-        content: JSON.stringify({ ...content, name: name.trim() }),
-      });
-      await app.relay.publish(ev);
-      app.rememberProfile(app.pubkey, name.trim());
+      const { account, words } = await Account.create(app.keyStore, app.relay, app.now, label);
+      await app.setAccount(account);
+      setWords(words);
+      setStep('words');
+    } catch {
+      setError('始められませんでした。電波のよい場所でもう一度押してください。');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 表示名と紐づけをまとめて出し直す（アカウントの公開情報は丸ごと置き換わる） */
+  const publish = async (next: { name: string; claims: IdentityClaim[] }) => {
+    if (!app.signer || !app.pubkey) throw new Error('not ready');
+    const ev = await app.signer.signEvent(buildAccountInfo(app.def.id, { pubkey: app.pubkey, ...next }, app.now()));
+    await app.relay.publish(ev);
+    await app.store.put([ev]);
+    app.rememberProfile(app.pubkey, next.name);
+    app.rememberIdentities(app.pubkey, next.claims);
+  };
+
+  const saveName = async () => {
+    setBusy(true);
+    try {
+      await publish({ name: name.trim(), claims });
       setStep('identity');
     } catch {
       setError('保存できませんでした。電波のよい場所でもう一度押してください。');
@@ -159,25 +125,22 @@ export function Onboarding() {
     setClaim(c);
     if (!c || !app.pubkey) {
       setStatus(null);
-      setError('対応していない URL です（GitHub Gist・Mastodon・X の投稿 URL を入力してください）');
+      setError('対応していない URL です（X の投稿か GitHub の Gist の URL を入力してください）');
       return;
     }
     setError(null);
     setStatus(await verifyClaim(c, app.pubkey, app.fetchFn));
   };
 
-  /** 既存の紐づけ（ほかのサービスやこのアプリが知らないものも）は残し、同じサービスの分だけ置き換える */
+  /** 同じサービスの紐づけだけを置き換える */
   const register = async () => {
-    if (!app.signer || !app.pubkey || !claim) return;
+    if (!claim) return;
     setBusy(true);
     try {
-      const latest = newest(await app.relay.query([{ kinds: [KIND.identities], authors: [app.pubkey] }]), KIND.identities);
-      const kept = (latest?.tags ?? []).filter((t) => !(t[0] === 'i' && t[1]?.startsWith(`${claim.platform}:`)));
-      const ev = await app.signer.signEvent({ kind: KIND.identities, created_at: app.now(), tags: [...kept, claimToTag(claim)], content: '' });
-      await app.relay.publish(ev);
-      app.rememberIdentities(app.pubkey, parseIdentities(ev)?.claims ?? [claim]);
-      if (app.signerKind === 'local' && !app.backedUp) setStep('backup');
-      else navigate({ name: 'lobby' });
+      const next = [...claims.filter((c) => c.platform !== claim.platform), claim];
+      await publish({ name, claims: next });
+      setClaims(next);
+      navigate({ name: 'lobby' });
     } catch {
       setError('登録できませんでした。電波のよい場所でもう一度押してください。');
     } finally {
@@ -193,33 +156,36 @@ export function Onboarding() {
         <div className="card stack">
           <h1>Nostr-Rating へようこそ</h1>
           <p>運営のいない、スマブラSP のレート対戦です。対戦結果は誰でも確かめられる形で公開されます。個人情報は預かりません。</p>
-          <button type="button" className="primary" onClick={() => void createKey()}>
-            はじめる
+          <button type="button" className="primary" disabled={busy} onClick={() => void start()}>
+            この端末で始める
           </button>
-          <button type="button" onClick={() => setStep('restore')}>バックアップから引き継ぐ</button>
-          <details>
-            <summary>すでに Nostr を使っている方</summary>
-            <div className="stack">
-              <button type="button" onClick={() => void useNip07()}>ブラウザ拡張機能（NIP-07）でログイン</button>
-              <label htmlFor="nsec">nsec</label>
-              <input id="nsec" type="password" autoComplete="off" value={nsecInput} onChange={(e) => setNsecInput(e.target.value)} />
-              <button type="button" onClick={() => void importKey(nsecInput, false, 'nsec を読み取れませんでした')}>取り込む</button>
-            </div>
-          </details>
+          <button type="button" onClick={() => setStep('join')}>すでにアカウントを持っている</button>
+          <p className="muted">
+            <a href={`${import.meta.env.BASE_URL}help/account.html`}>アカウントの守り方</a>
+          </p>
         </div>
       )}
 
-      {step === 'restore' && (
+      {step === 'words' && words && (
         <div className="card stack">
-          <h2>バックアップから引き継ぐ</h2>
-          <p>保存しておいた引き継ぎコード（nsec1 で始まる文字列）を貼り付けるか、保存したファイルを選んでください。</p>
-          <label htmlFor="restore-code">引き継ぎコード</label>
-          <textarea id="restore-code" rows={3} autoComplete="off" value={restoreInput} onChange={(e) => setRestoreInput(e.target.value)} />
-          <label htmlFor="restore-file">ファイルから読み込む</label>
-          <input id="restore-file" type="file" accept=".txt,text/plain" onChange={(e) => void readFile(e.target.files?.[0])} />
-          <button type="button" className="primary" onClick={() => void importKey(restoreInput, true, '引き継ぎコードを読み取れませんでした')}>
-            引き継ぐ
+          <h2>復活の言葉</h2>
+          <RecoveryWords words={words} onConfirmed={() => void app.confirmWords().then(() => setStep('name'))} onLater={() => setStep('name')} />
+        </div>
+      )}
+
+      {step === 'join' && (
+        <div className="card stack">
+          <h2>この端末を登録する</h2>
+          <p>下の「端末の申請」をコピーして、次のどちらかに貼ってください。貼った側で登録が終わると、この画面は自動で進みます。</p>
+          <ul>
+            <li>登録済みの端末: 設定の「端末を追加」</li>
+            <li>端末を全部失くしたとき: 復活の道具</li>
+          </ul>
+          <p className="mono card" data-testid="device-request">{requestCode ?? '作成中…'}</p>
+          <button type="button" disabled={!requestCode} onClick={() => void navigator.clipboard?.writeText(requestCode!).catch(() => undefined)}>
+            申請をコピー
           </button>
+          <p className="loading">登録を待っています…</p>
           <button type="button" onClick={() => setStep('start')}>戻る</button>
         </div>
       )}
@@ -230,22 +196,17 @@ export function Onboarding() {
           <label htmlFor="name">表示名</label>
           <input id="name" value={name} maxLength={32} onChange={(e) => setName(e.target.value)} />
           <p className="muted">ゲーム内の名前と同じにしてください。</p>
-          <button type="button" className="primary" disabled={busy || name.trim() === ''} onClick={() => void saveName()}>
+          <button type="button" className="primary" disabled={busy || name.trim() === '' || !app.signer} onClick={() => void saveName()}>
             次へ
           </button>
-          <details>
-            <summary>あなたの ID</summary>
-            <p className="mono muted" data-testid="my-npub">{app.pubkey ? npubOf(app.pubkey) : ''}</p>
-          </details>
         </div>
       )}
 
       {step === 'identity' && app.pubkey && (
         <div className="card stack">
-          <h2>SNS アカウントの紐づけ</h2>
+          <h2>X か GitHub の紐づけ</h2>
           <p>
-            次の文をそのまま SNS に投稿し、その投稿の URL を入力してください。本人確認のための定型文なので、英語のまま投稿してください。
-            GitHub の Gist と Mastodon は自動で確認します。X は確認できないため、対戦相手が投稿を見て判断します。
+            次の文をそのまま X に投稿するか、GitHub の公開の Gist に貼り、その URL を入力してください。1人で何個もアカウントを作れないようにするためのもので、英語のまま投稿してください。投稿や Gist は、紐づけのあとも消さないでください。
           </p>
           <p className="mono card" data-testid="verification-text">{verificationText(app.pubkey)}</p>
           <button type="button" onClick={() => void navigator.clipboard?.writeText(verificationText(app.pubkey!)).catch(() => undefined)}>
@@ -255,24 +216,9 @@ export function Onboarding() {
           <input id="proof-url" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)} />
           <button type="button" onClick={() => void check()}>確認する</button>
           {status && <StatusBadge status={status} />}
-          {claim?.platform === 'twitter' && (
-            <p className="muted">X だけを紐づけた場合、引き継ぎコードをなくすと戦績を引き継げません。コードは必ず保存してください。</p>
-          )}
-          <button
-            type="button"
-            className="primary"
-            disabled={busy || !claim || status === null || status === 'failed'}
-            onClick={() => void register()}
-          >
+          <button type="button" className="primary" disabled={busy || !claim || status !== 'verified'} onClick={() => void register()}>
             登録して次へ
           </button>
-        </div>
-      )}
-
-      {step === 'backup' && (
-        <div className="card stack">
-          <h2>引き継ぎコードの保存</h2>
-          <KeyBackup onDone={() => navigate({ name: 'lobby' })} />
         </div>
       )}
 

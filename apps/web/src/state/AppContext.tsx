@@ -3,14 +3,15 @@ import {
   initialState,
   KIND,
   Matchmaker,
-  parseIdentities,
-  parseProfile,
+  parseAccountInfo,
   parseSettings,
   seasonById,
   settingsD,
   toLocalView,
+  type DeviceRecord,
   type GameDefinition,
   type IdentityClaim,
+  type NostrEvent,
   type LocalView,
   type MatchRecord,
   type Pubkey,
@@ -21,6 +22,8 @@ import {
   type Signer,
 } from '@nostr-rating/core';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Account, type KeyStore } from '../account/account.js';
+import { Resolver } from '../account/resolver.js';
 import { syncRatings } from '../services/sync.js';
 import type { EventStore } from '../storage/types.js';
 
@@ -31,9 +34,9 @@ export interface AppDeps {
   fetchFn: typeof fetch;
   snapshotBase: string;
   now: () => number;
+  keyStore: KeyStore;
 }
 
-export type SignerKind = 'local' | 'nip07';
 export type SettingsStatus = 'loading' | 'loaded' | 'failed';
 
 export interface SearchState {
@@ -44,10 +47,29 @@ export interface SearchState {
 }
 
 export interface AppValue extends AppDeps {
+  /** この端末のアカウント。まだなければ null */
+  account: Account | null;
+  /** アプリのイベントに署名する（使い捨ての鍵＋証明書）。アカウントがなければ null */
   signer: Signer | null;
-  signerKind: SignerKind | null;
+  /** DM の暗号化と復号に使う使い捨ての鍵（新しい順） */
+  sessionSigners: Signer[];
+  /** 自分の使い捨ての公開鍵（新しい順）。#p で自分宛てを探すのに使う */
+  mySessions: Pubkey[];
+  /** 自分の aid */
   pubkey: Pubkey | null;
-  setSigner(s: Signer | null, kind: SignerKind | null): Promise<void>;
+  setAccount(a: Account | null): Promise<void>;
+  /** 他人のイベントを aid に結び付ける（知らないアカウントは KEL を取りに行く） */
+  author(ev: NostrEvent): Promise<Pubkey | null>;
+  /** 書き写したと確かめていない復活の言葉 */
+  pendingWords: string | null;
+  confirmWords(): Promise<void>;
+  /** 有効な端末のうち、利用者がまだ知らないもの */
+  unknownDevices: DeviceRecord[];
+  acknowledgeDevices(): Promise<void>;
+  /** KEL を読み直し、端末の一覧と使い捨ての鍵を新しくする */
+  reloadAccount(): Promise<void>;
+  /** この端末で続けられない理由（取り消し・期限切れ） */
+  accountError: string | null;
   ratings: RatingState;
   view: LocalView;
   syncing: boolean;
@@ -62,8 +84,6 @@ export interface AppValue extends AppDeps {
   setMySettings(s: Settings): void;
   activeMatch: MatchRecord | null;
   setActiveMatch(m: MatchRecord | null): void;
-  backedUp: boolean;
-  setBackedUp(v: boolean): void;
   rememberProfile(pk: Pubkey, name: string): void;
   rememberIdentities(pk: Pubkey, claims: IdentityClaim[]): void;
   search: SearchState;
@@ -85,6 +105,16 @@ function emptyState(def: GameDefinition, now: number): RatingState {
   return initialState(def, season.id, season.startsAt);
 }
 
+/** イベントを aid に結び付けてから読む（結び付かないものは捨てる） */
+export async function parseEach<T>(app: Pick<AppValue, 'author'>, evs: NostrEvent[], parse: (ev: NostrEvent, by: Pubkey | null) => T | null): Promise<T[]> {
+  const out: T[] = [];
+  for (const ev of evs) {
+    const v = parse(ev, await app.author(ev));
+    if (v !== null) out.push(v);
+  }
+  return out;
+}
+
 export function displayName(app: Pick<AppValue, 'profiles'>, pk: Pubkey): string {
   return app.profiles[pk] || `${pk.slice(0, 8)}…`;
 }
@@ -93,16 +123,15 @@ export function displayName(app: Pick<AppValue, 'profiles'>, pk: Pubkey): string
 const AUTHORS_CHUNK = 100;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-export function AppProvider(props: {
-  deps: AppDeps;
-  initialSigner?: { signer: Signer; kind: SignerKind } | null;
-  initialBackedUp?: boolean;
-  children: ReactNode;
-}) {
+export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | null; children: ReactNode }) {
   const { deps } = props;
-  const [signer, setSignerState] = useState<Signer | null>(props.initialSigner?.signer ?? null);
-  const [signerKind, setSignerKind] = useState<SignerKind | null>(props.initialSigner?.kind ?? null);
-  const [pubkey, setPubkey] = useState<Pubkey | null>(null);
+  const [account, setAccountState] = useState<Account | null>(props.initialAccount ?? null);
+  const [session, setSession] = useState<Awaited<ReturnType<Account['session']>> | null>(null);
+  const [mySessions, setMySessions] = useState<Pubkey[]>([]);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [pendingWords, setPendingWords] = useState<string | null>(props.initialAccount?.pendingWords ?? null);
+  const [unknownDevices, setUnknownDevices] = useState<DeviceRecord[]>([]);
+  const pubkey = account?.aid ?? null;
   const [ratings, setRatings] = useState<RatingState>(() => emptyState(deps.def, deps.now()));
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -111,49 +140,83 @@ export function AppProvider(props: {
   const [mySettings, setMySettings] = useState<Settings | null>(null);
   const [settingsStatus, setSettingsStatus] = useState<SettingsStatus>('loading');
   const [activeMatch, setActiveMatch] = useState<MatchRecord | null>(null);
-  const [backedUp, setBackedUp] = useState(props.initialBackedUp ?? false);
   const [search, setSearch] = useState<SearchState>({ waitingSince: null, busy: false, error: null });
   const abortRef = useRef<AbortController | null>(null);
+  const resolver = useMemo(() => new Resolver(deps.relay), [deps.relay]);
+
+  /** KEL を読み直し、延長が要れば延長し、今日の使い捨ての鍵を用意する */
+  const prepare = useCallback(async (a: Account) => {
+    try {
+      await a.refreshKel();
+      await a.renewIfNeeded();
+    } catch (e) {
+      // リレーに届かなくても、手元の KEL で続ける
+      console.warn('could not refresh the key event log', e);
+    }
+    resolver.setKnown({ [a.aid]: a.kel });
+    setPendingWords(a.pendingWords);
+    setUnknownDevices(a.unknownDevices);
+    if (!a.active) {
+      setSession(null);
+      setAccountError('この端末の登録は取り消されたか、期限が切れています。ほかの端末から登録し直すか、復活の言葉で戻してください。');
+      return;
+    }
+    const s = await a.session();
+    setSession(s);
+    setMySessions(await Promise.all(s.sessionSigners.map((x) => x.getPublicKey())));
+    setAccountError(null);
+  }, [resolver]);
 
   useEffect(() => {
-    let alive = true;
-    (signer?.getPublicKey() ?? Promise.resolve(null)).then(
-      (pk) => alive && setPubkey(pk),
-      () => alive && setPubkey(null),
-    );
-    return () => {
-      alive = false;
-    };
-  }, [signer]);
+    if (account) void prepare(account);
+  }, [account, prepare]);
 
-  const setSigner = useCallback(async (s: Signer | null, kind: SignerKind | null) => {
-    const pk = s ? await s.getPublicKey() : null;
-    setSignerState(s);
-    setSignerKind(kind);
-    setPubkey(pk);
+  const setAccount = useCallback(async (a: Account | null) => {
+    setAccountState(a);
+    if (!a) {
+      setSession(null);
+      setMySessions([]);
+    }
   }, []);
+
+  const reloadAccount = useCallback(async () => {
+    if (account) await prepare(account);
+  }, [account, prepare]);
+
+  const confirmWords = useCallback(async () => {
+    await account?.confirmWords();
+    setPendingWords(null);
+  }, [account]);
+
+  const acknowledgeDevices = useCallback(async () => {
+    await account?.acknowledgeDevices();
+    setUnknownDevices([]);
+  }, [account]);
 
   const loadPeople = useCallback(
     async (pks: Pubkey[]) => {
       const unique = [...new Set(pks)];
+      const latest: Record<Pubkey, { at: number; name: string; claims: IdentityClaim[] }> = {};
+      for (let i = 0; i < unique.length; i += AUTHORS_CHUNK) {
+        const d = unique.slice(i, i + AUTHORS_CHUNK);
+        const evs = await deps.relay.query([{ kinds: [KIND.account], '#d': d }]);
+        for (const ev of evs) {
+          const a = parseAccountInfo(deps.def.id, ev, await resolver.author(ev));
+          if (a && (!latest[a.pubkey] || latest[a.pubkey]!.at < a.createdAt)) latest[a.pubkey] = { at: a.createdAt, name: a.name, claims: a.claims };
+        }
+      }
       const names: Record<Pubkey, string> = {};
       const ids: Record<Pubkey, IdentityClaim[]> = {};
-      for (let i = 0; i < unique.length; i += AUTHORS_CHUNK) {
-        const authors = unique.slice(i, i + AUTHORS_CHUNK);
-        const evs = await deps.relay.query([{ kinds: [KIND.profile, KIND.identities], authors }]);
-        for (const ev of [...evs].sort((a, b) => b.created_at - a.created_at)) {
-          const p = parseProfile(ev);
-          if (p && !(p.pubkey in names)) names[p.pubkey] = p.name;
-          const c = parseIdentities(ev);
-          if (c && !(c.pubkey in ids)) ids[c.pubkey] = c.claims;
-        }
-        // 主張が1つもない人は「なし」と分かったことを残す
-        for (const pk of authors) ids[pk] ??= [];
+      for (const pk of unique) {
+        const a = latest[pk];
+        if (a?.name) names[pk] = a.name;
+        // 紐づけが1つもない人は「なし」と分かったことを残す
+        ids[pk] = a?.claims ?? [];
       }
       setProfiles((prev) => ({ ...prev, ...names }));
       setIdentities((prev) => ({ ...prev, ...ids }));
     },
-    [deps.relay],
+    [deps.def.id, deps.relay, resolver],
   );
 
   const refresh = useCallback(async () => {
@@ -168,6 +231,10 @@ export function AppProvider(props: {
         now: deps.now,
       });
       setRatings(shown);
+      resolver.setKnown({ ...shown.kels, ...(account ? { [account.aid]: account.kel } : {}) });
+      // スナップショットにある名前と紐づけを先に出す（リレーの最新はこのあと読む）
+      setProfiles((prev) => ({ ...Object.fromEntries(Object.entries(shown.accounts).filter(([, a]) => a.name).map(([pk, a]) => [pk, a.name])), ...prev }));
+      setIdentities((prev) => ({ ...Object.fromEntries(Object.entries(shown.accounts).map(([pk, a]) => [pk, a.claims])), ...prev }));
       setSyncError(null);
       await loadPeople([...Object.keys(shown.players), ...(pubkey ? [pubkey] : [])]);
     } catch (e) {
@@ -176,26 +243,34 @@ export function AppProvider(props: {
     } finally {
       setSyncing(false);
     }
-  }, [deps, loadPeople, pubkey]);
+  }, [account, deps, loadPeople, pubkey, resolver]);
 
   useEffect(() => {
-    if (!pubkey) return;
+    if (!pubkey || mySessions.length === 0) return;
     void refresh();
     setSettingsStatus('loading');
-    deps.relay
-      .query([{ kinds: [KIND.settings], authors: [pubkey], '#d': [settingsD(deps.def.id)] }])
-      .then((evs) => {
-        const latest = evs
-          .map((e) => parseSettings(deps.def.id, e))
-          .filter((s): s is Settings => s !== null && s.pubkey === pubkey)
-          .sort((a, b) => b.createdAt - a.createdAt)[0];
+    // 対戦設定は使い捨ての鍵ごとの置き換え可能イベントなので、手元に残した鍵と手元の控えから最新を探す
+    void (async () => {
+      try {
+        const evs = [
+          ...(await deps.relay.query([{ kinds: [KIND.settings], authors: mySessions, '#d': [settingsD(deps.def.id)] }])),
+          ...(await deps.store.query({ kinds: [KIND.settings] })),
+        ];
+        const mine: Settings[] = [];
+        for (const e of evs) {
+          const st = parseSettings(deps.def.id, e, await resolver.author(e));
+          if (st && st.pubkey === pubkey) mine.push(st);
+        }
+        const latest = mine.sort((a, b) => b.createdAt - a.createdAt)[0];
         if (latest) setMySettings(latest);
         setSettingsStatus('loaded');
-      })
-      .catch(() => setSettingsStatus('failed'));
-    // pubkey が変わったときだけ読み直す
+      } catch {
+        setSettingsStatus('failed');
+      }
+    })();
+    // 自分のアカウントか使い捨ての鍵が変わったときだけ読み直す
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pubkey]);
+  }, [pubkey, mySessions.join()]);
 
   // スマホで画面に戻ったときに、止まっていた間の対戦を読み直す
   useEffect(() => {
@@ -210,7 +285,7 @@ export function AppProvider(props: {
 
   const startSearch = useCallback(
     async (prepare: () => Promise<SearchParams>): Promise<MatchRecord | null> => {
-      if (!signer || abortRef.current) return null;
+      if (!session || abortRef.current) return null;
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       setSearch({ waitingSince: null, busy: true, error: null });
@@ -218,7 +293,7 @@ export function AppProvider(props: {
         const params = await prepare();
         if (ctrl.signal.aborted) return null;
         setSearch({ waitingSince: deps.now(), busy: true, error: null });
-        const mm = new Matchmaker({ relay: deps.relay, signer, def: deps.def, view, now: deps.now, sleep });
+        const mm = new Matchmaker({ relay: deps.relay, identity: session.identity, author: resolver.author, def: deps.def, view, now: deps.now, sleep });
         const m = await mm.search(params, ctrl.signal);
         setActiveMatch(m);
         setSearch({ waitingSince: null, busy: false, error: null });
@@ -233,7 +308,7 @@ export function AppProvider(props: {
         if (abortRef.current === ctrl) abortRef.current = null;
       }
     },
-    [deps, signer, view],
+    [deps, resolver, session, view],
   );
 
   const cancelSearch = useCallback(() => {
@@ -244,10 +319,19 @@ export function AppProvider(props: {
 
   const value: AppValue = {
     ...deps,
-    signer,
-    signerKind,
+    account,
+    signer: session?.signer ?? null,
+    sessionSigners: session?.sessionSigners ?? [],
+    mySessions,
     pubkey,
-    setSigner,
+    setAccount,
+    author: resolver.author,
+    pendingWords,
+    confirmWords,
+    unknownDevices,
+    acknowledgeDevices,
+    reloadAccount,
+    accountError,
     ratings,
     view,
     syncing,
@@ -261,8 +345,6 @@ export function AppProvider(props: {
     setMySettings,
     activeMatch,
     setActiveMatch,
-    backedUp,
-    setBackedUp,
     rememberProfile: (pk, name) => setProfiles((prev) => ({ ...prev, [pk]: name })),
     rememberIdentities: (pk, claims) => setIdentities((prev) => ({ ...prev, [pk]: claims })),
     search,

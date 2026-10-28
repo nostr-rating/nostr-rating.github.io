@@ -2,8 +2,12 @@ import type { EventTemplate, NostrEvent } from 'nostr-tools/pure';
 import { APP_TAG, isValidEvent, KIND } from '../events/kinds.js';
 import { digestOf, type KelEntry, type KelInput } from './kel.js';
 
-/** KEL のイベントを載せる Nostr のイベント。載せる鍵は icp・ixn なら端末の掲載用の鍵、rot なら次の鍵 */
-export function kelEventTemplate(entry: KelEntry, createdAt: number): EventTemplate {
+/**
+ * KEL のイベントを載せる Nostr のイベント。載せる鍵は icp・ixn なら端末の掲載用の鍵、rot なら次の鍵。
+ * x タグ（aid）は、アカウントの KEL をまとめて探すための手がかり（だれでも付けられるので取りこぼしを許す用途だけ）。
+ * notify には、このイベントを待っている新しい端末の掲載用の鍵を入れる（p タグ）
+ */
+export function kelEventTemplate(entry: KelEntry, createdAt: number, notify: string[] = []): EventTemplate {
   const b = entry.body;
   const aid = b.t === 'icp' ? digestOf(b) : b.aid;
   return {
@@ -12,7 +16,9 @@ export function kelEventTemplate(entry: KelEntry, createdAt: number): EventTempl
     tags: [
       ['t', APP_TAG],
       ['aid', aid],
+      ['x', aid],
       ['sn', String(b.sn)],
+      ...notify.map((p) => ['p', p]),
     ],
     content: JSON.stringify(entry),
   };

@@ -1,9 +1,6 @@
 import {
-  buildApplication,
-  buildIdentities,
-  buildMatch,
+  buildAccountInfo,
   buildReport,
-  LocalSigner,
   MemoryRelay,
   parseGameDefinition,
   serializeSnapshot,
@@ -11,11 +8,12 @@ import {
   stateToSnapshot,
   initialState,
 } from '@nostr-rating/core';
-import { generateSecretKey } from 'nostr-tools/pure';
 import { describe, expect, test } from 'vitest';
 import rawDef from '../../../configs/smash_sp.json';
+import { Account, memoryKeyStore } from '../src/account/account.js';
 import { syncRatings } from '../src/services/sync.js';
 import { MemoryEventStore } from '../src/storage/memory.js';
+import { matchBetween, type Player } from './helpers.js';
 
 const def = parseGameDefinition(rawDef);
 const CUT = 1_793_026_800;
@@ -40,19 +38,28 @@ function snapshotFiles(tamper = false) {
   };
 }
 
-async function playedMatch(relay: MemoryRelay, a: LocalSigner, b: LocalSigner, at: number) {
-  const [pa, pb] = [await a.getPublicKey(), await b.getPublicKey()];
-  const app = await b.signEvent(
-    buildApplication('smash_sp', { recruiter: pa, firstFighter: 'fox', settingsId: '2'.repeat(64), rangeChoice: null, rematchHours: 0, waitingSince: at - 10 }, at - 1),
-  );
-  const m = await a.signEvent(
-    buildMatch('smash_sp', { p1: pa, p2: pb, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: app.id }, at),
-  );
-  await relay.publish(app);
-  await relay.publish(m);
-  await relay.publish(await a.signEvent(buildReport('smash_sp', { matchId: m.id, opponent: pb, result: 'win' }, at + 100)));
-  await relay.publish(await b.signEvent(buildReport('smash_sp', { matchId: m.id, opponent: pa, result: 'lose' }, at + 101)));
-  return { pa, pb };
+/** 時計を動かせるアカウント（at に作り、紐づけを出す） */
+async function playerAt(relay: MemoryRelay, clock: { t: number }, name: string): Promise<Player> {
+  const keyStore = memoryKeyStore();
+  const now = () => clock.t;
+  const { account, words } = await Account.create(keyStore, relay, now, name);
+  const session = await account.session();
+  await relay.publish(await session.signer.signEvent(buildAccountInfo('smash_sp', { pubkey: account.aid, name, claims: [{ platform: 'github', identity: name, proof: 'abc' }] }, clock.t)));
+  return { account, keyStore, words, aid: account.aid, signer: session.signer, session };
+}
+
+/** その時刻の使い捨ての鍵に替える */
+async function at(p: Player, clock: { t: number }, t: number): Promise<Player> {
+  clock.t = t;
+  const session = await p.account.session();
+  return { ...p, signer: session.signer, session };
+}
+
+async function playedMatch(relay: MemoryRelay, a: Player, b: Player, t: number) {
+  const m = await matchBetween(relay, a, b, { at: t });
+  await relay.publish(await a.signer.signEvent(buildReport('smash_sp', { matchId: m.id, opponent: m.sessions[1]!, result: 'win' }, t + 100)));
+  await relay.publish(await b.signer.signEvent(buildReport('smash_sp', { matchId: m.id, opponent: m.sessions[0]!, result: 'lose' }, t + 101)));
+  return { pa: a.aid, pb: b.aid };
 }
 
 describe('syncRatings across seasons', () => {
@@ -86,10 +93,9 @@ describe('syncRatings', () => {
   test('shows confirmed matches before their deadline and caches the events', async () => {
     const now = CUT + 5000;
     const relay = new MemoryRelay(() => now);
-    const a = new LocalSigner(generateSecretKey());
-    const b = new LocalSigner(generateSecretKey());
-    for (const s of [a, b]) await relay.publish(await s.signEvent(buildIdentities([{ platform: 'github', identity: 'x', proof: 'abc' }], CUT)));
-    const { pa, pb } = await playedMatch(relay, a, b, CUT + 100);
+    const clock = { t: CUT };
+    const [a, b] = [await playerAt(relay, clock, 'a'), await playerAt(relay, clock, 'b')];
+    const { pa, pb } = await playedMatch(relay, await at(a, clock, CUT + 100), await at(b, clock, CUT + 100), CUT + 100);
 
     const store = new MemoryEventStore();
     const { state, shown, snapshotCutoff } = await syncRatings({ def, relay, store, fetchFn: fakeFetch(snapshotFiles()), base: BASE, now: () => now });
@@ -97,25 +103,22 @@ describe('syncRatings', () => {
     expect(state.players[pa]?.wins ?? 0).toBe(0);
     expect(shown.players[pa]!.wins).toBe(1);
     expect(shown.players[pb]!.losses).toBe(1);
-    expect((await store.query({})).length).toBe(6);
 
     // リレーが消えても、キャッシュから同じ結果を出せる
     const again = await syncRatings({ def, relay: new MemoryRelay(() => now), store, fetchFn: fakeFetch(snapshotFiles()), base: BASE, now: () => now });
     expect(again.shown).toEqual(shown);
   });
 
-  test('identity claims older than the report window still count', async () => {
+  test('accounts and identity claims made long before the report window still count', async () => {
     const now = CUT + 5000;
     const relay = new MemoryRelay(() => now);
-    const a = new LocalSigner(generateSecretKey());
-    const b = new LocalSigner(generateSecretKey());
-    const pa = await a.getPublicKey();
-    for (const s of [a, b]) await relay.publish(await s.signEvent(buildIdentities([{ platform: 'github', identity: 'x', proof: 'abc' }], CUT - 30 * 86400)));
-    await playedMatch(relay, a, b, CUT + 100);
+    const clock = { t: CUT - 30 * 86400 };
+    const [a, b] = [await playerAt(relay, clock, 'a'), await playerAt(relay, clock, 'b')];
+    const { pa } = await playedMatch(relay, await at(a, clock, CUT + 100), await at(b, clock, CUT + 100), CUT + 100);
     const store = new MemoryEventStore();
     const { shown } = await syncRatings({ def, relay, store, fetchFn: fakeFetch(snapshotFiles()), base: BASE, now: () => now });
     expect(shown.players[pa]!.wins).toBe(1);
-    // シーズン開始より前の紐づけも、パージで消えずにキャッシュから効く
+    // シーズン開始より前の KEL と紐づけも、パージで消えずにキャッシュから効く
     const again = await syncRatings({ def, relay: new MemoryRelay(() => now), store, fetchFn: fakeFetch(snapshotFiles()), base: BASE, now: () => now });
     expect(again.shown.players[pa]!.wins).toBe(1);
   });

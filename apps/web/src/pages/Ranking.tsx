@@ -60,6 +60,17 @@ export function Player({ pubkey }: { pubkey: string }) {
         <summary>ID</summary>
         <p className="mono muted">{pubkey}</p>
       </details>
+      {pubkey === app.pubkey && (
+        <a
+          className="button"
+          href={`https://x.com/intent/post?text=${encodeURIComponent('Nostr-Rating の戦績')}&url=${encodeURIComponent(new URL(`${import.meta.env.BASE_URL}p/${pubkey}.html`, location.origin).href)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          レートを X に投稿
+        </a>
+      )}
+      {pubkey === app.pubkey && <p className="muted">投稿のカードには、毎日の集計で確定したレートが出ます。</p>}
       {p ? (
         <table>
           <tbody>

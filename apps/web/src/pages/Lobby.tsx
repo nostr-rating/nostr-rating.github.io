@@ -16,7 +16,7 @@ import {
 } from '@nostr-rating/core';
 import { useEffect, useId, useState } from 'react';
 import { navigate } from '../router.js';
-import { displayName, useApp } from '../state/AppContext.js';
+import { displayName, parseEach, useApp } from '../state/AppContext.js';
 import { rangeLabel } from './Settings.js';
 
 const FIGHTER_KEY = 'nostr-rating:firstFighter';
@@ -54,16 +54,16 @@ function useOpenMatches(): MatchRecord[] {
     let alive = true;
     const t = app.now();
     void (async () => {
-      const evs = await app.relay.query([{ kinds: [KIND.match], '#p': [me], since: t - app.def.report.deadlineSec }]);
-      const candidates = evs.map((e) => parseMatch(app.def.id, e)).filter((m): m is MatchRecord => m !== null && (m.p1 === me || m.p2 === me));
+      const evs = await app.relay.query([{ kinds: [KIND.match], '#p': app.mySessions, since: t - app.def.report.deadlineSec }]);
+      const candidates = (await parseEach(app, evs, (e, by) => parseMatch(app.def.id, e, by))).filter((m) => m.p1 === me || m.p2 === me);
       if (candidates.length === 0) return;
       // 第三者が勝手に作った対戦は、申し込みに結び付かないので出さない
       const appEvs = await app.relay.query([{ kinds: [KIND.application], ids: candidates.map((m) => m.applicationId) }]);
-      const apps = new Map(appEvs.map((e) => parseApplication(app.def.id, e)).filter((a) => a !== null).map((a) => [a.eventId, a]));
+      const apps = new Map((await parseEach(app, appEvs, (e, by) => parseApplication(app.def.id, e, by))).map((a) => [a.eventId, a]));
       const matches = candidates.filter((m) => isLinkedMatch(app.def, m, apps.get(m.applicationId)));
       if (matches.length === 0) return;
       const reps = await app.relay.query([{ kinds: [KIND.report], '#e': matches.map((m) => m.id) }]);
-      const reports = reps.map((e) => parseReport(app.def.id, e)).filter((r): r is ResultReport => r !== null);
+      const reports: ResultReport[] = await parseEach(app, reps, (e, by) => parseReport(app.def.id, e, by));
       const pending = matches
         .filter((m) => settleMatch(m, reports.filter((r) => r.matchId === m.id), t, app.def.report.deadlineSec).status === 'pending')
         .sort((a, b) => b.createdAt - a.createdAt);
@@ -75,7 +75,7 @@ function useOpenMatches(): MatchRecord[] {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [app.pubkey, app.relay]);
+  }, [app.pubkey, app.relay, app.mySessions.join()]);
   return open;
 }
 
@@ -122,7 +122,8 @@ export function Lobby() {
       buildSettings(def.id, { stageBans: base.stageBans, rangeChoice: range, rematchHours: base.rematchHours }, app.now()),
     );
     await app.relay.publish(ev);
-    const s = parseSettings(def.id, ev)!;
+    await app.store.put([ev]);
+    const s = parseSettings(def.id, ev, app.pubkey)!;
     app.setMySettings(s);
     return s;
   };
@@ -156,9 +157,9 @@ export function Lobby() {
 
   return (
     <section>
-      {app.signerKind === 'local' && !app.backedUp && (
+      {app.pendingWords && (
         <p className="notice">
-          引き継ぎコードをまだ保存していません。機種変更やブラウザのデータ削除で戦績が消えないよう、<a href="#/settings">設定画面</a>から保存してください。
+          復活の言葉をまだ書き写していません。端末を全部失くしたときに戻せるよう、<a href="#/settings">設定画面</a>から書き写してください。
         </p>
       )}
       {open.map((m) => {
@@ -213,7 +214,7 @@ export function Lobby() {
               : `シーズン ${window_.next.id} は ${seasonTime(def, window_.next.startsAt)} に始まります。`}
           </p>
         )}
-        {!linked && <p className="error">対戦するには SNS アカウントの紐づけが必要です。</p>}
+        {!linked && <p className="error">対戦するには X か GitHub の紐づけが必要です。</p>}
         {!linked && <a href="#/onboarding">紐づけに進む</a>}
         {app.settingsStatus === 'failed' && <p className="error" role="alert">対戦設定を読み込めませんでした。電波のよい場所で再読み込みしてください。</p>}
         {!app.search.busy ? (

@@ -1,6 +1,7 @@
 import { buildSettings, parseSettings, validateStageBans, banGroupKey, type StageBans, type StageId } from '@nostr-rating/core';
 import { useEffect, useState } from 'react';
-import { KeyBackup } from '../components/KeyBackup.js';
+import { Devices } from '../components/Devices.js';
+import { RecoveryWords } from '../components/RecoveryWords.js';
 import { currentOverrides, saveOverrides } from '../services/config.js';
 import { useApp } from '../state/AppContext.js';
 
@@ -43,7 +44,8 @@ export function Settings() {
     try {
       const ev = await app.signer.signEvent(buildSettings(def.id, { stageBans: bans, rangeChoice: range, rematchHours: rematch }, app.now()));
       await app.relay.publish(ev);
-      const parsed = parseSettings(def.id, ev);
+      await app.store.put([ev]);
+      const parsed = parseSettings(def.id, ev, app.pubkey);
       if (parsed) app.setMySettings(parsed);
       setMessage('保存しました');
     } catch {
@@ -124,9 +126,16 @@ export function Settings() {
       {message && <p>{message}</p>}
 
       <div className="card stack">
-        <h2>引き継ぎコードの保存</h2>
-        <KeyBackup />
+        <h2>端末</h2>
+        <Devices />
       </div>
+
+      {app.pendingWords && (
+        <div className="card stack">
+          <h2>復活の言葉</h2>
+          <RecoveryWords words={app.pendingWords} onConfirmed={() => void app.confirmWords()} />
+        </div>
+      )}
 
       <details className="card">
         <summary>詳細設定（リレー・スナップショットの取得元）</summary>

@@ -12,8 +12,8 @@ export function App() {
   const route = useRoute();
 
   useEffect(() => {
-    if (!app.signer && route.name !== 'onboarding') navigate({ name: 'onboarding' });
-  }, [app.signer, route.name]);
+    if (!app.account && route.name !== 'onboarding') navigate({ name: 'onboarding' });
+  }, [app.account, route.name]);
 
   return (
     <div className="app">
@@ -26,6 +26,16 @@ export function App() {
           <a href={`${import.meta.env.BASE_URL}help/account.html`}>ヘルプ</a>
         </nav>
       </header>
+      {app.accountError && <p className="error" role="alert">{app.accountError}</p>}
+      {app.unknownDevices.length > 0 && (
+        <div className="notice stack" role="alert">
+          <p>知らない端末が登録されました: {app.unknownDevices.map((d) => d.label).join('、')}</p>
+          <p>
+            自分で登録した覚えがなければ、<a href="#/settings">設定</a>の端末の一覧から取り消してください。自分の端末まで取り消されていたら、復活の言葉で戻してください。
+          </p>
+          <button type="button" onClick={() => void app.acknowledgeDevices()}>自分で登録した</button>
+        </div>
+      )}
       {!app.store.persistent && (
         <p className="notice">このブラウザでは対戦記録を保存できません。閉じると記録の控えが消えます（レートには影響しません）。</p>
       )}

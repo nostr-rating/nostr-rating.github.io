@@ -52,21 +52,21 @@ export async function syncRatings(
   const season = currentSeason(def, t);
   const start =
     season && fromSnapshot.season < season.id
-      ? initialState(def, season.id, season.startsAt, fromSnapshot.seasonSummaries)
+      ? initialState(def, season.id, season.startsAt, fromSnapshot.seasonSummaries, fromSnapshot.kels, fromSnapshot.accounts)
       : fromSnapshot;
 
   const since = start.cutoff - def.report.deadlineSec;
-  let fresh: Awaited<ReturnType<typeof fetchRatingEvents>> = [];
+  let fresh: Awaited<ReturnType<typeof fetchRatingEvents>>['events'] = [];
   try {
-    fresh = await fetchRatingEvents(relay, def, since, t, { knownPlayers: Object.keys(start.players) });
+    fresh = (await fetchRatingEvents(relay, def, start.kels, since, t)).events;
   } catch (e) {
     console.warn('relay query failed; using cached events only', e);
   }
   await store.put(fresh);
-  // 申し込みは対戦より少し前、NIP-39 は古くても有効なので、どちらも since で絞らない
+  // 申し込みは対戦より少し前、公開情報と KEL は古くても有効なので、since で絞らない
   const cached = [
     ...(await store.query({ kinds: [KIND.match, KIND.report], since })),
-    ...(await store.query({ kinds: [KIND.application, KIND.identities] })),
+    ...(await store.query({ kinds: [KIND.application, KIND.account, KIND.kel] })),
   ];
   const { state } = advanceRatings(def, start, cached, t);
   const shown = provisionalRatings(def, state, cached, t);

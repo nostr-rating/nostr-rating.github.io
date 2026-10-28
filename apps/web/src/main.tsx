@@ -9,10 +9,10 @@ const root = createRoot(document.getElementById('root')!);
 root.render(<p className="loading">読み込み中…</p>);
 
 boot().then(
-  ({ deps, signer, backedUp }) =>
+  ({ deps, account }) =>
     root.render(
       <StrictMode>
-        <AppProvider deps={deps} initialSigner={signer} initialBackedUp={backedUp}>
+        <AppProvider deps={deps} initialAccount={account}>
           <App />
         </AppProvider>
       </StrictMode>,
