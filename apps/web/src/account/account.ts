@@ -1,4 +1,5 @@
 import {
+  attestationTemplate,
   decodeDeviceRequest,
   encodeDeviceRequest,
   certTags,
@@ -39,6 +40,7 @@ import {
 } from '@nostr-rating/core';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools/pure';
+import { externalSigner, type ExternalDevice } from './external.js';
 
 /** 端末の中にしまう値。秘密鍵は WebCrypto の取り出せない鍵（docs/adr/0008） */
 export interface KeyStore {
@@ -50,7 +52,10 @@ export interface KeyStore {
 interface StoredDevice {
   id: string;
   key: KeyRef;
-  privateKey: CryptoKey;
+  /** WebCrypto の取り出せない鍵。署名アプリを使う端末では持たない */
+  privateKey?: CryptoKey;
+  /** 端末の鍵に使う署名アプリ（NIP-07 / NIP-46） */
+  external?: ExternalDevice;
   /** 掲載用の鍵（権限を持たない） */
   publisherSk: string;
   label: string;
@@ -79,7 +84,12 @@ const PENDING_DEVICE = 'pendingDevice';
 /** DM を読むために残す、古い使い捨ての鍵の数 */
 const KEEP_SESSIONS = 3;
 
-export async function createDevice(label: string): Promise<StoredDevice> {
+export async function createDevice(label: string, external?: ExternalDevice): Promise<StoredDevice> {
+  if (external) {
+    const pub = await (await externalSigner(external)).getPublicKey();
+    const key: KeyRef = { type: 'schnorr', pub };
+    return { id: deviceId(key), key, external, publisherSk: bytesToHex(generateSecretKey()), label };
+  }
   const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']);
   const pub = bytesToHex(new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey)));
   const key: KeyRef = { type: 'p256', pub };
@@ -87,6 +97,12 @@ export async function createDevice(label: string): Promise<StoredDevice> {
 }
 
 async function signDigest(d: StoredDevice, digest: string): Promise<KelSig> {
+  if (d.external) {
+    // 署名アプリは任意のバイト列に署名できないので、digest を入れたイベントに署名してもらう
+    const ev = await (await externalSigner(d.external)).signEvent(attestationTemplate(digest, Math.floor(Date.now() / 1000)));
+    return { signer: d.id, created_at: ev.created_at, sig: ev.sig };
+  }
+  if (!d.privateKey) throw new Error('この端末の鍵がありません');
   const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, d.privateKey, hexToBytes(digest));
   return { signer: d.id, p256: bytesToHex(new Uint8Array(sig)) };
 }
@@ -147,9 +163,15 @@ export class Account {
   }
 
   /** 「この端末で始める」。端末の鍵と復活の言葉を作り、作成の宣言を載せる */
-  static async create(store: KeyStore, relay: RelayClient, now: () => number, label: string): Promise<{ account: Account; words: string }> {
+  static async create(
+    store: KeyStore,
+    relay: RelayClient,
+    now: () => number,
+    label: string,
+    external?: ExternalDevice,
+  ): Promise<{ account: Account; words: string }> {
     const at = now();
-    const device = await createDevice(label);
+    const device = await createDevice(label, external);
     const words = newRecoveryWords();
     const body: IcpBody = { v: 1, t: 'icp', sn: 0, devices: [recordOf(device, at)], next: { keys: [recoveryKey(words).pub], threshold: 1 }, nonce: bytesToHex(generateSecretKey()).slice(0, 16) };
     const aid = digestOf(body);
@@ -314,10 +336,11 @@ export class Account {
   // ---- 2台目・復活: 新しい端末の側 ----
 
   /** 新しい端末の鍵を作り、申請のコードを返す。登録されるまで待つには waitForRegistration */
-  static async prepareDevice(store: KeyStore, label: string): Promise<string> {
+  static async prepareDevice(store: KeyStore, label: string, external?: ExternalDevice): Promise<string> {
     let device = await store.get<StoredDevice>(PENDING_DEVICE);
-    if (!device) {
-      device = await createDevice(label);
+    // 署名アプリを使うかどうかを変えたときは、申請を作り直す
+    if (!device || !!device.external !== !!external) {
+      device = await createDevice(label, external);
       await store.set(PENDING_DEVICE, device);
     }
     return encodeDeviceRequest({ key: device.key, publisher: publisherOf(device), label: device.label });

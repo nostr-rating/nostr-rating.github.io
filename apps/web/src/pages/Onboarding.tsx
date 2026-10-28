@@ -11,6 +11,7 @@ import {
 } from '@nostr-rating/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Account } from '../account/account.js';
+import { connectExternal, type ExternalDevice } from '../account/external.js';
 import { StatusBadge } from '../components/IdentityBadge.js';
 import { QrCode } from '../components/QrCode.js';
 import { RecoveryWords } from '../components/RecoveryWords.js';
@@ -41,6 +42,9 @@ export function Onboarding() {
   const [busy, setBusy] = useState(false);
   const label = useMemo(defaultDeviceLabel, []);
   const lastPublished = useRef(0);
+  const [bunker, setBunker] = useState('');
+  /** 2台目・復活で、この端末の鍵に使う署名アプリ */
+  const [joinExternal, setJoinExternal] = useState<ExternalDevice | undefined>(undefined);
 
   /** 公開済みの表示名と紐づけを見て、どの手順から始めるかを決める */
   const continueFrom = async (aid: Pubkey) => {
@@ -72,7 +76,7 @@ export function Onboarding() {
     let alive = true;
     let stop = () => undefined as void;
     // 申請の鍵を作り終えてから待ち受ける（先に待つと、鍵がまだなくて何も届かない）
-    void Account.prepareDevice(app.keyStore, label).then((code) => {
+    void Account.prepareDevice(app.keyStore, label, joinExternal).then((code) => {
       if (!alive) return;
       setRequestCode(code);
       stop = Account.waitForRegistration(app.keyStore, app.relay, app.now, (a) => {
@@ -84,12 +88,25 @@ export function Onboarding() {
       stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
+  }, [step, joinExternal]);
 
-  const start = async () => {
-    setBusy(true);
+  /** 署名アプリにつなぐ（Nostr に詳しい人向け） */
+  const connect = async (kind: 'nip07' | 'nip46'): Promise<ExternalDevice | null> => {
     try {
-      const { account, words } = await Account.create(app.keyStore, app.relay, app.now, label);
+      return (await connectExternal(kind === 'nip07' ? { kind } : { kind, bunker })).ext;
+    } catch (e) {
+      setError(`署名アプリにつなげませんでした: ${e instanceof Error ? e.message : String(e)}`);
+      return null;
+    }
+  };
+
+  const start = async (kind?: 'nip07' | 'nip46') => {
+    setBusy(true);
+    setError(null);
+    try {
+      const external = kind ? await connect(kind) : undefined;
+      if (external === null) return;
+      const { account, words } = await Account.create(app.keyStore, app.relay, app.now, kind ? `署名アプリ（${kind === 'nip07' ? 'NIP-07' : 'NIP-46'}）` : label, external);
       await app.setAccount(account);
       setWords(words);
       setStep('words');
@@ -165,6 +182,10 @@ export function Onboarding() {
             この端末で始める
           </button>
           <button type="button" onClick={() => setStep('join')}>すでにアカウントを持っている</button>
+          <details>
+            <summary>署名アプリを使う（Nostr に詳しい人向け）</summary>
+            <SignerChoice busy={busy} bunker={bunker} setBunker={setBunker} onChoose={(k) => void start(k)} verb="始める" />
+          </details>
           <p className="muted">
             <a href={`${import.meta.env.BASE_URL}help/account.html`}>アカウントの守り方</a>
           </p>
@@ -199,6 +220,19 @@ export function Onboarding() {
             申請をコピー
           </button>
           <p className="loading">登録を待っています…</p>
+          <details>
+            <summary>この端末の鍵に署名アプリを使う（Nostr に詳しい人向け）</summary>
+            <SignerChoice
+              busy={busy}
+              bunker={bunker}
+              setBunker={setBunker}
+              verb="申請を作り直す"
+              onChoose={(k) => {
+                setRequestCode(null);
+                void connect(k).then((ext) => ext && setJoinExternal(ext));
+              }}
+            />
+          </details>
           <button type="button" onClick={() => setStep('start')}>戻る</button>
         </div>
       )}
@@ -237,5 +271,21 @@ export function Onboarding() {
 
       {error && <p className="error" role="alert">{error}</p>}
     </section>
+  );
+}
+
+function SignerChoice(props: { busy: boolean; bunker: string; setBunker(v: string): void; verb: string; onChoose(kind: 'nip07' | 'nip46'): void }) {
+  return (
+    <div className="stack">
+      <p className="muted">端末の鍵を、このブラウザではなく署名アプリに持たせます。鍵はこのページの外にあるので、ページが乗っ取られても持ち出されません。</p>
+      <button type="button" disabled={props.busy} onClick={() => props.onChoose('nip07')}>
+        ブラウザ拡張（NIP-07）で{props.verb}
+      </button>
+      <label htmlFor="bunker-url">リモート署名の接続先（bunker:// で始まる文字列）</label>
+      <input id="bunker-url" autoComplete="off" value={props.bunker} onChange={(e) => props.setBunker(e.target.value)} />
+      <button type="button" disabled={props.busy || !props.bunker.trim().startsWith('bunker://')} onClick={() => props.onChoose('nip46')}>
+        リモート署名（NIP-46）で{props.verb}
+      </button>
+    </div>
   );
 }

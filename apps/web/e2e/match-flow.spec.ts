@@ -7,8 +7,10 @@ const REPO = resolve(import.meta.dirname, '../../..');
 
 /** 表示された12語を読み、確認で聞かれた番号の単語を入れる。読んだ12語を返す */
 async function writeDownWords(page: Page): Promise<string[]> {
-  const words = await page.getByTestId('recovery-words').getByRole('listitem').allTextContents();
-  expect(words).toHaveLength(12);
+  const items = page.getByTestId('recovery-words').getByRole('listitem');
+  // allTextContents は待たないので、12語が出るのを待ってから読む
+  await expect(items).toHaveCount(12);
+  const words = await items.allTextContents();
   await page.getByRole('button', { name: '書き写した' }).click();
   for (const input of await page.getByLabel(/番目/).all()) {
     const label = await input.evaluate((el) => el.closest('label')?.textContent ?? '');
@@ -155,8 +157,8 @@ test('the recovery tool moves the account to a new device and the old device sto
   await expect(tool.getByText('アカウントが見つかりました', { exact: false })).toBeVisible({ timeout: 20_000 });
   await tool.getByPlaceholder('nr-device: で始まる文字列').fill(request);
   await tool.getByRole('button', { name: '次へ' }).click();
+  await expect(tool.locator('ol.words li')).toHaveCount(12);
   const newWords = await tool.locator('ol.words li').allTextContents();
-  expect(newWords).toHaveLength(12);
   for (const label of await tool.locator('label').all()) {
     const n = Number(((await label.textContent()) ?? '').match(/(\d+)番目/)![1]);
     await label.locator('input').fill(newWords[n - 1]!);
