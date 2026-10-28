@@ -42,6 +42,10 @@ export function parseProofUrl(url: string): IdentityClaim | null {
   if (host === 'gist.github.com' && parts.length === 2) {
     return checked({ platform: 'github', identity: parts[0]!, proof: parts[1]! });
   }
+  // Gist の「Raw」ボタンの URL（/<ユーザー>/<id>/raw/<版>/<ファイル名>）
+  if (host === 'gist.githubusercontent.com' && parts.length >= 3 && parts[2] === 'raw') {
+    return checked({ platform: 'github', identity: parts[0]!, proof: parts[1]! });
+  }
   if (['x.com', 'twitter.com', 'www.x.com', 'www.twitter.com', 'mobile.twitter.com'].includes(host)) {
     if (parts.length === 3 && parts[1] === 'status' && /^\d+$/.test(parts[2]!)) {
       return checked({ platform: 'twitter', identity: parts[0]!, proof: parts[2]! });

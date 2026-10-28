@@ -10,6 +10,8 @@ import { useApp } from './state/AppContext.js';
 export function App() {
   const app = useApp();
   const route = useRoute();
+  /** はじめにの手順の間は、まだ使えない画面へのリンクを出さない */
+  const onboarding = route.name === 'onboarding';
 
   useEffect(() => {
     if (!app.account && route.name !== 'onboarding') navigate({ name: 'onboarding' });
@@ -18,8 +20,8 @@ export function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <a href="#/lobby" className="brand">Nostr-Rating</a>
-        {app.games.length > 1 && (
+        {onboarding ? <span className="brand">Nostr-Rating</span> : <a href="#/lobby" className="brand">Nostr-Rating</a>}
+        {!onboarding && app.games.length > 1 && (
           <select aria-label="ゲーム" className="game-select" value={app.def.id} disabled={app.search.busy} onChange={(e) => app.setGame(e.target.value)}>
             {app.games.map((g) => (
               <option key={g.id} value={g.id}>{g.name}</option>
@@ -27,9 +29,13 @@ export function App() {
           </select>
         )}
         <nav>
-          <a href="#/lobby">{app.search.waitingSince !== null ? '待機中' : 'ロビー'}</a>
-          <a href="#/ranking">ランキング</a>
-          <a href="#/settings">設定</a>
+          {!onboarding && (
+            <>
+              <a href="#/lobby">{app.search.waitingSince !== null ? '待機中' : 'ロビー'}</a>
+              <a href="#/ranking">ランキング</a>
+              <a href="#/settings">設定</a>
+            </>
+          )}
           <a href={`${import.meta.env.BASE_URL}help/account.html`}>ヘルプ</a>
         </nav>
       </header>

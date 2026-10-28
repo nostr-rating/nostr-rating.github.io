@@ -24,6 +24,7 @@ import {
 } from '@nostr-rating/core';
 import { useEffect, useId, useState } from 'react';
 import { ChatPanel, type ChatLine } from '../components/ChatPanel.js';
+import { CopyButton } from '../components/CopyButton.js';
 import { IdentityBadge } from '../components/IdentityBadge.js';
 import { latestReports, ReportPanel, reportStatus } from '../components/ReportPanel.js';
 import { StageGuide } from '../components/StageGuide.js';
@@ -278,7 +279,6 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   const decided = set ? setWinner(def, set) : null;
   const suggested: ReportResult | null = decided === null ? null : decided === side ? 'win' : 'lose';
   const closed = settlement !== null && settlement.status !== 'pending';
-  const copy = (text: string) => void navigator.clipboard?.writeText(text).catch(() => undefined);
 
   return (
     <section>
@@ -333,10 +333,10 @@ export function MatchRoom({ matchId }: { matchId: string }) {
             <>
               <p>部屋 ID</p>
               <p className="big" data-testid="room-id">{room.roomId}</p>
-              <button type="button" onClick={() => copy(room.roomId)}>部屋 ID をコピー</button>
+              <CopyButton text={room.roomId}>部屋 ID をコピー</CopyButton>
               <p>パスワード</p>
               <p className="big" data-testid="room-password">{room.password}</p>
-              <button type="button" onClick={() => copy(room.password)}>パスワードをコピー</button>
+              <CopyButton text={room.password}>パスワードをコピー</CopyButton>
             </>
           ) : (
             <p>相手が部屋を立てるのを待っています…</p>

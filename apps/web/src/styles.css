@@ -37,6 +37,7 @@ a { color: var(--accent); }
 button { font: inherit; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; min-height: 44px; }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 700; }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
+.copy { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 input, select, textarea { font: inherit; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); width: 100%; }
 label { display: block; margin: 8px 0 4px; font-weight: 600; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

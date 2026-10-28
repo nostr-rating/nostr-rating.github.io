@@ -25,6 +25,11 @@ describe('verificationText', () => {
 describe('parseProofUrl', () => {
   test.each([
     ['https://gist.github.com/alice/abc123', { platform: 'github', identity: 'alice', proof: 'abc123' }],
+    ['https://gist.github.com/alice/abc123#file-gistfile1-txt', { platform: 'github', identity: 'alice', proof: 'abc123' }],
+    ['https://gist.githubusercontent.com/alice/abc123/raw/43148be/gistfile1.txt', { platform: 'github', identity: 'alice', proof: 'abc123' }],
+    ['https://gist.githubusercontent.com/alice/abc123/raw', { platform: 'github', identity: 'alice', proof: 'abc123' }],
+    ['https://gist.githubusercontent.com/alice/abc123/other/x', null],
+    ['https://gist.github.com/abc123', null],
     ['https://x.com/alice/status/123', { platform: 'twitter', identity: 'alice', proof: '123' }],
     ['https://twitter.com/alice/status/123?s=20', { platform: 'twitter', identity: 'alice', proof: '123' }],
     ['https://mstdn.jp/@alice/111', null],

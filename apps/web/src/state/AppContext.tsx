@@ -184,6 +184,7 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     if (!a) {
       setSession(null);
       setMySessions([]);
+      setPendingWords(null);
     }
   }, []);
 

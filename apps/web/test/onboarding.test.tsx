@@ -1,8 +1,9 @@
 import { KIND, MemoryRelay, parseKelEvent, recoveryKey, verificationText } from '@nostr-rating/core';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Account, memoryKeyStore } from '../src/account/account.js';
+import { App } from '../src/App.js';
 import { Onboarding } from '../src/pages/Onboarding.js';
 import { Settings } from '../src/pages/Settings.js';
 import { makeDeps, newPlayer, renderWithApp } from './helpers.js';
@@ -161,5 +162,79 @@ describe('Settings', () => {
     await user.click(list.getByRole('button', { name: '取り消す' }));
     await waitFor(() => expect(within(screen.getByTestId('devices')).queryByText(/タブレット/)).toBeNull());
     expect(p.account.state!.devices.get(second.id)!.intervals.every((i) => i.to <= realNow())).toBe(true);
+  });
+});
+
+describe('Onboarding: going back', () => {
+  /** 始めて、言葉をあとに回し、表示名の手順まで進める */
+  async function toNameStep(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'この端末で始める' }));
+    await user.click(await screen.findByRole('button', { name: 'あとで書く' }));
+    return screen.findByLabelText('表示名');
+  }
+
+  test('the name hint does not ask for the in-game name', async () => {
+    const user = userEvent.setup();
+    renderWithApp(<Onboarding />, { deps: makeDeps({ now: realNow }) });
+    await toNameStep(user);
+    expect(screen.getByTestId('name-hint').textContent).toBe('対戦相手とランキングに表示される名前です。');
+  });
+
+  test('the identity step can go back to change the name', async () => {
+    const user = userEvent.setup();
+    renderWithApp(<Onboarding />, { deps: makeDeps({ now: realNow }) });
+    await user.type(await toNameStep(user), 'アリス');
+    await waitFor(() => expect((screen.getByRole('button', { name: '次へ' }) as HTMLButtonElement).disabled).toBe(false));
+    await user.click(screen.getByRole('button', { name: '次へ' }));
+    await screen.findByTestId('verification-text');
+    await user.click(screen.getByRole('button', { name: '表示名を変える' }));
+    expect(((await screen.findByLabelText('表示名')) as HTMLInputElement).value).toBe('アリス');
+  });
+
+  test('starting over forgets the account on this device and returns to the first step', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const deps = makeDeps({ now: realNow });
+    renderWithApp(<Onboarding />, { deps });
+    await toNameStep(user);
+    expect(await deps.keyStore.get('account')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: '最初からやり直す' }));
+    expect(confirm).toHaveBeenCalledWith('この端末のアカウントを消して、最初からやり直しますか？いまの復活の言葉は使えなくなります。');
+    expect(await screen.findByRole('button', { name: 'この端末で始める' })).toBeTruthy();
+    expect(await deps.keyStore.get('account')).toBeUndefined();
+    confirm.mockRestore();
+  });
+
+  test('starting over does nothing when cancelled', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const deps = makeDeps({ now: realNow });
+    renderWithApp(<Onboarding />, { deps });
+    await toNameStep(user);
+    await user.click(screen.getByRole('button', { name: '最初からやり直す' }));
+    expect(screen.getByLabelText('表示名')).toBeTruthy();
+    expect(await deps.keyStore.get('account')).toBeTruthy();
+    confirm.mockRestore();
+  });
+
+  test('copying the verification text says it was copied', async () => {
+    const user = userEvent.setup();
+    renderWithApp(<Onboarding />, { deps: makeDeps({ now: realNow }) });
+    await user.type(await toNameStep(user), 'アリス');
+    await waitFor(() => expect((screen.getByRole('button', { name: '次へ' }) as HTMLButtonElement).disabled).toBe(false));
+    await user.click(screen.getByRole('button', { name: '次へ' }));
+    const text = (await screen.findByTestId('verification-text')).textContent ?? '';
+    await user.click(screen.getByRole('button', { name: '文をコピー' }));
+    expect(await navigator.clipboard.readText()).toBe(text);
+    expect((await screen.findByRole('status')).textContent).toBe('コピーしました');
+  });
+});
+
+describe('App header during onboarding', () => {
+  test('shows only the help link until the account is ready', async () => {
+    renderWithApp(<App />, { deps: makeDeps({ now: realNow }) });
+    await screen.findByRole('button', { name: 'この端末で始める' });
+    expect(screen.queryByRole('combobox', { name: 'ゲーム' })).toBeNull();
+    expect(screen.getByRole('navigation').textContent).toBe('ヘルプ');
   });
 });

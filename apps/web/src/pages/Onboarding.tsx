@@ -12,6 +12,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Account } from '../account/account.js';
 import { connectExternal, type ExternalDevice } from '../account/external.js';
+import { CopyButton } from '../components/CopyButton.js';
 import { StatusBadge } from '../components/IdentityBadge.js';
 import { QrCode } from '../components/QrCode.js';
 import { RecoveryWords } from '../components/RecoveryWords.js';
@@ -117,6 +118,21 @@ export function Onboarding() {
     }
   };
 
+  /** この端末のアカウントを消して、最初の手順に戻る。リレーに出した KEL は残るが、表示名と紐づけがなければどこにも載らない */
+  const startOver = async () => {
+    if (!window.confirm('この端末のアカウントを消して、最初からやり直しますか？いまの復活の言葉は使えなくなります。')) return;
+    await Account.forget(app.keyStore);
+    await app.setAccount(null);
+    setWords(null);
+    setName('');
+    setClaims([]);
+    setUrl('');
+    setClaim(null);
+    setStatus(null);
+    setError(null);
+    setStep('start');
+  };
+
   /** 表示名と紐づけをまとめて出し直す（アカウントの公開情報は丸ごと置き換わる） */
   const publish = async (next: { name: string; claims: IdentityClaim[] }) => {
     if (!app.signer || !app.pubkey) throw new Error('not ready');
@@ -216,9 +232,7 @@ export function Onboarding() {
             <li>端末を全部失くしたとき: 復活の道具</li>
           </ul>
           <p className="mono card" data-testid="device-request">{requestCode ?? '作成中…'}</p>
-          <button type="button" disabled={!requestCode} onClick={() => void navigator.clipboard?.writeText(requestCode!).catch(() => undefined)}>
-            申請をコピー
-          </button>
+          <CopyButton text={requestCode}>申請をコピー</CopyButton>
           <p className="loading">登録を待っています…</p>
           <details>
             <summary>この端末の鍵に署名アプリを使う（Nostr に詳しい人向け）</summary>
@@ -242,7 +256,7 @@ export function Onboarding() {
           <h2>表示名</h2>
           <label htmlFor="name">表示名</label>
           <input id="name" value={name} maxLength={32} onChange={(e) => setName(e.target.value)} />
-          <p className="muted">ゲーム内の名前と同じにしてください。</p>
+          <p className="muted" data-testid="name-hint">対戦相手とランキングに表示される名前です。</p>
           <button type="button" className="primary" disabled={busy || name.trim() === '' || !app.signer} onClick={() => void saveName()}>
             次へ
           </button>
@@ -256,9 +270,7 @@ export function Onboarding() {
             次の文をそのまま X に投稿するか、GitHub の公開の Gist に貼り、その URL を入力してください。1人で何個もアカウントを作れないようにするためのもので、英語のまま投稿してください。投稿や Gist は、紐づけのあとも消さないでください。
           </p>
           <p className="mono card" data-testid="verification-text">{verificationText(app.pubkey)}</p>
-          <button type="button" onClick={() => void navigator.clipboard?.writeText(verificationText(app.pubkey!)).catch(() => undefined)}>
-            文をコピー
-          </button>
+          <CopyButton text={verificationText(app.pubkey)}>文をコピー</CopyButton>
           <label htmlFor="proof-url">投稿の URL</label>
           <input id="proof-url" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)} />
           <button type="button" onClick={() => void check()}>確認する</button>
@@ -266,7 +278,14 @@ export function Onboarding() {
           <button type="button" className="primary" disabled={busy || !claim || status !== 'verified'} onClick={() => void register()}>
             登録して次へ
           </button>
+          <button type="button" onClick={() => setStep('name')}>表示名を変える</button>
         </div>
+      )}
+
+      {(step === 'words' || step === 'name' || step === 'identity') && (
+        <p>
+          <button type="button" disabled={busy} onClick={() => void startOver()}>最初からやり直す</button>
+        </p>
       )}
 
       {error && <p className="error" role="alert">{error}</p>}
