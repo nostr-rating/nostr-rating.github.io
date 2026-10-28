@@ -6,7 +6,7 @@ export interface ChatLine {
   at: number;
 }
 
-export function ChatPanel({ lines, onSend }: { lines: ChatLine[]; onSend: (text: string) => Promise<void> }) {
+export function ChatPanel({ lines, onSend, note }: { lines: ChatLine[]; onSend: (text: string) => Promise<void>; note: string }) {
   const [text, setText] = useState('');
   return (
     <div className="card stack">
@@ -33,7 +33,7 @@ export function ChatPanel({ lines, onSend }: { lines: ChatLine[]; onSend: (text:
           送る
         </button>
       </div>
-      <p className="muted">部屋 ID やパスワードはここに書かないでください。</p>
+      <p className="muted" data-testid="chat-note">{note}</p>
     </div>
   );
 }

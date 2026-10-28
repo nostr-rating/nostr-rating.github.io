@@ -297,7 +297,7 @@ export function MatchRoom({ matchId }: { matchId: string }) {
         <p data-testid="my-side">
           あなたは「{def.sides[mySide!]}」です（相手は「{def.sides[mySide === 0 ? 1 : 0]}」）。
         </p>
-        <p className="muted">
+        <p className="muted" data-testid="room-format">
           {def.format.bestOf === 1 ? '1本勝負' : `${Math.ceil(def.format.bestOf / 2)}本先取`}
           {def.format.notes.length > 0 ? ` ／ ${def.format.notes.join('・')}` : ''}
           {def.room.kind === 'code' ? ` ／ 入室制限「${def.room.entryRestriction}」 ／ 部屋の人数 ${def.room.maxPlayers}人` : ''}
@@ -372,7 +372,15 @@ export function MatchRoom({ matchId }: { matchId: string }) {
 
       {bansMissing && <p className="notice" role="alert">拒否ステージを読み込めなかったため、拒否なしで案内しています。相手と確認してください。</p>}
       {def.stages && def.characters && <StageGuide def={def} match={match} me={side} bans={bans ?? { p1: {}, p2: {} }} onSetChange={setSet} />}
-      <ChatPanel lines={chat} onSend={(text) => send({ type: 'chat', text })} />
+      <ChatPanel
+        lines={chat}
+        onSend={(text) => send({ type: 'chat', text })}
+        note={
+          def.room.kind === 'code'
+            ? '部屋 ID は上の「専用部屋」の欄から送ってください。'
+            : '招待リンクは上の「対局の場所」の欄から送ってください。チャットに貼ったリンクは、アプリがリンク先を確かめません。'
+        }
+      />
       <ReportPanel
         status={reportStatus(def, match, reports, me, app.now())}
         closed={closed}
