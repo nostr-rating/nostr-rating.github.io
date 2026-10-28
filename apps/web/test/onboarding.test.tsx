@@ -127,6 +127,15 @@ describe('Onboarding', () => {
     await waitFor(() => expect(location.hash).toBe('#/lobby'), { timeout: 5000 });
     expect(existing.account.state!.devices.size).toBe(2);
   });
+
+  test('a new device links to the recovery tool for someone who lost every device', async () => {
+    vi.stubEnv('VITE_RECOVERY_URL', 'https://github.com/o/r/releases/tag/recovery-v2');
+    const user = userEvent.setup();
+    renderWithApp(<Onboarding />, { deps: makeDeps({ now: realNow }) });
+    await user.click(screen.getByRole('button', { name: 'すでにアカウントを持っている' }));
+    expect(screen.getByRole('link', { name: 'リリースのページ' }).getAttribute('href')).toBe('https://github.com/o/r/releases/tag/recovery-v2');
+    vi.unstubAllEnvs();
+  });
 });
 
 describe('Settings', () => {
@@ -182,6 +191,14 @@ describe('Settings', () => {
     await user.click(list.getByRole('button', { name: '取り消す' }));
     await waitFor(() => expect(within(screen.getByTestId('devices')).queryByText(/タブレット/)).toBeNull());
     expect(p.account.state!.devices.get(second.id)!.intervals.every((i) => i.to <= realNow())).toBe(true);
+  });
+
+  test('links to the recovery tool baked in at build time', async () => {
+    vi.stubEnv('VITE_RECOVERY_URL', 'https://github.com/o/r/releases/tag/recovery-v2');
+    const p = await newPlayer(new MemoryRelay(realNow), realNow);
+    renderWithApp(<Settings />, { deps: makeDeps({ now: realNow }), account: p.account });
+    expect((await screen.findByRole('link', { name: '復活の道具を入手する' })).getAttribute('href')).toBe('https://github.com/o/r/releases/tag/recovery-v2');
+    vi.unstubAllEnvs();
   });
 });
 

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Devices } from '../components/Devices.js';
 import { RecoveryWords } from '../components/RecoveryWords.js';
 import { currentOverrides, defaultRoomPassword, saveDefaultRoomPassword, saveOverrides } from '../services/config.js';
+import { recoveryLink } from '../recoveryLink.js';
 import { useApp } from '../state/AppContext.js';
 
 export function rangeLabel(v: number | null): string {
@@ -171,10 +172,10 @@ export function Settings() {
         <Devices />
         <p className="hint">
           端末を全部失くしたときは、復活の言葉を復活の道具に入力して戻します。
-          {import.meta.env.VITE_REPO_URL && (
+          {recoveryLink() && (
             <>
               {' '}
-              <a href={`${import.meta.env.VITE_REPO_URL}/releases/latest`} target="_blank" rel="noopener noreferrer">
+              <a href={recoveryLink()!} target="_blank" rel="noopener noreferrer">
                 復活の道具を入手する
               </a>
             </>

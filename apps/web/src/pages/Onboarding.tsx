@@ -18,6 +18,7 @@ import { StatusBadge } from '../components/IdentityBadge.js';
 import { QrCode } from '../components/QrCode.js';
 import { RecoveryWords } from '../components/RecoveryWords.js';
 import { navigate } from '../router.js';
+import { recoveryLink } from '../recoveryLink.js';
 import { useApp } from '../state/AppContext.js';
 
 type Step = 'checking' | 'start' | 'words' | 'join' | 'name' | 'identity';
@@ -250,6 +251,15 @@ export function Onboarding() {
               <li>登録済みの端末: 設定の「端末を追加」</li>
               <li>端末を全部失くしたとき: 復活の道具</li>
             </ul>
+            {recoveryLink() && (
+              <p className="hint">
+                復活の道具は
+                <a href={recoveryLink()!} target="_blank" rel="noopener noreferrer">
+                  リリースのページ
+                </a>
+                からダウンロードします。
+              </p>
+            )}
           </div>
           <p className="muted" role="status">登録を待っています…</p>
           {errorSlot}

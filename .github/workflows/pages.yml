@@ -26,11 +26,20 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      # 復活の道具の入手先は、一番新しい recovery-v* のリリースのページにする。まだ無ければアプリはリリースの一覧を指す
+      - id: recovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release list --repo "${{ github.repository }}" --limit 100 --exclude-drafts --json tagName,publishedAt \
+            --jq '[.[] | select(.tagName | startswith("recovery-v"))] | sort_by(.publishedAt) | last | .tagName // ""')
+          echo "url=${tag:+https://github.com/${{ github.repository }}/releases/tag/${tag}}" >> "$GITHUB_OUTPUT"
       - run: npm -w @nostr-rating/web run build
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
           VITE_SNAPSHOT_BASE: https://raw.githubusercontent.com/${{ github.repository }}/main/
           VITE_REPO_URL: https://github.com/${{ github.repository }}
+          VITE_RECOVERY_URL: ${{ steps.recovery.outputs.url }}
       # 最新のスナップショットから、選手ページ（p/）と公開 API（api/v1/）を書き出す（docs/api.md）
       - id: pages
         uses: actions/configure-pages@v5

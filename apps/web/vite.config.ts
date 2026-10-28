@@ -1,9 +1,10 @@
-import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join, normalize, resolve } from 'node:path';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
+import { recoveryUrl, withRecoveryLink } from './src/recoveryLink.js';
 
 const REPO = resolve(import.meta.dirname, '../..');
 
@@ -75,6 +76,29 @@ function serveFonts(): Plugin {
   };
 }
 
+/** ヘルプに復活の道具の入手先を書き込む。public/ のファイルは変換されないので、開発時は配るときに、ビルドでは書き出したあとに置き換える */
+const RECOVERY_URL = recoveryUrl(process.env);
+const HELP = 'help/account.html';
+
+function helpRecoveryLink(): Plugin {
+  let base = '/';
+  let outDir = '';
+  return {
+    name: 'help-recovery-link',
+    configResolved: (c) => void ((base = c.base), (outDir = resolve(c.root, c.build.outDir))),
+    configureServer: (s) =>
+      void s.middlewares.use((req, res, next) => {
+        if ((req.url ?? '').split('?')[0] !== `${base}${HELP}`) return next();
+        res.setHeader('Content-Type', 'text/html');
+        res.end(withRecoveryLink(readFileSync(resolve(import.meta.dirname, 'public', HELP), 'utf8'), RECOVERY_URL));
+      }),
+    writeBundle() {
+      const file = join(outDir, HELP);
+      writeFileSync(file, withRecoveryLink(readFileSync(file, 'utf8'), RECOVERY_URL));
+    },
+  };
+}
+
 /**
  * npm run dev:lan: 同じ LAN のスマホから開くための開発サーバー。
  * 端末の鍵（WebCrypto）と OPFS は https でしか使えないので自己署名の証明書で配り、
@@ -95,7 +119,7 @@ const lanHosts = (() => {
 
 export default defineConfig({
   base: process.env.VITE_BASE ?? '/',
-  plugins: [react(), serveRepoData(), serveFonts(), ...(lan && !lanCert ? [basicSsl()] : [])],
+  plugins: [react(), serveRepoData(), serveFonts(), helpRecoveryLink(), ...(lan && !lanCert ? [basicSsl()] : [])],
   server: lan
     ? {
         host: true,
@@ -104,6 +128,7 @@ export default defineConfig({
         proxy: { '/relay': { target: 'ws://localhost:7777', ws: true, rewrite: () => '/' } },
       }
     : {},
+  define: { 'import.meta.env.VITE_RECOVERY_URL': JSON.stringify(RECOVERY_URL ?? '') },
   optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },
   worker: { format: 'es' },
 });
