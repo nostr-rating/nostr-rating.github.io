@@ -1,20 +1,19 @@
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
-import { join, normalize, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { recoveryUrl, withRecoveryLink } from './src/recoveryLink.js';
+import { repoDataFile } from './src/repoData.js';
 
 const REPO = resolve(import.meta.dirname, '../..');
 
 /** 開発時とプレビュー時に、リポジトリの snapshots/ と configs/ を同じ配信元から返す */
 function serveRepoData(): Plugin {
   const handler = (req: { url?: string }, res: any, next: () => void) => {
-    const path = decodeURIComponent((req.url ?? '').split('?')[0]!).replace(/^\/[^/]*\/(?=(snapshots|configs)\/)/, '/');
-    if (!/^\/(snapshots|configs)\//.test(path)) return next();
-    const file = normalize(join(REPO, path));
-    if (!file.startsWith(REPO) || !existsSync(file) || !statSync(file).isFile()) return next();
+    const file = repoDataFile(REPO, req.url ?? '');
+    if (!file || !existsSync(file) || !statSync(file).isFile()) return next();
     res.setHeader('Content-Type', file.endsWith('.json') ? 'application/json' : 'text/plain');
     res.setHeader('Cache-Control', 'no-cache');
     createReadStream(file).pipe(res);
