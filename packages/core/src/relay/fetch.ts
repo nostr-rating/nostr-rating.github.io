@@ -13,6 +13,8 @@ import { dedupeById, type RelayClient } from './client.js';
 export const RATING_PAGE_SIZE = 300;
 /** authors / ids / #e に一度に並べる数（大きいとリレーに拒否される） */
 const CHUNK = 100;
+/** 同時に投げる問い合わせの数（docs/adr/0011）。リレーごとに分けて投げるので、1つのリレーにもこの数まで */
+const CONCURRENCY = 4;
 
 export interface FetchOptions {
   pageSize?: number;
@@ -32,6 +34,32 @@ export interface FetchResult {
 }
 
 class Overflow extends Error {}
+
+/** fn を同時に limit 個まで走らせる。結果は items の順 */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+/** ids を CHUNK ずつに分けて、同時に CONCURRENCY 個まで問い合わせる（取りこぼしを許す問い合わせ用） */
+async function queryChunked(relay: RelayClient, key: 'ids' | '#d', values: string[], filter: Filter, pageSize: number): Promise<NostrEvent[]> {
+  const results = await mapLimit(chunks(values, CHUNK), CONCURRENCY, (vs) => queryAll(relay, { ...filter, [key]: vs }, pageSize, false));
+  return results.flat();
+}
+
+/** あるアカウントについて、ある鍵たちが署名したイベントを取り切る、という問い合わせの単位 */
+interface Job {
+  aid: Pubkey;
+  authors: Pubkey[];
+}
 
 function chunks<T>(xs: T[], n: number): T[][] {
   const out: T[][] = [];
@@ -78,7 +106,7 @@ async function queryAll(relay: RelayClient, filter: Filter, pageSize: number, st
 /**
  * docs/adr/0008「検索をあふれさせる攻撃」。レート計算に必要なイベントを集める。
  *
- * - 取り切る必要がある問い合わせは authors か ids だけにし、アカウントごとに分けて投げる。
+ * - 取り切る必要がある問い合わせは authors か ids だけにする。複数のアカウントをまとめて投げ、あふれたときだけ分ける。
  *   取り切れなければそのアカウントだけを incomplete にし、全体は止めない
  * - #t の問い合わせは、新しいアカウントと、そのアカウントの対戦を見つけるきっかけにだけ使う
  * - 見つけ方は下からたどる。KEL → 証明書のお知らせ → 使い捨ての鍵 → 対戦 → 申し込みと報告
@@ -98,20 +126,46 @@ export async function fetchRatingEvents(
   const all: NostrEvent[] = [];
 
   /**
-   * アカウント1つ分の問い合わせ。取り切れなければそのアカウントを incomplete にする。
+   * docs/adr/0011「問い合わせをまとめ、あふれたときだけ分ける」。複数のアカウントの鍵を authors に CHUNK まで並べて
+   * 1回で問い合わせる。1つの秒に1ページを超えるイベントがあって取り切れなければ、アカウントを半分に分けて問い合わせ直し、
+   * 1アカウントまで分けても取り切れないものだけを incomplete にする（アカウントごとに問い合わせたときと同じ結果になる）。
    * KEL は対戦の判定に使うので、ほかの種類を取り切れなかったアカウントでも取りに行き、別に数える
    */
-  const perAccount = async (aid: Pubkey, filter: Filter): Promise<NostrEvent[]> => {
+  const perAccounts = async (jobs: Job[], filter: Filter): Promise<NostrEvent[]> => {
     const kel = filter.kinds?.includes(KIND.kel) ?? false;
-    if (kel ? incompleteKel.has(aid) : incomplete.has(aid)) return [];
-    try {
-      return await queryAll(relay, filter, pageSize, strict);
-    } catch (e) {
-      if (!(e instanceof Overflow)) throw e;
-      incomplete.add(aid);
-      if (kel) incompleteKel.add(aid);
-      return [];
+    const skip = kel ? incompleteKel : incomplete;
+    const run = async (batch: Job[]): Promise<NostrEvent[]> => {
+      const live = batch.filter((j) => !skip.has(j.aid));
+      if (live.length === 0) return [];
+      try {
+        return await queryAll(relay, { ...filter, authors: [...new Set(live.flatMap((j) => j.authors))] }, pageSize, strict);
+      } catch (e) {
+        if (!(e instanceof Overflow)) throw e;
+        const aids = [...new Set(live.map((j) => j.aid))];
+        if (aids.length === 1) {
+          incomplete.add(aids[0]!);
+          if (kel) incompleteKel.add(aids[0]!);
+          return [];
+        }
+        const left = new Set(aids.slice(0, Math.ceil(aids.length / 2)));
+        return [...(await run(live.filter((j) => left.has(j.aid)))), ...(await run(live.filter((j) => !left.has(j.aid))))];
+      }
+    };
+    // 1アカウントの鍵が CHUNK を超えるときはそのアカウントだけで分け、残りは CHUNK に収まるまで詰める
+    const batches: Job[][] = [];
+    let cur: Job[] = [];
+    let size = 0;
+    for (const job of jobs.flatMap((j) => chunks(j.authors, CHUNK).map((authors) => ({ aid: j.aid, authors })))) {
+      if (size + job.authors.length > CHUNK) {
+        batches.push(cur);
+        cur = [];
+        size = 0;
+      }
+      cur.push(job);
+      size += job.authors.length;
     }
+    if (cur.length > 0) batches.push(cur);
+    return (await mapLimit(batches, CONCURRENCY, run)).flat();
   };
 
   // 1. KEL と証明書のお知らせ。既知のアカウントは鍵の持ち主ごとに、新しいアカウントは #t から見つける
@@ -127,15 +181,19 @@ export async function fetchRatingEvents(
   };
   await pushed(all);
   const visited = new Set<Pubkey>();
+  /** まだ問い合わせていない鍵の持ち主 */
+  const newHolders = (): Job[] =>
+    book
+      .aids()
+      .map((aid) => {
+        const authors = book.holders(aid).filter((k) => !visited.has(`${aid}:${k}`));
+        authors.forEach((k) => visited.add(`${aid}:${k}`));
+        return { aid, authors };
+      })
+      .filter((j) => j.authors.length > 0);
   // 2周目は、1周目で鍵が増えたアカウント（新しい端末・入れ替え）を取り直す
   for (let round = 0; round < 2; round++) {
-    for (const aid of book.aids()) {
-      const holders = book.holders(aid).filter((k) => !visited.has(`${aid}:${k}`));
-      holders.forEach((k) => visited.add(`${aid}:${k}`));
-      for (const authors of chunks(holders, CHUNK)) {
-        await pushed(await perAccount(aid, { kinds: [KIND.kel, KIND.cert], authors, since: from, until }));
-      }
-    }
+    await pushed(await perAccounts(newHolders(), { kinds: [KIND.kel, KIND.cert], since: from, until }));
   }
 
   /** イベントが持ち歩く証明書のうち、まだ知らないアカウントの KEL を掲載用の鍵から探す（作成が昔でも見つかる） */
@@ -146,16 +204,8 @@ export async function fetchRatingEvents(
       if (c?.cert && !book.states.has(c.cert.aid) && typeof c.cert.publisher === 'string') unknown.set(c.cert.publisher, c.cert.aid);
     }
     if (unknown.size === 0) return;
-    for (const [publisher, aid] of unknown) {
-      await pushed(await perAccount(aid, { kinds: [KIND.kel], authors: [publisher], until }));
-    }
-    for (const aid of book.aids()) {
-      const holders = book.holders(aid).filter((k) => !visited.has(`${aid}:${k}`));
-      holders.forEach((k) => visited.add(`${aid}:${k}`));
-      for (const authors of chunks(holders, CHUNK)) {
-        await pushed(await perAccount(aid, { kinds: [KIND.kel, KIND.cert], authors, until }));
-      }
-    }
+    await pushed(await perAccounts([...unknown].map(([publisher, aid]) => ({ aid, authors: [publisher] })), { kinds: [KIND.kel], until }));
+    await pushed(await perAccounts(newHolders(), { kinds: [KIND.kel, KIND.cert], until }));
   };
   await discoverFrom(all.filter((e) => e.kind === KIND.match));
 
@@ -182,19 +232,12 @@ export async function fetchRatingEvents(
   }
 
   // 3. 対戦・報告・紐づけ。使い捨ての鍵ごとに取り切る
-  for (const [aid, keys] of sessions) {
-    for (const authors of chunks([...keys], CHUNK)) {
-      all.push(...(await perAccount(aid, { kinds: [KIND.match, KIND.report, KIND.account], authors, since: from, until })));
-    }
-  }
+  all.push(...(await perAccounts([...sessions].map(([aid, keys]) => ({ aid, authors: [...keys] })), { kinds: [KIND.match, KIND.report, KIND.account], since: from, until })));
 
   // 4. 報告が指す対戦のうち、まだ無いもの（ids）。相手の分を取り切れなくても、報告した側から対戦を見つける
   const have = new Set(all.map((e) => e.id));
   const pointed = new Set(all.filter((e) => e.kind === KIND.report).flatMap((e) => e.tags.filter((t) => t[0] === 'e' && t[1] && !have.has(t[1])).map((t) => t[1]!)));
-  const referenced: NostrEvent[] = [];
-  for (const ids of chunks([...pointed], CHUNK)) {
-    referenced.push(...(await queryAll(relay, { kinds: [KIND.match], ids }, pageSize, false)));
-  }
+  const referenced = await queryChunked(relay, 'ids', [...pointed], { kinds: [KIND.match] }, pageSize);
   all.push(...referenced);
   await discoverFrom(referenced);
 
@@ -203,26 +246,17 @@ export async function fetchRatingEvents(
   const matches = dedupeById(all)
     .map((e) => parseMatch(def.id, e, author(e)))
     .filter((m) => m !== null);
-  const applications: NostrEvent[] = [];
-  for (const ids of chunks([...new Set(matches.map((m) => m.applicationId))], CHUNK)) {
-    applications.push(...(await queryAll(relay, { kinds: [KIND.application], ids }, pageSize, false)));
-  }
+  const applications = await queryChunked(relay, 'ids', [...new Set(matches.map((m) => m.applicationId))], { kinds: [KIND.application] }, pageSize);
   all.push(...applications);
   await discoverFrom(applications);
   const before = new Map([...sessions].map(([aid, s]) => [aid, new Set(s)]));
   for (const ev of applications) addSession(certOf(ev));
-  for (const [aid, keys] of sessions) {
-    const added = [...keys].filter((k) => !before.get(aid)?.has(k));
-    for (const authors of chunks(added, CHUNK)) {
-      all.push(...(await perAccount(aid, { kinds: [KIND.report], authors, since: from, until })));
-    }
-  }
+  const added = [...sessions].map(([aid, keys]) => ({ aid, authors: [...keys].filter((k) => !before.get(aid)?.has(k)) })).filter((j) => j.authors.length > 0);
+  all.push(...(await perAccounts(added, { kinds: [KIND.report], since: from, until })));
 
   // 6. 紐づけは古い使い捨ての鍵で出したこともあるので、d（aid）でも探す（取りこぼしを許す）
   const players = [...new Set(matches.flatMap((m) => [m.p1, m.p2]))];
-  for (const d of chunks(players, CHUNK)) {
-    all.push(...(await queryAll(relay, { kinds: [KIND.account], '#d': d }, pageSize, false)));
-  }
+  all.push(...(await queryChunked(relay, '#d', players, { kinds: [KIND.account] }, pageSize)));
 
   return { events: dedupeById(all), incomplete, incompleteKel };
 }

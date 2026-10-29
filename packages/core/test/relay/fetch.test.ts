@@ -172,6 +172,47 @@ describe('fetchRatingEvents', () => {
     expect([[...got.incomplete].sort(), [...got.incompleteKel]]).toEqual([[kelSpammer.pk, spammer.pk].sort(), [kelSpammer.pk]]);
   });
 
+  test('asks about many accounts together instead of one by one', async () => {
+    const inner = new MemoryRelay(now);
+    const users = Array.from({ length: 40 }, () => newUser());
+    for (let i = 0; i < users.length; i += 2) await publishAll(inner, [...(await p1Wins(users[i]!, users[i + 1]!, T0)), users[i]!.certAnnouncement(T0), users[i + 1]!.certAnnouncement(T0)]);
+    let byAuthors = 0;
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const relay: RelayClient = {
+      ...inner,
+      publish: (e) => inner.publish(e),
+      subscribe: (f, on) => inner.subscribe(f, on),
+      close: () => undefined,
+      query: async (f) => {
+        if (f.some((x) => x.authors)) byAuthors++;
+        maxInFlight = Math.max(maxInFlight, ++inFlight);
+        await new Promise((r) => setTimeout(r, 1));
+        try {
+          return await inner.query(f);
+        } finally {
+          inFlight--;
+        }
+      },
+    };
+    const got = await fetchRatingEvents(relay, def, registeredKels(), T0 - 100, T0 + 1000, { strict: true });
+    expect(got.incomplete.size).toBe(0);
+    for (const u of users) expect(got.events.some((e) => e.kind === KIND.report && e.pubkey === u.sessionAt(T0))).toBe(true);
+    expect(byAuthors).toBeLessThanOrEqual(10);
+    expect(maxInFlight).toBeGreaterThan(1);
+    expect(maxInFlight).toBeLessThanOrEqual(4);
+  });
+
+  test('accounts whose events together overflow a page are asked about again in halves, not excluded', async () => {
+    const relay = new MemoryRelay(now);
+    const users = Array.from({ length: 12 }, () => newUser());
+    for (let i = 0; i < users.length; i += 2) await publishAll(relay, [...(await p1Wins(users[i]!, users[i + 1]!, T0)), users[i]!.certAnnouncement(T0), users[i + 1]!.certAnnouncement(T0)]);
+    // 証明書のお知らせは全員が同じ秒（日の始まり）に出すので、まとめた問い合わせだけが1ページを超える
+    const got = await fetchRatingEvents(relay, def, registeredKels(), T0 - 100, T0 + 1000, { pageSize: 10, strict: true });
+    expect(got.incomplete.size).toBe(0);
+    for (const u of users) expect(got.events.some((e) => e.kind === KIND.report && e.pubkey === u.sessionAt(T0))).toBe(true);
+  });
+
   test('a match that only the report of the opponent points to is fetched by its id', async () => {
     const inner = new MemoryRelay(now);
     const a = newUser();

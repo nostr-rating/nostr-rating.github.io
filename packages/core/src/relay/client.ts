@@ -1,5 +1,5 @@
 import type { Filter } from 'nostr-tools/filter';
-import { SimplePool } from 'nostr-tools/pool';
+import { AbstractSimplePool } from 'nostr-tools/abstract-pool';
 import type { NostrEvent } from 'nostr-tools/pure';
 import { isValidEvent } from '../events/kinds.js';
 
@@ -88,7 +88,14 @@ export async function withRetries<T>(fn: () => Promise<T>, attempts: number, del
  */
 export function createNostrRelayClient(urls: string[], opts: { maxWaitMs?: number; strict?: boolean } = {}): RelayClient {
   // スマホで画面が消えると接続が切れるので、再接続と購読の張り直しを有効にする
-  const pool = new SimplePool({ enableReconnect: true, enablePing: true });
+  // 届いたイベントの署名は、こちらの控えを使う検証で確かめる（同じイベントを2回確かめない。docs/adr/0011）
+  const pool = new AbstractSimplePool({
+    enableReconnect: true,
+    enablePing: true,
+    maxWaitForConnection: 3000,
+    websocketImplementation: globalThis.WebSocket,
+    verifyEvent: (ev) => isValidEvent(ev),
+  });
   const maxWait = opts.maxWaitMs ?? 4000;
   const one = (url: string): RelayClient => ({
     async publish(ev) {
