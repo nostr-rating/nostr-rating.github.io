@@ -57,16 +57,22 @@ function useOpenMatches(): MatchRecord[] {
     void (async () => {
       const evs = await app.relay.query([{ kinds: [KIND.match], '#p': app.mySessions, since: t - app.def.report.deadlineSec }]);
       const candidates = (await parseEach(app, evs, (e, by) => parseMatch(app.def.id, e, by))).filter((m) => m.p1 === me || m.p2 === me);
-      if (candidates.length === 0) return;
+      if (candidates.length === 0) {
+        if (alive) setOpen([]);
+        return;
+      }
       // 第三者が勝手に作った対戦は、申し込みに結び付かないので出さない
       const appEvs = await app.relay.query([{ kinds: [KIND.application], ids: candidates.map((m) => m.applicationId) }]);
       const apps = new Map((await parseEach(app, appEvs, (e, by) => parseApplication(app.def.id, e, by))).map((a) => [a.eventId, a]));
       const matches = candidates.filter((m) => isLinkedMatch(app.def, m, apps.get(m.applicationId)));
-      if (matches.length === 0) return;
+      if (matches.length === 0) {
+        if (alive) setOpen([]);
+        return;
+      }
       const reps = await app.relay.query([{ kinds: [KIND.report], '#e': matches.map((m) => m.id) }]);
       const reports: ResultReport[] = await parseEach(app, reps, (e, by) => parseReport(app.def.id, e, by));
       const pending = matches
-        .filter((m) => settleMatch(m, reports.filter((r) => r.matchId === m.id), t, app.def.report.deadlineSec).status === 'pending')
+        .filter((m) => settleMatch(m, reports.filter((r) => r.matchId === m.id), t, app.def.report.deadlineSec, app.def.results.draw).status === 'pending')
         .sort((a, b) => b.createdAt - a.createdAt);
       if (!alive) return;
       setOpen(pending);
@@ -76,7 +82,7 @@ function useOpenMatches(): MatchRecord[] {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [app.pubkey, app.relay, app.mySessions.join()]);
+  }, [app.pubkey, app.relay, app.def, app.mySessions.join()]);
   return open;
 }
 

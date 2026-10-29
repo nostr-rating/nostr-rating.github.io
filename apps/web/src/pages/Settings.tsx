@@ -24,15 +24,17 @@ export function Settings() {
   const [relays, setRelays] = useState((overrides.relays ?? []).join('\n'));
   const [snapBase, setSnapBase] = useState(overrides.snapshotBase ?? '');
 
+  // ゲームを切り替えたら、そのゲームの設定を読み直す。保存したものが無ければ初期値に戻す
   useEffect(() => {
-    if (!app.mySettings) return;
-    setBans(app.mySettings.stageBans);
-    setRange(app.mySettings.rangeChoice);
-    setRematch(app.mySettings.rematchHours);
-  }, [app.mySettings]);
+    setBans(app.mySettings?.stageBans ?? {});
+    setRange(app.mySettings?.rangeChoice ?? null);
+    setRematch(app.mySettings?.rematchHours ?? 0);
+  }, [app.mySettings, def.id]);
 
-  // ゲームを切り替えたら、そのゲームの初期値を読み直す
-  useEffect(() => setFixedPassword(defaultRoomPassword(def.id)), [def.id]);
+  useEffect(() => {
+    setFighter('');
+    setFixedPassword(defaultRoomPassword(def.id));
+  }, [def.id]);
 
   const key = fighter ? banGroupKey(def, fighter) : '';
   const current = key ? (bans[key] ?? []) : [];

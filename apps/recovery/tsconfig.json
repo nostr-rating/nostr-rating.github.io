@@ -7,6 +7,6 @@
     "types": ["vite/client", "node"],
     "resolveJsonModule": true
   },
-  "include": ["src", "vite.config.ts"],
+  "include": ["src", "test", "vite.config.ts", "vitest.config.ts"],
   "references": [{ "path": "../../packages/core" }]
 }

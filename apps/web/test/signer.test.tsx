@@ -59,3 +59,17 @@ describe('a signer app as the device key', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('署名アプリにつなげませんでした: ブラウザ拡張（NIP-07）が見つかりません');
   });
 });
+
+describe('a signer app for a new device', () => {
+  test('a failed connection keeps the current device request', async () => {
+    const user = userEvent.setup();
+    renderWithApp(<Onboarding />, { deps: makeDeps({ now: realNow }) });
+    await user.click(screen.getByRole('button', { name: 'すでにアカウントを持っている' }));
+    await waitFor(() => expect(screen.getByTestId('device-request').textContent).toMatch(/^nr-device:/));
+    const code = screen.getByTestId('device-request').textContent;
+    await user.click(screen.getByText('この端末の鍵に署名アプリを使う（Nostr に詳しい人向け）'));
+    await user.click(screen.getByRole('button', { name: 'ブラウザ拡張（NIP-07）で申請を作り直す' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('署名アプリにつなげませんでした: ブラウザ拡張（NIP-07）が見つかりません');
+    expect(screen.getByTestId('device-request').textContent).toBe(code);
+  });
+});

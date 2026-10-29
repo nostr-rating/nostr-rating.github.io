@@ -338,8 +338,8 @@ export class Account {
   /** 新しい端末の鍵を作り、申請のコードを返す。登録されるまで待つには waitForRegistration */
   static async prepareDevice(store: KeyStore, label: string, external?: ExternalDevice): Promise<string> {
     let device = await store.get<StoredDevice>(PENDING_DEVICE);
-    // 署名アプリを使うかどうかを変えたときは、申請を作り直す
-    if (!device || !!device.external !== !!external) {
+    // 署名アプリを使うかどうかや、使う署名アプリを変えたときは、申請を作り直す
+    if (!device || JSON.stringify(device.external ?? null) !== JSON.stringify(external ?? null)) {
       device = await createDevice(label, external);
       await store.set(PENDING_DEVICE, device);
     }

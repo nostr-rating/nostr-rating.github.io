@@ -79,13 +79,16 @@ export function Onboarding() {
     let alive = true;
     let stop = () => undefined as void;
     // 申請の鍵を作り終えてから待ち受ける（先に待つと、鍵がまだなくて何も届かない）
-    void Account.prepareDevice(app.keyStore, label, joinExternal).then((code) => {
-      if (!alive) return;
-      setRequestCode(code);
-      stop = Account.waitForRegistration(app.keyStore, app.relay, app.now, (a) => {
-        void app.setAccount(a).then(() => setStep('checking'));
-      });
-    });
+    void Account.prepareDevice(app.keyStore, label, joinExternal).then(
+      (code) => {
+        if (!alive) return;
+        setRequestCode(code);
+        stop = Account.waitForRegistration(app.keyStore, app.relay, app.now, (a) => {
+          void app.setAccount(a).then(() => setStep('checking'));
+        });
+      },
+      (e) => alive && setError(`端末の申請を作れませんでした: ${e instanceof Error ? e.message : String(e)}`),
+    );
     return () => {
       alive = false;
       stop();
@@ -271,8 +274,13 @@ export function Onboarding() {
               setBunker={setBunker}
               verb="申請を作り直す"
               onChoose={(k) => {
-                setRequestCode(null);
-                void connect(k).then((ext) => ext && setJoinExternal(ext));
+                setError(null);
+                // つなげなかったときは、今の申請を残す
+                void connect(k).then((ext) => {
+                  if (!ext) return;
+                  setRequestCode(null);
+                  setJoinExternal(ext);
+                });
               }}
             />
           </details>

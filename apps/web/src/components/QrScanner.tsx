@@ -37,7 +37,8 @@ export function QrScanner({ accept, onResult, onClose }: { accept(text: string):
       .getUserMedia({ video: { facingMode: 'environment' }, audio: false })
       .then(async (s) => {
         stream = s;
-        if (!alive || !video.current) return;
+        // 許可を待つ間に閉じられていたら、点いたカメラをすぐ消す
+        if (!alive || !video.current) return s.getTracks().forEach((t) => t.stop());
         video.current.srcObject = s;
         await video.current.play();
         frame = requestAnimationFrame(tick);

@@ -1,11 +1,11 @@
-import { KIND, MemoryRelay } from '@nostr-rating/core';
+import { buildReport, KIND, MemoryRelay } from '@nostr-rating/core';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, test } from 'vitest';
 import { App } from '../src/App.js';
 import { Lobby } from '../src/pages/Lobby.js';
 import { Ranking } from '../src/pages/Ranking.js';
-import { makeDeps, newPlayer, renderWithApp } from './helpers.js';
+import { makeDeps, matchBetween, newPlayer, renderWithApp } from './helpers.js';
 
 afterEach(cleanup);
 
@@ -67,6 +67,26 @@ describe('Lobby', () => {
         '復活の言葉をまだ書き写していません。端末を全部失くしたときに戻せるよう、設定画面から書き写してください。',
       ),
     );
+  });
+});
+
+describe('matches to go back to', () => {
+  const claims = [{ platform: 'github' as const, identity: 'u', proof: 'abc' }];
+
+  test('a chess match both reported as a draw is settled and not offered again', async () => {
+    localStorage.setItem('nostr-rating:game', 'chess');
+    const relay = new MemoryRelay(realNow);
+    const [a, b] = [await newPlayer(relay, realNow, { claims }), await newPlayer(relay, realNow, { claims })];
+    const drawn = await matchBetween(relay, a, b, { game: 'chess', at: realNow() - 120 });
+    const open = await matchBetween(relay, a, b, { game: 'chess' });
+    const [sa, sb] = [await a.signer.getPublicKey(), await b.signer.getPublicKey()];
+    await relay.publish(await a.signer.signEvent(buildReport('chess', { matchId: drawn.id, opponent: sb, result: 'draw' }, realNow() - 60)));
+    await relay.publish(await b.signer.signEvent(buildReport('chess', { matchId: drawn.id, opponent: sa, result: 'draw' }, realNow() - 60)));
+
+    renderWithApp(<Lobby />, { deps: makeDeps({ relay, now: realNow }), account: a.account });
+    await waitFor(() => expect(document.querySelector(`a[href="#/match/${open.id}"]`)).not.toBeNull());
+    expect(document.querySelector(`a[href="#/match/${drawn.id}"]`)).toBeNull();
+    localStorage.clear();
   });
 });
 

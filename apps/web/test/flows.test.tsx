@@ -2,8 +2,10 @@ import { buildMatch, buildReport, buildSettings, KIND, MemoryRelay, sideOf, veri
 import { cleanup, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { App } from '../src/App.js';
 import { Lobby } from '../src/pages/Lobby.js';
 import { MatchRoom } from '../src/pages/MatchRoom.js';
+import { useApp } from '../src/state/AppContext.js';
 import { makeDeps, matchBetween, newPlayer, renderWithApp, type Player } from './helpers.js';
 
 const realNow = () => Math.floor(Date.now() / 1000);
@@ -186,5 +188,63 @@ describe('lobby', () => {
     await new Promise((r) => setTimeout(r, 1500));
     expect(new Set(relay.all().filter((e) => e.kind === KIND.recruitment).map((e) => JSON.parse(e.content).waitingSince)).size).toBe(1);
     await user.click(screen.getByRole('button', { name: 'やめる' }));
+  });
+});
+
+describe('switching games in the settings', () => {
+  test('starts from the defaults of a game without saved settings and can save them', async () => {
+    const user = userEvent.setup();
+    location.hash = '#/settings';
+    const relay = new MemoryRelay(realNow);
+    const a = await player(relay, 'alice', 'aaa1');
+    await relay.publish(await a.signer.signEvent(buildSettings('smash_sp', { stageBans: { mario: ['smashville'] }, rangeChoice: 100, rematchHours: 3 }, realNow() - 10)));
+    renderWithApp(<App />, { deps: makeDeps({ relay, now: realNow }), account: a.account });
+    await waitFor(() => expect((screen.getByLabelText('連戦') as HTMLSelectElement).value).toBe('3'));
+
+    await user.selectOptions(screen.getByLabelText('ゲーム'), 'chess');
+    await waitFor(() => expect((screen.getByLabelText('連戦') as HTMLSelectElement).value).toBe('0'));
+    expect((screen.getByLabelText('マッチングするレート差') as HTMLSelectElement).value).toBe('');
+    await user.click(screen.getByRole('button', { name: '設定を保存' }));
+    expect(await screen.findByText('保存しました')).toBeTruthy();
+    const chess = relay.all().filter((e) => e.kind === KIND.settings && e.tags.some((t) => t[0] === 'd' && t[1]!.includes('chess')));
+    expect(chess.map((e) => JSON.parse(e.content))).toEqual([{ stageBans: {}, rangeChoice: null, rematchHours: 0 }]);
+  });
+});
+
+describe('switching games while loading', () => {
+  test('the ratings of the previous game arriving late do not replace the new game', async () => {
+    const user = userEvent.setup();
+    const relay = new MemoryRelay(realNow);
+    const a = await player(relay, 'alice', 'aaa1');
+    const deps = makeDeps({ relay, now: realNow });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let asked = false;
+    const fetchFn = deps.fetchFn;
+    deps.fetchFn = (async (input: string | URL | Request) => {
+      if (String(input).endsWith('snapshots/smash_sp/latest.json')) {
+        asked = true;
+        await gate;
+      }
+      return fetchFn(input);
+    }) as typeof fetch;
+    function Probe() {
+      const app = useApp();
+      return (
+        <>
+          <p data-testid="probe">{`${app.def.id} ${app.ratings.cutoff} ${app.syncError === null ? 'ok' : 'error'}`}</p>
+          <button type="button" onClick={() => app.setGame('chess')}>chess</button>
+        </>
+      );
+    }
+    renderWithApp(<Probe />, { deps, account: a.account });
+    await waitFor(() => expect(asked).toBe(true));
+    await user.click(screen.getByRole('button', { name: 'chess' }));
+    // チェスにはスナップショットが無いので、読み込みに失敗したと出る
+    await waitFor(() => expect(screen.getByTestId('probe').textContent).toMatch(/^chess \d+ error$/));
+    const shown = screen.getByTestId('probe').textContent;
+    release();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(screen.getByTestId('probe').textContent).toBe(shown);
   });
 });

@@ -140,6 +140,8 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
   const [unknownDevices, setUnknownDevices] = useState<DeviceRecord[]>([]);
   const pubkey = account?.aid ?? null;
   const [def, setDef] = useState<GameDefinition>(() => rememberedGame(deps.games));
+  /** 今のゲーム。切り替える前に始めた読み込みが遅れて終わっても、その結果を捨てるために使う */
+  const gameRef = useRef(def.id);
   const [ratings, setRatings] = useState<RatingState>(() => emptyState(def, deps.now()));
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -245,6 +247,7 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
         base: deps.snapshotBase,
         now: deps.now,
       });
+      if (gameRef.current !== def.id) return;
       setRatings(shown);
       resolver.setKnown({ ...shown.kels, ...(account ? { [account.aid]: account.kel } : {}) });
       // スナップショットにある名前と紐づけを先に出す（リレーの最新はこのあと読む）
@@ -256,10 +259,11 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
       setSyncError(null);
       await loadPeople([...Object.keys(shown.players), ...(pubkey ? [pubkey] : [])]);
     } catch (e) {
+      if (gameRef.current !== def.id) return;
       setSyncError(e instanceof Error ? e.message : String(e));
       if (pubkey) await loadPeople([pubkey]).catch(() => undefined);
     } finally {
-      setSyncing(false);
+      if (gameRef.current === def.id) setSyncing(false);
     }
   }, [account, def, deps, loadPeople, pubkey, resolver]);
 
@@ -267,6 +271,7 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     if (!pubkey || mySessions.length === 0) return;
     void refresh();
     setSettingsStatus('loading');
+    let alive = true;
     // 対戦設定は使い捨ての鍵ごとの置き換え可能イベントなので、手元に残した鍵と手元の控えから最新を探す
     void (async () => {
       try {
@@ -280,12 +285,16 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
           if (st && st.pubkey === pubkey) mine.push(st);
         }
         const latest = mine.sort((a, b) => b.createdAt - a.createdAt)[0];
+        if (!alive) return;
         if (latest) setMySettings(latest);
         setSettingsStatus('loaded');
       } catch {
-        setSettingsStatus('failed');
+        if (alive) setSettingsStatus('failed');
       }
     })();
+    return () => {
+      alive = false;
+    };
     // 自分のアカウントか使い捨ての鍵が変わったときだけ読み直す
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pubkey, mySessions.join(), def.id]);
@@ -338,6 +347,7 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
       abortRef.current = null;
       setSearch({ waitingSince: null, busy: false, error: null });
       rememberGame(next.id);
+      gameRef.current = next.id;
       setDef(next);
       setRatings(emptyState(next, deps.now()));
       setMySettings(null);
