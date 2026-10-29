@@ -62,7 +62,7 @@ export function App() {
           <div className="notice" role="alert">
             <p>知らない端末が登録されました: {app.unknownDevices.map((d) => d.label).join('、')}</p>
             <p>
-              自分で登録した覚えがなければ、<a href="#/settings">設定</a>の端末の一覧から取り消してください。自分の端末まで取り消されていたら、復活の言葉で戻してください。
+              自分で登録した覚えがなければ、<a href="#/settings">設定</a>の端末の一覧から取り消してください。自分の端末まで取り消されていたら、復活の言葉で復元してください。
             </p>
             <button type="button" onClick={() => void app.acknowledgeDevices()}>自分で登録した</button>
           </div>

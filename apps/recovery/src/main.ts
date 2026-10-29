@@ -98,7 +98,7 @@ function stepWords() {
         if (state && !state.abandoned && keys.some((k) => state.next.keys.includes(k.pub))) {
           found = { aid, state, chain, signers: keys.map((k) => k.sk) };
           const usable = keys.filter((k) => state.next.keys.includes(k.pub)).length;
-          if (usable < state.next.threshold) return fail(`このアカウントを戻すには、復活の言葉があと ${state.next.threshold - usable} 枚必要です。「もう1枚入力する」から足してください。`);
+          if (usable < state.next.threshold) return fail(`このアカウントを復元するには、復活の言葉があと ${state.next.threshold - usable} 枚必要です。「もう1枚入力する」から足してください。`);
           return stepRequest();
         }
       }
@@ -110,7 +110,7 @@ function stepWords() {
   const more = h('button', { textContent: 'もう1枚入力する（分けて保管している場合）' });
   more.onclick = addCard;
   show(
-    h('p', {}, 'すべての端末を失くしたときに、復活の言葉でアカウントを戻す道具です。このファイルは普段のアプリとは別の場所で開かれているので、普段のアプリのページが乗っ取られていても、復活の言葉を盗まれません。'),
+    h('p', {}, 'すべての端末を失くしたときに、復活の言葉でアカウントを復元する道具です。このファイルは普段のアプリとは別の場所で開かれているので、普段のアプリのページが乗っ取られていても、復活の言葉を盗まれません。'),
     h('p', { className: 'notice' }, '復活の言葉は、この道具と、信頼できる人が配っているこの道具の写しにだけ入力してください。普段のアプリのページや、ほかのサイトには入力しないでください。'),
     h('h2', {}, '1. 復活の言葉'),
     cards,
@@ -214,7 +214,7 @@ function stepNewWords() {
       {},
       cards.length === 1
         ? `入れ替えると、今の復活の言葉は使えなくなります。代わりに、次の12個の単語が新しい復活の言葉になります。新しい紙に書き写してください。追加する端末: ${request!.label}`
-        : `入れ替えると、今の復活の言葉は使えなくなります。代わりに、次の${cards.length}枚が新しい復活の言葉になります（${threshold}枚あれば戻せます）。1枚ずつ別の紙に書き写してください。追加する端末: ${request!.label}`,
+        : `入れ替えると、今の復活の言葉は使えなくなります。代わりに、次の${cards.length}枚が新しい復活の言葉になります（${threshold}枚あれば復元できます）。1枚ずつ別の紙に書き写してください。追加する端末: ${request!.label}`,
     ),
     ...cards.flatMap((c, k) => [...(cards.length > 1 ? [h('h3', {}, `${k + 1}枚目`)] : []), h('ol', { className: 'words' }, ...c.map((w) => h('li', {}, w)))]),
     h('p', {}, '書き写せたかを確かめます。次の単語を入力してください。'),
@@ -239,7 +239,7 @@ async function rotate(button: HTMLButtonElement, status: HTMLElement, threshold:
       h('h2', {}, '入れ替えました'),
       h('p', {}, `新しい端末（${request!.label}）の画面が自動で進みます。進まないときは、新しい端末でアプリを開き直してください。`),
       h('p', {}, '古い復活の言葉の紙は、もう使えません。捨ててください。新しい紙は、写真やクラウドに残さず、分けた場合は別々の場所にしまってください。'),
-      h('p', {}, '乗っ取られて戻した場合、乗っ取った人が出した対戦の結果のうち、取り消すまでの分（最大でおよそ1日分）は残ることがあります。'),
+      h('p', {}, '乗っ取られて復元した場合、乗っ取った人が出した対戦の結果のうち、取り消すまでの分（最大でおよそ1日分）は残ることがあります。'),
     );
   } catch (e) {
     status.textContent = `入れ替えられませんでした: ${e instanceof Error ? e.message : String(e)}`;

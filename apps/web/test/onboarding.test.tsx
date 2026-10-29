@@ -128,7 +128,7 @@ describe('Onboarding', () => {
     }
     await user.click(screen.getByRole('button', { name: '確かめる' }));
     expect(await screen.findByLabelText('表示名')).toBeTruthy();
-    // 作成の宣言の次の鍵が、はじめから3枚（2枚で戻せる）になる
+    // 作成の宣言の次の鍵が、はじめから3枚（2枚で復元できる）になる
     const stored = (await deps.keyStore.get<{ kel: { entry: { body: { t: string; next: { keys: string[]; threshold: number } } } }[] }>('account'))!;
     const icp = stored.kel.map((k) => k.entry.body);
     expect(icp.map((b) => [b.t, b.next.keys.length, b.next.threshold])).toEqual([['icp', 3, 2]]);

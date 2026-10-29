@@ -51,7 +51,7 @@ try {
   // 新しい言葉は、前と同じ枚数としきい値で作る
   const fresh = Array.from({ length: Math.min(state.next.keys.length, 3) }, () => newRecoveryWords());
   const threshold = Math.min(state.next.threshold, fresh.length);
-  console.log(`\n新しい復活の言葉（${fresh.length}枚。${threshold}枚あれば戻せます。1枚ずつ別の紙に書き写してください）:\n`);
+  console.log(`\n新しい復活の言葉（${fresh.length}枚。${threshold}枚あれば復元できます。1枚ずつ別の紙に書き写してください）:\n`);
   fresh.forEach((w, i) => console.log(`  ${i + 1}枚目: ${w}`));
   console.log('');
   if ((await rl.question('書き写したら、入れ替えるために yes と入力してください: ')).trim() !== 'yes') throw new Error('やめました');

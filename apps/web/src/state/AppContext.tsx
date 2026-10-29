@@ -162,7 +162,7 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     setUnknownDevices(a.unknownDevices);
     if (!a.active) {
       setSession(null);
-      setAccountError('この端末の登録は取り消されたか、期限が切れています。ほかの端末から登録し直すか、復活の言葉で戻してください。');
+      setAccountError('この端末の登録は取り消されたか、期限が切れています。ほかの端末から登録し直すか、復活の言葉で復元してください。');
       return;
     }
     const s = await a.session();

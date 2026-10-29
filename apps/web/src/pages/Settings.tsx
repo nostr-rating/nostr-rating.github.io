@@ -172,7 +172,7 @@ export function Settings() {
         <h2>端末</h2>
         <Devices />
         <p className="hint">
-          端末を全部失くしたときは、復活の言葉を復活の道具に入力して戻します。
+          端末を全部失くしたときは、復活の言葉を復活の道具に入力して復元します。
           {recoveryLink() && (
             <>
               {' '}

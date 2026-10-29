@@ -1,7 +1,7 @@
 import * as core from '@nostr-rating/core';
 import { beforeAll, describe, expect, test, vi } from 'vitest';
 
-/** 3枚に分けた復活の言葉のうちの2枚。どちらも1枚では足りない（2枚で戻せる） */
+/** 3枚に分けた復活の言葉のうちの2枚。どちらも1枚では足りない（2枚で復元できる） */
 const cards = vi.hoisted(() => ({ words: [] as string[] }));
 
 vi.mock('@nostr-rating/core', async (original) => {
@@ -33,7 +33,7 @@ describe('recovery words split into cards', () => {
   test('asking for one more card keeps what was typed so the next card can be added', async () => {
     $$<HTMLTextAreaElement>('.words-input')[0]!.value = cards.words[0]!;
     button('アカウントを探す').click();
-    await vi.waitFor(() => expect($('[role=alert]').textContent).toBe('このアカウントを戻すには、復活の言葉があと 1 枚必要です。「もう1枚入力する」から足してください。'));
+    await vi.waitFor(() => expect($('[role=alert]').textContent).toBe('このアカウントを復元するには、復活の言葉があと 1 枚必要です。「もう1枚入力する」から足してください。'));
     expect($$<HTMLTextAreaElement>('.words-input').map((t) => t.value)).toEqual([cards.words[0]]);
 
     button('もう1枚入力する').click();
