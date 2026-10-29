@@ -92,6 +92,21 @@ describe('syncRatings', () => {
     ).rejects.toThrow(/sha256/);
   });
 
+  test('reuses the snapshot while latest.json points to the same one', async () => {
+    const files = snapshotFiles();
+    const asked: string[] = [];
+    const fetchFn = (async (input: string | URL | Request) => {
+      asked.push(String(input));
+      return fakeFetch(files)(input);
+    }) as typeof fetch;
+    const snapshotCache = new Map();
+    const deps = { def, relay: new MemoryRelay(() => CUT + 100), store: new MemoryEventStore(), fetchFn, base: BASE, now: () => CUT + 100, snapshotCache };
+    await syncRatings(deps);
+    await syncRatings(deps);
+    expect(asked.filter((u) => u.endsWith('2026-10-27.json'))).toHaveLength(1);
+    expect(asked.filter((u) => u.endsWith('latest.json'))).toHaveLength(2);
+  });
+
   test('shows confirmed matches before their deadline and caches the events', async () => {
     const now = CUT + 5000;
     const relay = new MemoryRelay(() => now);

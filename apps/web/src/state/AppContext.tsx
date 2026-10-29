@@ -25,6 +25,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { Account, type KeyStore } from '../account/account.js';
 import { Resolver } from '../account/resolver.js';
 import { rememberedGame, rememberGame } from '../services/config.js';
+import { coalesce } from '../services/coalesce.js';
 import { syncRatings } from '../services/sync.js';
 import type { EventStore } from '../storage/types.js';
 
@@ -218,7 +219,8 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     [deps.relay, resolver],
   );
 
-  const refresh = useCallback(async () => {
+  const snapshotCache = useMemo(() => new Map<string, RatingState>(), []);
+  const syncNow = useCallback(async () => {
     setSyncing(true);
     try {
       const { shown } = await syncRatings({
@@ -228,6 +230,7 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
         fetchFn: deps.fetchFn,
         base: deps.snapshotBase,
         now: deps.now,
+        snapshotCache,
       });
       if (gameRef.current !== def.id) return;
       setRatings(shown);
@@ -247,7 +250,17 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     } finally {
       if (gameRef.current === def.id) setSyncing(false);
     }
-  }, [account, def, deps, loadPeople, pubkey, resolver]);
+  }, [account, def, deps, loadPeople, pubkey, resolver, snapshotCache]);
+  // 同期はゲームごとに同時に1本だけ走らせ、走っている間に頼まれた分は終わったあとに1回だけ、そのときの値でやり直す。
+  // ゲームを切り替えたときは、前のゲームの同期の終わりを待たない（前のゲームの結果は gameRef で捨てる）
+  const syncs = useRef(new Map<string, { latest: () => Promise<void>; run: () => Promise<void> }>());
+  const slot = syncs.current.get(def.id) ?? { latest: syncNow, run: async () => undefined };
+  if (!syncs.current.has(def.id)) {
+    slot.run = coalesce(() => slot.latest());
+    syncs.current.set(def.id, slot);
+  }
+  slot.latest = syncNow;
+  const refresh = slot.run;
 
   useEffect(() => {
     if (!pubkey || mySessions.length === 0) return;

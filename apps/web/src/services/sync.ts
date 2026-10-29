@@ -26,6 +26,8 @@ export interface SyncDeps {
   /** snapshots/<game>/latest.json を持つ取得元（末尾 /） */
   base: string;
   now: () => number;
+  /** latest.json の sha256 → 解析済みのスナップショット。指す先が同じ間は取り直さない */
+  snapshotCache?: Map<string, RatingState>;
 }
 
 async function fetchText(fetchFn: typeof fetch, url: string): Promise<string> {
@@ -45,11 +47,14 @@ export async function syncRatings(
 ): Promise<{ state: RatingState; shown: RatingState; snapshotCutoff: number }> {
   const { def, relay, store, fetchFn, base, now } = deps;
   const pointer = JSON.parse(await fetchText(fetchFn, `${base}snapshots/${def.id}/latest.json`)) as LatestPointer;
-  const text = await fetchText(fetchFn, `${base}${pointer.path}`);
-  if (sha256Hex(text) !== pointer.sha256) throw new Error(`sha256 mismatch: ${pointer.path}`);
-  const snapshot = JSON.parse(text) as Snapshot;
+  let fromSnapshot = deps.snapshotCache?.get(pointer.sha256);
+  if (!fromSnapshot) {
+    const text = await fetchText(fetchFn, `${base}${pointer.path}`);
+    if (sha256Hex(text) !== pointer.sha256) throw new Error(`sha256 mismatch: ${pointer.path}`);
+    fromSnapshot = snapshotToState(JSON.parse(text) as Snapshot);
+    deps.snapshotCache?.set(pointer.sha256, fromSnapshot);
+  }
   const t = now();
-  const fromSnapshot = snapshotToState(snapshot);
   // スナップショットが前のシーズンのものなら、今のシーズンを初期値から始める（成績のサマリーだけ引き継ぐ）
   const season = currentSeason(def, t);
   const start =
