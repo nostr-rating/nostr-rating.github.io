@@ -94,7 +94,7 @@ function stepWords() {
       const keys = normalized.map((w) => recoveryKey(w!));
       const aids = await findAccountsByNextKeys(relay, keys.map((k) => k.pub));
       for (const aid of aids) {
-        const { state, chain } = await loadKel(relay, aid);
+        const { state, chain } = await loadKel(relay, aid, Math.floor(Date.now() / 1000));
         if (state && !state.abandoned && keys.some((k) => state.next.keys.includes(k.pub))) {
           found = { aid, state, chain, signers: keys.map((k) => k.sk) };
           const usable = keys.filter((k) => state.next.keys.includes(k.pub)).length;
@@ -232,7 +232,7 @@ async function rotate(button: HTMLButtonElement, status: HTMLElement, threshold:
   button.textContent = '入れ替えています…';
   try {
     const at = Math.floor(Date.now() / 1000);
-    const { entry, event } = recoveryRotation(f.state, [deviceRecordFor(request!, at)], { keys: newWords.map((w) => recoveryKey(w).pub), threshold }, f.signers, at, [request!.publisher]);
+    const { entry, event } = recoveryRotation(f.aid, f.chain, [deviceRecordFor(request!, at)], { keys: newWords.map((w) => recoveryKey(w).pub), threshold }, f.signers, at, [request!.publisher]);
     if (!verifyRotation(f.aid, f.chain, entry, event.created_at)) throw new Error('入れ替えのイベントを確かめられませんでした');
     await relay!.publish(event);
     show(

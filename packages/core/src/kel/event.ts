@@ -39,6 +39,17 @@ export function parseKelEvent(ev: NostrEvent): { aid: string; input: KelInput } 
   }
 }
 
+/** 端末の時計のずれとして許す幅 */
+export const KEL_CLOCK_SKEW_SEC = 600;
+
+/**
+ * now より先の日時の KEL のイベントを除く。先の日時のイベントの上に続けると、続けたイベントの日時も先になり、
+ * スナップショットはその日時まで使わない（盗んだ端末で先の日時のイベントを出しておけば、取り消しと復活を遅らせられる）
+ */
+export function notInFuture(events: NostrEvent[], now: number): NostrEvent[] {
+  return events.filter((e) => e.created_at <= now + KEL_CLOCK_SKEW_SEC);
+}
+
 /** 「先に見た」順の既定: created_at, id の昇順 */
 export function seenOrder(events: NostrEvent[]): NostrEvent[] {
   return [...events].sort((a, b) => a.created_at - b.created_at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));

@@ -38,7 +38,7 @@ try {
   const aids = await findAccountsByNextKeys(relay, keys.map((k) => k.pub));
   let found: Awaited<ReturnType<typeof loadKel>> | null = null;
   for (const aid of aids) {
-    const r = await loadKel(relay, aid);
+    const r = await loadKel(relay, aid, Math.floor(Date.now() / 1000));
     if (r.state && !r.state.abandoned && keys.some((k) => r.state!.next.keys.includes(k.pub))) found = r;
   }
   if (!found?.state) throw new Error(aids.length > 0 ? 'この復活の言葉は、もう使えません' : 'アカウントが見つかりませんでした');
@@ -57,7 +57,7 @@ try {
   if ((await rl.question('書き写したら、入れ替えるために yes と入力してください: ')).trim() !== 'yes') throw new Error('やめました');
 
   const at = Math.floor(Date.now() / 1000);
-  const { entry, event } = recoveryRotation(state, [deviceRecordFor(request, at)], { keys: fresh.map((w) => recoveryKey(w).pub), threshold }, keys.map((k) => k.sk), at, [request.publisher]);
+  const { entry, event } = recoveryRotation(state.aid, found.chain, [deviceRecordFor(request, at)], { keys: fresh.map((w) => recoveryKey(w).pub), threshold }, keys.map((k) => k.sk), at, [request.publisher]);
   if (!verifyRotation(state.aid, found.chain, entry, event.created_at)) throw new Error('入れ替えのイベントを確かめられませんでした');
   await relay.publish(event);
   console.log(`入れ替えました。新しい端末（${request.label}）の画面が自動で進みます。古い言葉の紙は捨ててください。`);

@@ -2,7 +2,7 @@ import { finalizeEvent, getPublicKey, type NostrEvent } from 'nostr-tools/pure';
 import { KIND } from '../events/kinds.js';
 import type { RelayClient } from '../relay/client.js';
 import type { Pubkey } from '../types.js';
-import { kelEventTemplate, parseKelEvent, seenOrder } from './event.js';
+import { kelEventTemplate, notInFuture, parseKelEvent, seenOrder } from './event.js';
 import {
   attestationTemplate,
   deviceId,
@@ -52,11 +52,14 @@ export function deviceRecordFor(r: DeviceRequest, at: number): DeviceRecord {
   return { id: deviceId(r.key), key: r.key, publisher: r.publisher, label: r.label, expiresAt: at + DEVICE_LIFETIME_SEC };
 }
 
-/** アカウントの KEL をリレーから集めて評価する（x タグと、分かった鍵の持ち主から） */
-export async function loadKel(relay: RelayClient, aid: string): Promise<{ state: KelState | null; chain: KelInput[] }> {
+/**
+ * アカウントの KEL をリレーから集めて評価する（x タグと、分かった鍵の持ち主から）。
+ * now より先の日時のイベントは使わない（その上に続けると、入れ替えの日時まで先になる）
+ */
+export async function loadKel(relay: RelayClient, aid: string, now: number): Promise<{ state: KelState | null; chain: KelInput[] }> {
   const holders = (s: KelState | null) => (s ? [...new Set([...s.next.keys, ...[...s.devices.values()].map((d) => d.record.publisher)])] : []);
   const evaluate = (events: NostrEvent[]) => {
-    const inputs = seenOrder(events)
+    const inputs = seenOrder(notInFuture(events, now))
       .map((e) => parseKelEvent(e))
       .filter((p) => p !== null && p.aid === aid)
       .map((p) => p!.input);
@@ -84,15 +87,23 @@ export async function findAccountsByNextKeys(relay: RelayClient, pubs: Pubkey[])
 /**
  * 次の鍵で入れ替えのイベント（rot）を作って署名する。devices は新しい端末だけになり、
  * それ以外の端末はすべて取り消される。next は新しい復活の言葉の公開鍵。
+ *
+ * rot は chain の最後の icp か rot の次に置き、そのあとの ixn をすべて上書きする。
+ * 盗まれた端末で同じ番号の ixn を出されていても、どちらを先に見た人にも同じ rot が通る
  */
 export function recoveryRotation(
-  state: KelState,
+  aid: string,
+  chain: KelInput[],
   devices: DeviceRecord[],
   next: NextKeys,
   signers: Uint8Array[],
   at: number,
   notify: Pubkey[] = [],
 ): { entry: KelEntry; event: NostrEvent } {
+  let last = chain.length - 1;
+  while (last >= 0 && chain[last]!.entry.body.t === 'ixn') last--;
+  const state = evaluateKel(aid, chain.slice(0, last + 1));
+  if (!state) throw new Error('アカウントの記録を確かめられませんでした');
   const pubs = signers.map((sk) => getPublicKey(sk));
   if (pubs.filter((p) => state.next.keys.includes(p)).length < state.next.threshold) {
     throw new Error('この復活の言葉では入れ替えられません（もう使えない言葉か、別のアカウントの言葉です）');

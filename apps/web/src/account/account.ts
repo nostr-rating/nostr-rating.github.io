@@ -14,6 +14,7 @@ import {
   kelEventTemplate,
   LocalSigner,
   newRecoveryWords,
+  notInFuture,
   parseKelEvent,
   recoveryKey,
   recoveryRotation,
@@ -116,9 +117,10 @@ function recordOf(d: StoredDevice, at: number): DeviceRecord {
 export { decodeDeviceRequest, encodeDeviceRequest } from '@nostr-rating/core';
 
 /** aid の KEL を集める（x タグと、分かっている鍵の持ち主から） */
-async function fetchKel(relay: RelayClient, aid: string, holders: Pubkey[]): Promise<NostrEvent[]> {
+/** 先の日時のイベントは使わない（その上に続けると、こちらの取り消しや延長の日時まで先になる） */
+async function fetchKel(relay: RelayClient, aid: string, holders: Pubkey[], now: number): Promise<NostrEvent[]> {
   const filters = [{ kinds: [KIND.kel], '#x': [aid] }, ...(holders.length > 0 ? [{ kinds: [KIND.kel], authors: holders }] : [])];
-  return (await relay.query(filters)).filter((e) => parseKelEvent(e)?.aid === aid);
+  return notInFuture(await relay.query(filters), now).filter((e) => parseKelEvent(e)?.aid === aid);
 }
 
 function holdersOf(state: KelState | null): Pubkey[] {
@@ -234,7 +236,7 @@ export class Account {
     const at = Math.max(this.now(), state.at);
     const words = Array.from({ length: cards }, () => newRecoveryWords());
     const devices = [...state.devices.values()].filter((d) => deviceValidAt(state, d.record.id, at)).map((d) => d.record);
-    const { entry, event } = recoveryRotation(state, devices, { keys: words.map((w) => recoveryKey(w).pub), threshold }, [recoveryKey(pending).sk], at);
+    const { entry, event } = recoveryRotation(this.aid, this.#data.kel, devices, { keys: words.map((w) => recoveryKey(w).pub), threshold }, [recoveryKey(pending).sk], at);
     if (!verifyRotation(this.aid, this.#data.kel, entry, event.created_at)) throw new Error('入れ替えのイベントを確かめられませんでした');
     await this.relay.publish(event);
     this.#data.kel = [...this.#data.kel, { entry, at: event.created_at }];
@@ -293,7 +295,7 @@ export class Account {
 
   /** リレーから自分の KEL を読み直す（ほかの端末での追加・取り消し、復活による入れ替え） */
   async refreshKel(): Promise<void> {
-    const events = await fetchKel(this.relay, this.aid, holdersOf(this.#state));
+    const events = await fetchKel(this.relay, this.aid, holdersOf(this.#state), this.now());
     const { state, chain } = evaluateWith(this.aid, this.#data.kel, events);
     this.#state = state;
     this.#data.kel = chain;
@@ -359,10 +361,10 @@ export class Account {
         const parsed = parseKelEvent(ev);
         if (!parsed || stopped) return;
         void (async () => {
-          const events = await fetchKel(relay, parsed.aid, [ev.pubkey]);
-          let { state, chain } = evaluateWith(parsed.aid, [], [...events, ev]);
+          const events = await fetchKel(relay, parsed.aid, [ev.pubkey], now());
+          let { state, chain } = evaluateWith(parsed.aid, [], [...events, ...notInFuture([ev], now())]);
           // 鍵の持ち主が分かったら、その分も取り直す
-          ({ state, chain } = evaluateWith(parsed.aid, [], [...events, ev, ...(await fetchKel(relay, parsed.aid, holdersOf(state)))]));
+          ({ state, chain } = evaluateWith(parsed.aid, [], [...events, ...notInFuture([ev], now()), ...(await fetchKel(relay, parsed.aid, holdersOf(state), now()))]));
           if (!state || !deviceValidAt(state, device.id, now()) || stopped) return;
           const data: StoredAccount = { aid: parsed.aid, device, kel: chain, pendingWords: null, knownDevices: [...state.devices.keys()], sessions: [] };
           await store.set(ACCOUNT, data);
