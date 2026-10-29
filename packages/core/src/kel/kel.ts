@@ -102,7 +102,21 @@ export function attestationTemplate(digest: string, createdAt: number) {
   return { kind: ATTESTATION_KIND, created_at: createdAt, tags: [] as string[][], content: digest };
 }
 
+/** 署名を確かめた結果の控え。結果は鍵・digest・署名だけで決まるので、同じ組は2回確かめない */
+const checked = new Map<string, boolean>();
+const CHECKED_MAX = 50_000;
+
 export function verifyKeySig(key: KeyRef, digest: string, sig: KelSig): boolean {
+  const k = `${key.type}:${key.pub}:${digest}:${'p256' in sig ? sig.p256 : `${sig.created_at}:${sig.sig}`}`;
+  const hit = checked.get(k);
+  if (hit !== undefined) return hit;
+  const ok = checkKeySig(key, digest, sig);
+  if (checked.size >= CHECKED_MAX) checked.delete(checked.keys().next().value!);
+  checked.set(k, ok);
+  return ok;
+}
+
+function checkKeySig(key: KeyRef, digest: string, sig: KelSig): boolean {
   try {
     if (key.type === 'p256') {
       if (!('p256' in sig)) return false;

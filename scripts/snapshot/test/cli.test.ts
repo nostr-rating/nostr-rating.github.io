@@ -9,6 +9,8 @@ import {
   buildReport,
   KIND,
   MemoryRelay,
+  serializeSnapshot,
+  sha256Hex,
   type Filter,
   type NostrEvent,
   type RelayClient,
@@ -140,6 +142,19 @@ describe('runSnapshot', () => {
     await expect(runSnapshot({ root, cutoff: T0 + 3 * DAY, relay })).rejects.toThrow(
       'sha256 mismatch: snapshots/smash_sp/season_1/2026-10-02.json does not match snapshots/smash_sp/latest.json',
     );
+  });
+
+  test('rejects a previous snapshot whose KEL signatures do not hold', async () => {
+    const relay = await relaysWith(await seededEvents());
+    const out = await runSnapshot({ root, cutoff: T0 + DAY, relay });
+    const snap = JSON.parse(read(out.path));
+    const [aid, kel] = Object.entries(snap.kels as Record<string, { entry: { sigs: { p256: string }[] } }[]>)[0]!;
+    const sig = kel[0]!.entry.sigs[0]!;
+    sig.p256 = sig.p256.replace(/^./, (c) => (c === '0' ? '1' : '0'));
+    const text = serializeSnapshot(snap);
+    writeFileSync(join(root, out.path), text);
+    writeFileSync(join(root, 'snapshots/smash_sp/latest.json'), `${JSON.stringify({ path: out.path, sha256: sha256Hex(text) }, null, 2)}\n`);
+    await expect(runSnapshot({ root, cutoff: T0 + 3 * DAY, relay })).rejects.toThrow(`recorded KEL does not verify: ${aid}`);
   });
 
   test('rejects a change of rating settings in the middle of a season', async () => {

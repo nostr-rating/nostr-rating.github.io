@@ -3,9 +3,8 @@ import type { NostrEvent } from 'nostr-tools/pure';
 import { parseMatch } from '../events/codec.js';
 import { APP_TAG, isValidEvent, KIND } from '../events/kinds.js';
 import type { GameDefinition } from '../game/definition.js';
-import { attributor, buildKelBook, type KelRecords } from '../kel/book.js';
+import { attributor, KelBook, type KelRecords } from '../kel/book.js';
 import { certOf, SESSION_LIFETIME_SEC, verifyCert, type SignedCert } from '../kel/cert.js';
-import type { KelState } from '../kel/kel.js';
 import type { Pubkey } from '../types.js';
 import { dedupeById, type RelayClient } from './client.js';
 
@@ -75,13 +74,6 @@ async function queryAll(relay: RelayClient, filter: Filter, pageSize: number, st
   return dedupeById(results.flat());
 }
 
-/** そのアカウントの鍵の持ち主（掲載用の鍵と、今の次の鍵） */
-function keyHolders(state: KelState): Pubkey[] {
-  const out = new Set<Pubkey>(state.next.keys);
-  for (const d of state.devices.values()) out.add(d.record.publisher);
-  return [...out];
-}
-
 /**
  * docs/adr/0008「検索をあふれさせる攻撃」。レート計算に必要なイベントを集める。
  *
@@ -124,18 +116,22 @@ export async function fetchRatingEvents(
   // 1. KEL と証明書のお知らせ。既知のアカウントは鍵の持ち主ごとに、新しいアカウントは #t から見つける
   const from = since - SESSION_LIFETIME_SEC;
   all.push(...(await queryAll(relay, { kinds: [KIND.kel, KIND.match], '#t': [APP_TAG], since: from, until }, pageSize, false)));
-  let book = buildKelBook(known, all, -Infinity, until);
+  // 1回の取得の中では同じ一覧にイベントを足していき、イベントが増えたアカウントだけを評価し直す
+  const book = new KelBook(known, -Infinity, until).add(all);
+  const pushed = (events: NostrEvent[]) => {
+    all.push(...events);
+    book.add(events);
+  };
   const visited = new Set<Pubkey>();
   // 2周目は、1周目で鍵が増えたアカウント（新しい端末・入れ替え）を取り直す
   for (let round = 0; round < 2; round++) {
-    for (const [aid, state] of book.states) {
-      const holders = keyHolders(state).filter((k) => !visited.has(`${aid}:${k}`));
+    for (const aid of book.aids()) {
+      const holders = book.holders(aid).filter((k) => !visited.has(`${aid}:${k}`));
       holders.forEach((k) => visited.add(`${aid}:${k}`));
       for (const authors of chunks(holders, CHUNK)) {
-        all.push(...(await perAccount(aid, { kinds: [KIND.kel, KIND.cert], authors, since: from, until })));
+        pushed(await perAccount(aid, { kinds: [KIND.kel, KIND.cert], authors, since: from, until }));
       }
     }
-    book = buildKelBook(known, all, -Infinity, until);
   }
 
   /** イベントが持ち歩く証明書のうち、まだ知らないアカウントの KEL を掲載用の鍵から探す（作成が昔でも見つかる） */
@@ -147,17 +143,15 @@ export async function fetchRatingEvents(
     }
     if (unknown.size === 0) return;
     for (const [publisher, aid] of unknown) {
-      all.push(...(await perAccount(aid, { kinds: [KIND.kel], authors: [publisher], until })));
+      pushed(await perAccount(aid, { kinds: [KIND.kel], authors: [publisher], until }));
     }
-    book = buildKelBook(known, all, -Infinity, until);
-    for (const [aid, state] of book.states) {
-      const holders = keyHolders(state).filter((k) => !visited.has(`${aid}:${k}`));
+    for (const aid of book.aids()) {
+      const holders = book.holders(aid).filter((k) => !visited.has(`${aid}:${k}`));
       holders.forEach((k) => visited.add(`${aid}:${k}`));
       for (const authors of chunks(holders, CHUNK)) {
-        all.push(...(await perAccount(aid, { kinds: [KIND.kel, KIND.cert], authors, until })));
+        pushed(await perAccount(aid, { kinds: [KIND.kel, KIND.cert], authors, until }));
       }
     }
-    book = buildKelBook(known, all, -Infinity, until);
   };
   await discoverFrom(all.filter((e) => e.kind === KIND.match));
 

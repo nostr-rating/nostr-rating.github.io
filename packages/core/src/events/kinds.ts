@@ -43,28 +43,34 @@ export function tagValues(ev: NostrEvent, name: string): string[] {
   return ev.tags.filter((t) => t[0] === name && t[1] !== undefined).map((t) => t[1]!);
 }
 
-/** 署名を確かめたイベント → そのときの id:sig。Schnorr の検証は重いので、同じオブジェクトは2回目から省く */
-const verified = new WeakMap<object, string>();
+/**
+ * 署名を確かめた結果の控え（id:pubkey:sig → 結果）。Schnorr の検証は重く、同じイベントが問い合わせのたびに
+ * 別のオブジェクトとして届くので、オブジェクトではなく id と署名で覚える
+ */
+const verified = new Map<string, boolean>();
+const VERIFIED_MAX = 50_000;
 
 /**
  * 署名を必ず検証し直す。nostr-tools は検証済みの印をシンボルで持つため、
  * スプレッドで書き換えたイベントも「検証済み」と扱われてしまう。
- * 一度確かめたオブジェクトは、id の計算（安い sha256）だけで書き換えがないことを確かめる。
+ * 一度確かめた id と署名の組は、id の計算（安い sha256）だけで中身が id と合うことを確かめる。
  */
 export function isValidEvent(ev: unknown): ev is NostrEvent {
   if (typeof ev !== 'object' || ev === null) return false;
   const e = ev as NostrEvent;
   if (!Array.isArray(e.tags) || typeof e.content !== 'string') return false;
-  const cached = verified.get(e);
+  const key = `${e.id}:${e.pubkey}:${e.sig}`;
+  const cached = verified.get(key);
   if (cached !== undefined) {
     try {
-      return cached === `${e.id}:${e.sig}` && getEventHash(e) === e.id;
+      return cached && getEventHash(e) === e.id;
     } catch {
       return false;
     }
   }
+  let ok: boolean;
   try {
-    const ok = verifyEvent({
+    ok = verifyEvent({
       id: e.id,
       pubkey: e.pubkey,
       created_at: e.created_at,
@@ -73,10 +79,22 @@ export function isValidEvent(ev: unknown): ev is NostrEvent {
       content: e.content,
       sig: e.sig,
     });
-    if (ok) verified.set(e, `${e.id}:${e.sig}`);
-    return ok;
   } catch {
-    return false;
+    ok = false;
+  }
+  // 中身が id と合わないものは、同じ id と署名の正しい中身を後から受け付けられるように覚えない
+  if (ok || safeHash(e) === e.id) {
+    if (verified.size >= VERIFIED_MAX) verified.delete(verified.keys().next().value!);
+    verified.set(key, ok);
+  }
+  return ok;
+}
+
+function safeHash(e: NostrEvent): string | null {
+  try {
+    return getEventHash(e);
+  } catch {
+    return null;
   }
 }
 

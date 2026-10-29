@@ -1,10 +1,10 @@
 import {
   attributor,
-  buildKelBook,
+  KelBook,
   certOf,
   KIND,
   type KelRecords,
-  type KelState,
+  type KelStates,
   type NostrEvent,
   type Pubkey,
   type RelayClient,
@@ -17,10 +17,9 @@ const RETRY_MS = 60_000;
  * x タグから KEL を探して覚える。スナップショットに記録済みの KEL を「先に見た版」にする。
  */
 export class Resolver {
-  #known: KelRecords = {};
   #extra: NostrEvent[] = [];
-  #states = new Map<string, KelState>();
-  #author = attributor(this.#states);
+  #book = new KelBook({}, -Infinity, Infinity);
+  #author = attributor(this.#book.states);
   /** 探した時刻。見つからなかったアカウントは RETRY_MS たってから探し直す */
   #looked = new Map<string, number>();
   #inflight = new Map<string, Promise<void>>();
@@ -29,17 +28,12 @@ export class Resolver {
 
   /** スナップショットと手元の計算で分かっている KEL を入れ直す */
   setKnown(records: KelRecords): void {
-    this.#known = records;
-    this.#rebuild();
+    this.#book = new KelBook(records, -Infinity, Infinity).add(this.#extra);
+    this.#author = attributor(this.#book.states);
   }
 
-  get states(): Map<string, KelState> {
-    return this.#states;
-  }
-
-  #rebuild(): void {
-    this.#states = buildKelBook(this.#known, this.#extra, -Infinity, Infinity).states;
-    this.#author = attributor(this.#states);
+  get states(): KelStates {
+    return this.#book.states;
   }
 
   /** すでに分かっている KEL だけで結び付ける */
@@ -50,7 +44,7 @@ export class Resolver {
     const now = this.#author(ev);
     if (now) return now;
     const c = certOf(ev);
-    if (!c?.cert || this.#states.has(c.cert.aid)) return null;
+    if (!c?.cert || this.#book.states.has(c.cert.aid)) return null;
     // 同じアカウントを同時に調べているときは、その結果を待つ
     const pending = this.#inflight.get(c.cert.aid);
     if (pending) {
@@ -62,8 +56,10 @@ export class Resolver {
     this.#looked.set(c.cert.aid, Date.now());
     const filters = [{ kinds: [KIND.kel], '#x': [c.cert.aid] }, ...(typeof c.cert.publisher === 'string' ? [{ kinds: [KIND.kel], authors: [c.cert.publisher] }] : [])];
     const lookup = this.relay.query(filters).then((evs) => {
+      // 増えたアカウントの分だけを評価し直す。結び付けの控えは、知らなかったアカウントの分が変わるので作り直す
       this.#extra.push(...evs);
-      this.#rebuild();
+      this.#book.add(evs);
+      this.#author = attributor(this.#book.states);
     });
     this.#inflight.set(c.cert.aid, lookup);
     try {
