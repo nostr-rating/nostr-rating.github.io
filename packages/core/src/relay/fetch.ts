@@ -10,7 +10,7 @@ import type { Pubkey } from '../types.js';
 import { dedupeById, type RelayClient } from './client.js';
 
 /** 多くのリレーが1回に返す件数の上限より小さくしておく */
-const DEFAULT_PAGE_SIZE = 300;
+export const RATING_PAGE_SIZE = 300;
 /** authors / ids / #e に一度に並べる数（大きいとリレーに拒否される） */
 const CHUNK = 100;
 
@@ -96,7 +96,7 @@ export async function fetchRatingEvents(
   until: number,
   opts: FetchOptions = {},
 ): Promise<FetchResult> {
-  const pageSize = opts.pageSize ?? DEFAULT_PAGE_SIZE;
+  const pageSize = opts.pageSize ?? RATING_PAGE_SIZE;
   const strict = opts.strict ?? false;
   const incomplete = new Set<Pubkey>();
   const all: NostrEvent[] = [];

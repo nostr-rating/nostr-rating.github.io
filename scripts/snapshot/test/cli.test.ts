@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
@@ -85,6 +85,15 @@ describe('runSnapshot', () => {
     expect(read(out.path)).toBe(readFileSync(join(FIXTURES, 'snapshot.json'), 'utf8'));
     expect(read('snapshots/smash_sp/season_1/2026-10-02.ids.txt')).toBe(readFileSync(join(FIXTURES, 'snapshot.ids.txt'), 'utf8'));
     expect(read('snapshots/smash_sp/latest.json')).toBe(readFileSync(join(FIXTURES, 'latest.json'), 'utf8'));
+  });
+
+  test('a relay that could not answer stops the snapshot without writing anything', async () => {
+    const inner = await relaysWith(await seededEvents());
+    let calls = 0;
+    // 途中の問い合わせで失敗する（それまでの問い合わせは答えている）
+    const flaky: RelayClient = { ...inner, query: async (f) => (++calls === 5 ? Promise.reject(new Error('wss://r.example: no EOSE within 10000ms')) : inner.query(f)) };
+    await expect(runSnapshot({ root, cutoff: T0 + DAY, relay: flaky })).rejects.toThrow('wss://r.example: no EOSE within 10000ms');
+    expect(existsSync(join(root, 'snapshots'))).toBe(false);
   });
 
   test('result does not depend on the order relays return events', async () => {
