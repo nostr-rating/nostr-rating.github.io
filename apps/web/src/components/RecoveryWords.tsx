@@ -18,18 +18,19 @@ function pickChecks(cards: number): { card: number; pos: number }[] {
 
 /**
  * 復活の言葉の表示と、書き写したかの確認（ヘルプ「はじめかた」）。
- * words は1枚ずつ改行で区切る。onSplit を渡すと、1枚の言葉を3枚に分けられる
+ * words は1枚ずつ改行で区切る。onSplit を渡すと、1枚の言葉を3枚に分けられる。
+ * onSkip を渡すと、書き写さずに始められる。onConfirmed と onSkip が失敗したら、その画面のままエラーを出す
  */
 export function RecoveryWords({
   words,
   onConfirmed,
-  onLater,
   onSplit,
+  onSkip,
 }: {
   words: string;
-  onConfirmed(): void;
-  onLater?(): void;
-  onSplit?(): Promise<void>;
+  onConfirmed(): Promise<void> | void;
+  onSplit?(): void;
+  onSkip?(): Promise<void>;
 }) {
   const cards = words.split('\n').map((c) => c.split(' '));
   const [card, setCard] = useState(0);
@@ -41,23 +42,27 @@ export function RecoveryWords({
   const [error, setError] = useState<string | null>(null);
   const many = cards.length > 1;
 
-  const submit = () => {
-    const ok = checks.every((c, i) => answers[i]!.trim().toLowerCase() === cards[c.card]![c.pos]);
-    setWrong(!ok);
-    if (ok) onConfirmed();
-  };
-
-  const split = async () => {
+  const run = async (action: () => Promise<void> | void) => {
     setBusy(true);
     setError(null);
     try {
-      await onSplit!();
-      setCard(0);
+      await action();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
+  };
+
+  const submit = async () => {
+    const ok = checks.every((c, i) => answers[i]!.trim().toLowerCase() === cards[c.card]![c.pos]);
+    setWrong(!ok);
+    if (ok) await run(onConfirmed);
+  };
+
+  const split = () => {
+    onSplit!();
+    setCard(0);
   };
 
   if (!checking) {
@@ -80,21 +85,26 @@ export function RecoveryWords({
             <li key={i}>{w}</li>
           ))}
         </ol>
-        <button type="button" className="primary wide" disabled={busy} onClick={() => (card + 1 < cards.length ? setCard(card + 1) : setChecking(true))}>
+        <button type="button" className="primary wide" onClick={() => (card + 1 < cards.length ? setCard(card + 1) : setChecking(true))}>
           {card + 1 < cards.length ? `${card + 1}枚目を書き写した` : '書き写した'}
         </button>
         {!many && onSplit && (
           <div className="field">
-            <button type="button" className="wide" disabled={busy} onClick={() => void split()}>
+            <button type="button" className="wide" onClick={split}>
               3枚に分けて保管する
             </button>
             <p className="hint">分散させて保管したい場合に有効です。3枚のうち2枚があれば復元できる状態となります。</p>
           </div>
         )}
-        {onLater && (
-          <button type="button" className="text" disabled={busy} onClick={onLater}>
-            あとで書く
-          </button>
+        {!many && onSkip && (
+          <div className="field">
+            <button type="button" className="wide" disabled={busy} onClick={() => void run(onSkip)}>
+              書き写さずに始める
+            </button>
+            <p className="notice" data-testid="skip-hint">
+              <span>書き写さずに始めると、端末を全部失くしたときにアカウントを復元できません。</span>
+            </p>
+          </div>
         )}
         {error && (
           <Dock>
@@ -121,12 +131,13 @@ export function RecoveryWords({
       <p className="slot error" role="alert">
         {wrong ? '違う単語があります。紙を見直してください。' : ''}
       </p>
-      <button type="button" className="primary wide" onClick={submit}>
-        確かめる
+      <button type="button" className="primary wide" disabled={busy} onClick={() => void submit()}>
+        {busy ? '作成中…' : '確かめる'}
       </button>
       <button
         type="button"
         className="text"
+        disabled={busy}
         onClick={() => {
           setChecking(false);
           setCard(0);
@@ -134,6 +145,11 @@ export function RecoveryWords({
       >
         単語をもう一度見る
       </button>
+      {error && (
+        <Dock>
+          <p className="notice bad" role="alert">{error}</p>
+        </Dock>
+      )}
     </div>
   );
 }

@@ -1,7 +1,6 @@
 import { buildSettings, parseSettings, validateStageBans, validRoomPassword, banGroupKey, type StageBans, type StageId } from '@nostr-rating/core';
 import { useEffect, useState } from 'react';
 import { Devices } from '../components/Devices.js';
-import { RecoveryWords } from '../components/RecoveryWords.js';
 import { currentOverrides, defaultRoomPassword, saveDefaultRoomPassword, saveOverrides } from '../services/config.js';
 import { recoveryLink } from '../recoveryLink.js';
 import { useApp } from '../state/AppContext.js';
@@ -184,13 +183,6 @@ export function Settings() {
           )}
         </p>
       </div>
-
-      {app.pendingWords && (
-        <div className="card">
-          <h2>復活の言葉</h2>
-          <RecoveryWords key={app.pendingWords} words={app.pendingWords} onConfirmed={() => void app.confirmWords()} onSplit={app.splitWords} />
-        </div>
-      )}
 
       <details className="card">
         <summary>詳細設定</summary>

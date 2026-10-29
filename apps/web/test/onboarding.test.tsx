@@ -6,7 +6,7 @@ import { Account, memoryKeyStore } from '../src/account/account.js';
 import { App } from '../src/App.js';
 import { Onboarding } from '../src/pages/Onboarding.js';
 import { Settings } from '../src/pages/Settings.js';
-import { makeDeps, newPlayer, renderWithApp } from './helpers.js';
+import { confirmWords, makeDeps, newPlayer, renderWithApp } from './helpers.js';
 
 const realNow = () => Math.floor(Date.now() / 1000);
 
@@ -14,20 +14,6 @@ beforeEach(() => {
   location.hash = '#/onboarding';
 });
 afterEach(cleanup);
-
-/** 表示された12語から、確認で聞かれた番号の単語を入れる */
-async function confirmWords(user: ReturnType<typeof userEvent.setup>) {
-  const words = within(await screen.findByTestId('recovery-words'))
-    .getAllByRole('listitem')
-    .map((li) => li.textContent ?? '');
-  expect(words).toHaveLength(12);
-  await user.click(screen.getByRole('button', { name: '書き写した' }));
-  for (const input of await screen.findAllByLabelText(/番目/)) {
-    const n = Number((input.closest('label')?.textContent ?? '').match(/(\d+)番目/)![1]);
-    await user.type(input, words[n - 1]!);
-  }
-  await user.click(screen.getByRole('button', { name: '確かめる' }));
-}
 
 describe('Onboarding', () => {
   test('creates an account, confirms the recovery words, publishes the name and a GitHub link', async () => {
@@ -56,8 +42,8 @@ describe('Onboarding', () => {
     expect(all.filter((e) => e.kind === KIND.kel).map((e) => parseKelEvent(e)?.aid)).toEqual([aid]);
     const info = all.filter((e) => e.kind === KIND.account).sort((a, b) => b.created_at - a.created_at)[0]!;
     expect(JSON.parse(info.content)).toEqual({ name: 'アリス', claims: [{ platform: 'github', identity: 'alice', proof: 'abc123' }] });
-    // 復活の言葉は確かめたら端末から消える
-    expect((await deps.keyStore.get<{ pendingWords: string | null }>('account'))!.pendingWords).toBeNull();
+    // 復活の言葉は端末に残さない
+    expect(Object.keys((await deps.keyStore.get<object>('account'))!).sort()).toEqual(['aid', 'device', 'kel', 'knownDevices', 'sessions']);
   });
 
   test('an X post is verified through oEmbed', async () => {
@@ -65,7 +51,7 @@ describe('Onboarding', () => {
     const routes: Record<string, unknown> = {};
     renderWithApp(<Onboarding />, { deps: makeDeps({ routes, now: realNow }) });
     await user.click(screen.getByRole('button', { name: 'この端末で始める' }));
-    await user.click(await screen.findByRole('button', { name: 'あとで書く' }));
+    await confirmWords(user);
     await user.type(await screen.findByLabelText('表示名'), 'ボブ');
     await waitFor(() => expect((screen.getByRole('button', { name: '次へ' }) as HTMLButtonElement).disabled).toBe(false));
     await user.click(screen.getByRole('button', { name: '次へ' }));
@@ -79,14 +65,49 @@ describe('Onboarding', () => {
     expect(await screen.findByText('確認済み')).toBeTruthy();
   });
 
-  test('putting off the recovery words keeps them on the device until confirmed', async () => {
+  test('nothing is published or kept on the device until the words are written down', async () => {
     const user = userEvent.setup();
     const deps = makeDeps({ now: realNow });
     renderWithApp(<Onboarding />, { deps });
     await user.click(screen.getByRole('button', { name: 'この端末で始める' }));
-    await user.click(await screen.findByRole('button', { name: 'あとで書く' }));
+    await screen.findByTestId('recovery-words');
+    expect(screen.queryByRole('button', { name: 'あとで書く' })).toBeNull();
+    expect((deps.relay as MemoryRelay).all()).toEqual([]);
+    expect(await deps.keyStore.get('account')).toBeUndefined();
+  });
+
+  test('starting without writing the words down asks first, because the account cannot be restored', async () => {
+    const user = userEvent.setup();
+    const deps = makeDeps({ now: realNow });
+    renderWithApp(<Onboarding />, { deps });
+    await user.click(screen.getByRole('button', { name: 'この端末で始める' }));
+    expect(screen.getByTestId('skip-hint').textContent).toBe('書き写さずに始めると、端末を全部失くしたときにアカウントを復元できません。');
+    const asked: string[] = [];
+    let answer = false;
+    vi.spyOn(window, 'confirm').mockImplementation((m) => (asked.push(m ?? ''), answer));
+    await user.click(screen.getByRole('button', { name: '書き写さずに始める' }));
+    expect(await deps.keyStore.get('account')).toBeUndefined();
+    answer = true;
+    await user.click(screen.getByRole('button', { name: '書き写さずに始める' }));
     expect(await screen.findByLabelText('表示名')).toBeTruthy();
-    expect((await deps.keyStore.get<{ pendingWords: string | null }>('account'))!.pendingWords?.split(' ')).toHaveLength(12);
+    expect(asked).toEqual(Array(2).fill('復活の言葉を書き写さずに始めますか？端末を全部失くすと、このアカウントは復元できません。'));
+    expect(Object.keys((await deps.keyStore.get<object>('account'))!).sort()).toEqual(['aid', 'device', 'kel', 'knownDevices', 'sessions']);
+    vi.restoreAllMocks();
+  });
+
+  test('when the account cannot be published, the check stays on screen with the error', async () => {
+    const user = userEvent.setup();
+    const relay = new MemoryRelay(realNow);
+    relay.publish = async () => {
+      throw new Error('offline');
+    };
+    const deps = makeDeps({ relay, now: realNow });
+    renderWithApp(<Onboarding />, { deps });
+    await user.click(screen.getByRole('button', { name: 'この端末で始める' }));
+    await confirmWords(user);
+    expect((await screen.findByText('始められませんでした。電波のよい場所でもう一度押してください。')).getAttribute('role')).toBe('alert');
+    expect(screen.getByRole('button', { name: '確かめる' })).toBeTruthy();
+    expect(await deps.keyStore.get('account')).toBeUndefined();
   });
 
   test('splitting the words into three cards needs two of them to recover', async () => {
@@ -107,11 +128,11 @@ describe('Onboarding', () => {
     }
     await user.click(screen.getByRole('button', { name: '確かめる' }));
     expect(await screen.findByLabelText('表示名')).toBeTruthy();
-    const stored = (await deps.keyStore.get<{ pendingWords: string | null; kel: { entry: { body: { t: string; next: { keys: string[]; threshold: number } } } }[] }>('account'))!;
-    expect(stored.pendingWords).toBeNull();
-    const rot = stored.kel[stored.kel.length - 1]!.entry.body;
-    expect([rot.t, rot.next.keys.length, rot.next.threshold]).toEqual(['rot', 3, 2]);
-    expect(rot.next.keys).toEqual(cards.map((w) => recoveryKey(w.join(' ')).pub));
+    // 作成の宣言の次の鍵が、はじめから3枚（2枚で戻せる）になる
+    const stored = (await deps.keyStore.get<{ kel: { entry: { body: { t: string; next: { keys: string[]; threshold: number } } } }[] }>('account'))!;
+    const icp = stored.kel.map((k) => k.entry.body);
+    expect(icp.map((b) => [b.t, b.next.keys.length, b.next.threshold])).toEqual([['icp', 3, 2]]);
+    expect(icp[0]!.next.keys).toEqual(cards.map((w) => recoveryKey(w.join(' ')).pub));
   });
 
   test('a second device is registered by pasting its request on an existing device', async () => {
@@ -203,10 +224,10 @@ describe('Settings', () => {
 });
 
 describe('Onboarding: going back', () => {
-  /** 始めて、言葉をあとに回し、表示名の手順まで進める */
+  /** 始めて、言葉を書き写し、表示名の手順まで進める */
   async function toNameStep(user: ReturnType<typeof userEvent.setup>) {
     await user.click(screen.getByRole('button', { name: 'この端末で始める' }));
-    await user.click(await screen.findByRole('button', { name: 'あとで書く' }));
+    await confirmWords(user);
     return screen.findByLabelText('表示名');
   }
 

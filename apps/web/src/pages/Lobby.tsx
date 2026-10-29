@@ -167,13 +167,6 @@ export function Lobby() {
 
   return (
     <section>
-      {app.pendingWords && (
-        <p className="notice">
-          <span>
-            復活の言葉をまだ書き写していません。端末を全部失くしたときに戻せるよう、<a href="#/settings">設定画面</a>から書き写してください。
-          </span>
-        </p>
-      )}
       <div className="card">
         <p className="meta">
           <span>{me ? displayName(app, me) : ''}</span>

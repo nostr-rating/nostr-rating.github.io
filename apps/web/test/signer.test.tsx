@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { Onboarding } from '../src/pages/Onboarding.js';
-import { makeDeps, renderWithApp } from './helpers.js';
+import { confirmWords, makeDeps, renderWithApp } from './helpers.js';
 
 const realNow = () => Math.floor(Date.now() / 1000);
 
@@ -32,7 +32,7 @@ describe('a signer app as the device key', () => {
     renderWithApp(<Onboarding />, { deps: makeDeps({ relay, now: realNow }) });
     await user.click(screen.getByText('署名アプリを使う（Nostr に詳しい人向け）'));
     await user.click(screen.getByRole('button', { name: 'ブラウザ拡張（NIP-07）で始める' }));
-    await user.click(await screen.findByRole('button', { name: 'あとで書く' }));
+    await confirmWords(user);
     await user.type(await screen.findByLabelText('表示名'), 'ナナ');
     await waitFor(() => expect((screen.getByRole('button', { name: '次へ' }) as HTMLButtonElement).disabled).toBe(false));
     await user.click(screen.getByRole('button', { name: '次へ' }));

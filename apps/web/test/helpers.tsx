@@ -1,6 +1,7 @@
 import {
   initialState,
   MemoryRelay,
+  newRecoveryWords,
   parseGameDefinition,
   serializeSnapshot,
   sha256Hex,
@@ -14,7 +15,9 @@ import {
   type IdentityClaim,
   type RelayClient,
 } from '@nostr-rating/core';
-import { render } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import type userEvent from '@testing-library/user-event';
+import { expect } from 'vitest';
 import type { ReactNode } from 'react';
 import rawDef from '../../../configs/smash_sp.json';
 import rawChess from '../../../configs/chess.json';
@@ -69,15 +72,15 @@ export function makeDeps(o: { relay?: MemoryRelay; routes?: Record<string, unkno
 export async function newPlayer(
   relay: RelayClient,
   now: () => number,
-  o: { name?: string; claims?: IdentityClaim[]; keepWords?: boolean } = {},
+  o: { name?: string; claims?: IdentityClaim[] } = {},
 ) {
   const keyStore = memoryKeyStore();
   // 1時間前に作ったことにする（テストは少し前の時刻のイベントを作るので、証明書の開始をそれより前にする）
   let offset = 3600;
   const clock = () => now() - offset;
-  const { account, words } = await Account.create(keyStore, relay, clock, 'テスト端末');
+  const words = newRecoveryWords();
+  const account = await Account.create(keyStore, relay, clock, 'テスト端末', { cards: [words], threshold: 1 });
   offset = 0;
-  if (!o.keepWords) await account.confirmWords();
   const session = await account.session();
   if (o.claims || o.name) {
     await relay.publish(await session.signer.signEvent(buildAccountInfo({ pubkey: account.aid, name: o.name ?? '', claims: o.claims ?? [] }, now())));
@@ -114,4 +117,18 @@ export async function matchBetween(
   );
   for (const e of [setA, setB, app, mev]) await relay.publish(e);
   return parseMatch(game, mev, a.aid)!;
+}
+
+/** 表示された12語から、確認で聞かれた番号の単語を入れる */
+export async function confirmWords(user: ReturnType<typeof userEvent.setup>) {
+  const words = within(await screen.findByTestId('recovery-words'))
+    .getAllByRole('listitem')
+    .map((li) => li.textContent ?? '');
+  expect(words).toHaveLength(12);
+  await user.click(screen.getByRole('button', { name: '書き写した' }));
+  for (const input of await screen.findAllByLabelText(/番目/)) {
+    const n = Number((input.closest('label')?.textContent ?? '').match(/(\d+)番目/)![1]);
+    await user.type(input, words[n - 1]!);
+  }
+  await user.click(screen.getByRole('button', { name: '確かめる' }));
 }

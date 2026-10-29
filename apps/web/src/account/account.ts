@@ -13,13 +13,10 @@ import {
   APP_TAG,
   kelEventTemplate,
   LocalSigner,
-  newRecoveryWords,
   notInFuture,
   parseKelEvent,
   recoveryKey,
-  recoveryRotation,
   seenOrder,
-  verifyRotation,
   SESSION_LIFETIME_SEC,
   signAs,
   type DeviceRecord,
@@ -73,8 +70,6 @@ interface StoredAccount {
   device: StoredDevice;
   /** 手元で見た KEL（sn の順） */
   kel: KelInput[];
-  /** まだ書き写したと確かめていない復活の言葉。分けたときは1枚ずつ改行で区切る。確かめたら消す */
-  pendingWords: string | null;
   /** 利用者が知っている端末（知らない端末が増えたら知らせる） */
   knownDevices: string[];
   sessions: StoredSession[];
@@ -164,24 +159,28 @@ export class Account {
     return data ? new Account(store, data, relay, now) : null;
   }
 
-  /** 「この端末で始める」。端末の鍵と復活の言葉を作り、作成の宣言を載せる */
+  /**
+   * 「この端末で始める」。端末の鍵を作り、書き写したと確かめた復活の言葉を次の鍵にして作成の宣言を載せる。
+   * 言葉は端末に残さない（配信される JavaScript をすり替えられたときに読まれ、取り返せない乗っ取りになるため）
+   */
   static async create(
     store: KeyStore,
     relay: RelayClient,
     now: () => number,
     label: string,
+    recovery: { cards: string[]; threshold: number },
     external?: ExternalDevice,
-  ): Promise<{ account: Account; words: string }> {
+  ): Promise<Account> {
     const at = now();
     const device = await createDevice(label, external);
-    const words = newRecoveryWords();
-    const body: IcpBody = { v: 1, t: 'icp', sn: 0, devices: [recordOf(device, at)], next: { keys: [recoveryKey(words).pub], threshold: 1 }, nonce: bytesToHex(generateSecretKey()).slice(0, 16) };
+    const next = { keys: recovery.cards.map((w) => recoveryKey(w).pub), threshold: recovery.threshold };
+    const body: IcpBody = { v: 1, t: 'icp', sn: 0, devices: [recordOf(device, at)], next, nonce: bytesToHex(generateSecretKey()).slice(0, 16) };
     const aid = digestOf(body);
     const entry: KelEntry = { body, sigs: [await signDigest(device, aid)] };
     await relay.publish(finalizeEvent(kelEventTemplate(entry, at), hexToBytes(device.publisherSk)));
-    const data: StoredAccount = { aid, device, kel: [{ entry, at }], pendingWords: words, knownDevices: [device.id], sessions: [] };
+    const data: StoredAccount = { aid, device, kel: [{ entry, at }], knownDevices: [device.id], sessions: [] };
     await store.set(ACCOUNT, data);
-    return { account: new Account(store, data, relay, now), words };
+    return new Account(store, data, relay, now);
   }
 
   get aid(): string {
@@ -200,10 +199,6 @@ export class Account {
     return this.#state;
   }
 
-  get pendingWords(): string | null {
-    return this.#data.pendingWords;
-  }
-
   /** この端末が今も有効か（取り消された・期限が切れた・放棄した） */
   get active(): boolean {
     return !!this.#state && !this.#state.abandoned && deviceValidAt(this.#state, this.deviceId, this.now());
@@ -220,35 +215,6 @@ export class Account {
 
   async acknowledgeDevices(): Promise<void> {
     this.#data.knownDevices = [...new Set([...this.#data.knownDevices, ...this.unknownDevices.map((d) => d.id)])];
-    await this.#save();
-  }
-
-  /**
-   * まだ端末に残っている復活の言葉で入れ替えて、言葉を3枚に分ける（2枚あれば戻せる）。
-   * 端末はそのまま残す。書き写したと確かめる前だけできる
-   */
-  async splitWords(cards = 3, threshold = 2): Promise<string[]> {
-    const pending = this.#data.pendingWords;
-    if (!pending || pending.includes('\n')) throw new Error('書き写す前の1枚の言葉がありません');
-    await this.refreshKel();
-    const state = this.#state;
-    if (!state || !this.active) throw new Error('この端末は登録が切れています');
-    const at = Math.max(this.now(), state.at);
-    const words = Array.from({ length: cards }, () => newRecoveryWords());
-    const devices = [...state.devices.values()].filter((d) => deviceValidAt(state, d.record.id, at)).map((d) => d.record);
-    const { entry, event } = recoveryRotation(this.aid, this.#data.kel, devices, { keys: words.map((w) => recoveryKey(w).pub), threshold }, [recoveryKey(pending).sk], at);
-    if (!verifyRotation(this.aid, this.#data.kel, entry, event.created_at)) throw new Error('入れ替えのイベントを確かめられませんでした');
-    await this.relay.publish(event);
-    this.#data.kel = [...this.#data.kel, { entry, at: event.created_at }];
-    this.#state = evaluateKel(this.aid, this.#data.kel);
-    this.#data.pendingWords = words.join('\n');
-    await this.#save();
-    return words;
-  }
-
-  /** 書き写したと確かめたら、端末から復活の言葉を消す */
-  async confirmWords(): Promise<void> {
-    this.#data.pendingWords = null;
     await this.#save();
   }
 
@@ -366,7 +332,7 @@ export class Account {
           // 鍵の持ち主が分かったら、その分も取り直す
           ({ state, chain } = evaluateWith(parsed.aid, [], [...events, ...notInFuture([ev], now()), ...(await fetchKel(relay, parsed.aid, holdersOf(state), now()))]));
           if (!state || !deviceValidAt(state, device.id, now()) || stopped) return;
-          const data: StoredAccount = { aid: parsed.aid, device, kel: chain, pendingWords: null, knownDevices: [...state.devices.keys()], sessions: [] };
+          const data: StoredAccount = { aid: parsed.aid, device, kel: chain, knownDevices: [...state.devices.keys()], sessions: [] };
           await store.set(ACCOUNT, data);
           await store.delete(PENDING_DEVICE);
           stopped = true;

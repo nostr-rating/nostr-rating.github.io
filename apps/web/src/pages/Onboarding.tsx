@@ -1,6 +1,7 @@
 import {
   buildAccountInfo,
   KIND,
+  newRecoveryWords,
   parseAccountInfo,
   parseProofUrl,
   verificationText,
@@ -34,7 +35,10 @@ function defaultDeviceLabel(): string {
 export function Onboarding() {
   const app = useApp();
   const [step, setStep] = useState<Step>(app.account ? 'checking' : 'start');
+  /** 書き写している復活の言葉（1枚ずつ改行で区切る）。端末には保存せず、確かめてからアカウントを作る */
   const [words, setWords] = useState<string | null>(null);
+  /** 作るアカウントの端末の名前と、端末の鍵に使う署名アプリ */
+  const [device, setDevice] = useState<{ label: string; external?: ExternalDevice } | null>(null);
   const [requestCode, setRequestCode] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [claims, setClaims] = useState<IdentityClaim[]>([]);
@@ -112,15 +116,24 @@ export function Onboarding() {
     try {
       const external = kind ? await connect(kind) : undefined;
       if (external === null) return;
-      const { account, words } = await Account.create(app.keyStore, app.relay, app.now, kind ? `署名アプリ（${kind === 'nip07' ? 'NIP-07' : 'NIP-46'}）` : label, external);
-      await app.setAccount(account);
-      setWords(words);
+      setDevice({ label: kind ? `署名アプリ（${kind === 'nip07' ? 'NIP-07' : 'NIP-46'}）` : label, external });
+      setWords(newRecoveryWords());
       setStep('words');
-    } catch {
-      setError('始められませんでした。電波のよい場所でもう一度押してください。');
     } finally {
       setBusy(false);
     }
+  };
+
+  /** 書き写したと確かめたら、その言葉を次の鍵にしてアカウントを作る */
+  const create = async () => {
+    const cards = words!.split('\n');
+    try {
+      const account = await Account.create(app.keyStore, app.relay, app.now, device!.label, { cards, threshold: cards.length > 1 ? 2 : 1 }, device!.external);
+      await app.setAccount(account);
+    } catch {
+      throw new Error('始められませんでした。電波のよい場所でもう一度押してください。');
+    }
+    setStep('name');
   };
 
   /** この端末のアカウントを消して、最初の手順に戻る。リレーに出した KEL は残るが、表示名と紐づけがなければどこにも載らない */
@@ -129,6 +142,7 @@ export function Onboarding() {
     await Account.forget(app.keyStore);
     await app.setAccount(null);
     setWords(null);
+    setDevice(null);
     setName('');
     setClaims([]);
     setUrl('');
@@ -229,11 +243,13 @@ export function Onboarding() {
         <div className="card">
           <h2>復活の言葉</h2>
           <RecoveryWords
-            key={app.pendingWords ?? words}
-            words={app.pendingWords ?? words}
-            onConfirmed={() => void app.confirmWords().then(() => setStep('name'))}
-            onLater={() => setStep('name')}
-            onSplit={app.splitWords}
+            key={words}
+            words={words}
+            onConfirmed={create}
+            onSplit={() => setWords(Array.from({ length: 3 }, () => newRecoveryWords()).join('\n'))}
+            onSkip={async () => {
+              if (window.confirm('復活の言葉を書き写さずに始めますか？端末を全部失くすと、このアカウントは復元できません。')) await create();
+            }}
           />
         </div>
       )}

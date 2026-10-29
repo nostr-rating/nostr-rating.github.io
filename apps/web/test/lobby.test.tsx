@@ -11,8 +11,8 @@ afterEach(cleanup);
 
 const realNow = () => Math.floor(Date.now() / 1000);
 
-const userWithIdentity = async (relay: MemoryRelay, now = realNow, keepWords = false) =>
-  (await newPlayer(relay, now, { name: 'u', claims: [{ platform: 'github', identity: 'u', proof: 'abc' }], keepWords })).account;
+const userWithIdentity = async (relay: MemoryRelay, now = realNow) =>
+  (await newPlayer(relay, now, { name: 'u', claims: [{ platform: 'github', identity: 'u', proof: 'abc' }] })).account;
 
 describe('Lobby', () => {
   test('two lobbies on the same relay end up in the same match room', async () => {
@@ -58,16 +58,6 @@ describe('Lobby', () => {
     expect(screen.getByText('対戦するには X か GitHub の紐づけが必要です。')).toBeTruthy();
   });
 
-  test('reminds to write down the recovery words while they are still on the device', async () => {
-    const relay = new MemoryRelay(realNow);
-    const account = await userWithIdentity(relay, realNow, true);
-    renderWithApp(<Lobby />, { deps: makeDeps({ relay, now: realNow }), account });
-    await waitFor(() =>
-      expect(document.querySelector('.notice')?.textContent).toBe(
-        '復活の言葉をまだ書き写していません。端末を全部失くしたときに戻せるよう、設定画面から書き写してください。',
-      ),
-    );
-  });
 });
 
 describe('matches to go back to', () => {

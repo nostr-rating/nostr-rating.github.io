@@ -2,6 +2,7 @@ import {
   buildAccountInfo,
   buildReport,
   MemoryRelay,
+  newRecoveryWords,
   parseGameDefinition,
   serializeSnapshot,
   sha256Hex,
@@ -42,7 +43,8 @@ function snapshotFiles(tamper = false) {
 async function playerAt(relay: MemoryRelay, clock: { t: number }, name: string): Promise<Player> {
   const keyStore = memoryKeyStore();
   const now = () => clock.t;
-  const { account, words } = await Account.create(keyStore, relay, now, name);
+  const words = newRecoveryWords();
+  const account = await Account.create(keyStore, relay, now, name, { cards: [words], threshold: 1 });
   const session = await account.session();
   await relay.publish(await session.signer.signEvent(buildAccountInfo({ pubkey: account.aid, name, claims: [{ platform: 'github', identity: name, proof: 'abc' }] }, clock.t)));
   return { account, keyStore, words, aid: account.aid, signer: session.signer, session };

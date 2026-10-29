@@ -66,10 +66,6 @@ export interface AppValue extends AppDeps {
   /** 他人のイベントを aid に結び付ける（知らないアカウントは KEL を取りに行く） */
   author(ev: NostrEvent): Promise<Pubkey | null>;
   /** 書き写したと確かめていない復活の言葉 */
-  pendingWords: string | null;
-  confirmWords(): Promise<void>;
-  /** 書き写す前の復活の言葉を3枚に分ける（2枚あれば戻せる） */
-  splitWords(): Promise<void>;
   /** 有効な端末のうち、利用者がまだ知らないもの */
   unknownDevices: DeviceRecord[];
   acknowledgeDevices(): Promise<void>;
@@ -136,7 +132,6 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
   const [session, setSession] = useState<Awaited<ReturnType<Account['session']>> | null>(null);
   const [mySessions, setMySessions] = useState<Pubkey[]>([]);
   const [accountError, setAccountError] = useState<string | null>(null);
-  const [pendingWords, setPendingWords] = useState<string | null>(props.initialAccount?.pendingWords ?? null);
   const [unknownDevices, setUnknownDevices] = useState<DeviceRecord[]>([]);
   const pubkey = account?.aid ?? null;
   const [def, setDef] = useState<GameDefinition>(() => rememberedGame(deps.games));
@@ -164,7 +159,6 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
       console.warn('could not refresh the key event log', e);
     }
     resolver.setKnown({ [a.aid]: a.kel });
-    setPendingWords(a.pendingWords);
     setUnknownDevices(a.unknownDevices);
     if (!a.active) {
       setSession(null);
@@ -186,24 +180,12 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     if (!a) {
       setSession(null);
       setMySessions([]);
-      setPendingWords(null);
     }
   }, []);
 
   const reloadAccount = useCallback(async () => {
     if (account) await prepare(account);
   }, [account, prepare]);
-
-  const confirmWords = useCallback(async () => {
-    await account?.confirmWords();
-    setPendingWords(null);
-  }, [account]);
-
-  const splitWords = useCallback(async () => {
-    if (!account) return;
-    await account.splitWords();
-    setPendingWords(account.pendingWords);
-  }, [account]);
 
   const acknowledgeDevices = useCallback(async () => {
     await account?.acknowledgeDevices();
@@ -374,9 +356,6 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     pubkey,
     setAccount,
     author: resolver.author,
-    pendingWords,
-    confirmWords,
-    splitWords,
     unknownDevices,
     acknowledgeDevices,
     reloadAccount,

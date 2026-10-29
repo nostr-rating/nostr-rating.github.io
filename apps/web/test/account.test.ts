@@ -1,4 +1,4 @@
-import { buildKelBook, deviceValidAt, KIND, MemoryRelay } from '@nostr-rating/core';
+import { buildKelBook, deviceValidAt, KIND, MemoryRelay, newRecoveryWords } from '@nostr-rating/core';
 import { describe, expect, test } from 'vitest';
 import { Account, memoryKeyStore } from '../src/account/account.js';
 
@@ -8,7 +8,7 @@ describe('Account', () => {
   test('a key event dated in the future does not push a revocation into the future', async () => {
     const relay = new MemoryRelay(() => T0 + 100);
     const store = memoryKeyStore();
-    const { account } = await Account.create(store, relay, () => T0, 'スマホ');
+    const account = await Account.create(store, relay, () => T0, 'スマホ', { cards: [newRecoveryWords()], threshold: 1 });
     const added = await account.addDevice(await Account.prepareDevice(memoryKeyStore(), 'タブレット'));
     // 盗んだ端末（保存先の写し）で、80日後の日時のイベントを出しておく
     const later = T0 + 80 * 86400;
