@@ -63,12 +63,12 @@ function loadPrevious(root: string, game: string): Previous | null {
 
 /**
  * スナップショットは取りこぼしが永久に残るので、アカウントごとに取り切る。
- * 取り切れなかったアカウントは、その回はイベントを出さなかったものとして扱い、スナップショットに残す
+ * 取り切れなかったアカウントは、その回は報告と公開情報を使わずに対戦を相手の報告に合わせて確定し、スナップショットに残す
  */
 async function advance(def: GameDefinition, relay: RelayClient, prev: RatingState, cutoff: number) {
-  const { events, incomplete } = await fetchRatingEvents(relay, def, prev.kels, prev.cutoff - def.report.deadlineSec, cutoff, { strict: true });
+  const { events, incomplete, incompleteKel } = await fetchRatingEvents(relay, def, prev.kels, prev.cutoff - def.report.deadlineSec, cutoff, { strict: true });
   const excluded = [...incomplete].sort();
-  return { ...advanceRatings(def, prev, events, cutoff, { exclude: incomplete }), excluded };
+  return { ...advanceRatings(def, prev, events, cutoff, { exclude: incomplete, excludeKel: incompleteKel }), excluded };
 }
 
 function write(root: string, game: string, path: string, snapshot: Snapshot, usedEventIds: string[]): void {

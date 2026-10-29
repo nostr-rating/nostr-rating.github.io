@@ -25,8 +25,10 @@ export interface FetchOptions {
 
 export interface FetchResult {
   events: NostrEvent[];
-  /** 取り切れなかったアカウント。その回の計算では、これらが署名したイベントを無視する */
+  /** 取り切れなかったアカウント。その回の計算では、これらの報告と公開情報を使わない（docs/protocol.md「取得」） */
   incomplete: Set<Pubkey>;
+  /** incomplete のうち、KEL と証明書のお知らせを取り切れなかったアカウント。その回は記録済みの KEL で判定する */
+  incompleteKel: Set<Pubkey>;
 }
 
 class Overflow extends Error {}
@@ -99,16 +101,22 @@ export async function fetchRatingEvents(
   const pageSize = opts.pageSize ?? RATING_PAGE_SIZE;
   const strict = opts.strict ?? false;
   const incomplete = new Set<Pubkey>();
+  const incompleteKel = new Set<Pubkey>();
   const all: NostrEvent[] = [];
 
-  /** アカウント1つ分の問い合わせ。取り切れなければそのアカウントを incomplete にする */
+  /**
+   * アカウント1つ分の問い合わせ。取り切れなければそのアカウントを incomplete にする。
+   * KEL は対戦の判定に使うので、ほかの種類を取り切れなかったアカウントでも取りに行き、別に数える
+   */
   const perAccount = async (aid: Pubkey, filter: Filter): Promise<NostrEvent[]> => {
-    if (incomplete.has(aid)) return [];
+    const kel = filter.kinds?.includes(KIND.kel) ?? false;
+    if (kel ? incompleteKel.has(aid) : incomplete.has(aid)) return [];
     try {
       return await queryAll(relay, filter, pageSize, strict);
     } catch (e) {
       if (!(e instanceof Overflow)) throw e;
       incomplete.add(aid);
+      if (kel) incompleteKel.add(aid);
       return [];
     }
   };
@@ -182,7 +190,17 @@ export async function fetchRatingEvents(
     }
   }
 
-  // 4. 対戦が指す申し込み（ids）。申し込みの使い捨ての鍵が新しければ、その鍵の報告も取る
+  // 4. 報告が指す対戦のうち、まだ無いもの（ids）。相手の分を取り切れなくても、報告した側から対戦を見つける
+  const have = new Set(all.map((e) => e.id));
+  const pointed = new Set(all.filter((e) => e.kind === KIND.report).flatMap((e) => e.tags.filter((t) => t[0] === 'e' && t[1] && !have.has(t[1])).map((t) => t[1]!)));
+  const referenced: NostrEvent[] = [];
+  for (const ids of chunks([...pointed], CHUNK)) {
+    referenced.push(...(await queryAll(relay, { kinds: [KIND.match], ids }, pageSize, false)));
+  }
+  all.push(...referenced);
+  await discoverFrom(referenced);
+
+  // 5. 対戦が指す申し込み（ids）。申し込みの使い捨ての鍵が新しければ、その鍵の報告も取る
   const author = attributor(book.states);
   const matches = dedupeById(all)
     .map((e) => parseMatch(def.id, e, author(e)))
@@ -202,11 +220,11 @@ export async function fetchRatingEvents(
     }
   }
 
-  // 5. 紐づけは古い使い捨ての鍵で出したこともあるので、d（aid）でも探す（取りこぼしを許す）
+  // 6. 紐づけは古い使い捨ての鍵で出したこともあるので、d（aid）でも探す（取りこぼしを許す）
   const players = [...new Set(matches.flatMap((m) => [m.p1, m.p2]))];
   for (const d of chunks(players, CHUNK)) {
     all.push(...(await queryAll(relay, { kinds: [KIND.account], '#d': d }, pageSize, false)));
   }
 
-  return { events: dedupeById(all), incomplete };
+  return { events: dedupeById(all), incomplete, incompleteKel };
 }

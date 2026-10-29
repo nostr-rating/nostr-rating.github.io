@@ -24,18 +24,7 @@ export interface MannersCount {
  */
 export function settleMatch(match: MatchRecord, reports: ResultReport[], now: number, deadlineSec: number, allowDraw = false): Settlement {
   const deadline = match.createdAt + deadlineSec;
-  const valid = reports
-    .filter(
-      (r) =>
-        r.matchId === match.id &&
-        (r.reporter === match.p1 || r.reporter === match.p2) &&
-        r.createdAt >= match.createdAt &&
-        r.createdAt <= deadline &&
-        r.createdAt <= now &&
-        // 引き分けのないゲームでは、引き分けの報告はなかったものとする
-        (allowDraw || r.result !== 'draw'),
-    )
-    .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const valid = validReports(match, reports, now, deadline, allowDraw);
 
   const latest = new Map<Pubkey, ReportResult>();
   const sent = { [match.p1]: new Set<ReportResult>(), [match.p2]: new Set<ReportResult>() };
@@ -55,6 +44,45 @@ export function settleMatch(match: MatchRecord, reports: ResultReport[], now: nu
   const missing = [match.p1, match.p2].filter((p) => !latest.has(p));
   if (missing.length > 0) return { status: 'no_report', settledAt: deadline, missing };
   return { status: 'mismatch', settledAt: deadline };
+}
+
+/**
+ * docs/protocol.md「取得」。片方（absent）のイベントを取り切れなかった対戦を、締め切りの時点で確定する。
+ * absent の報告は使わず、相手の最新の報告に合わせたものとみなす。相手が報告していなければ数えない
+ */
+export function settleAgreeing(match: MatchRecord, reports: ResultReport[], absent: Pubkey, deadlineSec: number, allowDraw = false): Settlement {
+  const deadline = match.createdAt + deadlineSec;
+  const other = absent === match.p1 ? match.p2 : match.p1;
+  const last = validReports(match, reports, deadline, deadline, allowDraw)
+    .filter((r) => r.reporter === other)
+    .at(-1);
+  if (!last) return { status: 'no_report', settledAt: deadline, missing: [match.p1, match.p2] };
+  switch (last.result) {
+    case 'win':
+      return { status: 'confirmed', winner: other, loser: absent, settledAt: last.createdAt };
+    case 'lose':
+      return { status: 'confirmed', winner: absent, loser: other, settledAt: last.createdAt };
+    case 'draw':
+      return { status: 'drawn', settledAt: last.createdAt };
+    case 'cancel':
+      return { status: 'cancelled', settledAt: last.createdAt };
+  }
+}
+
+/** 締め切りまでに当事者が出した、その対戦の報告（時刻順） */
+function validReports(match: MatchRecord, reports: ResultReport[], now: number, deadline: number, allowDraw: boolean): ResultReport[] {
+  return reports
+    .filter(
+      (r) =>
+        r.matchId === match.id &&
+        (r.reporter === match.p1 || r.reporter === match.p2) &&
+        r.createdAt >= match.createdAt &&
+        r.createdAt <= deadline &&
+        r.createdAt <= now &&
+        // 引き分けのないゲームでは、引き分けの報告はなかったものとする
+        (allowDraw || r.result !== 'draw'),
+    )
+    .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 const zero = (): MannersCount => ({ noReport: 0, cancel: 0, mismatch: 0 });

@@ -4,7 +4,7 @@ import { buildAccountInfo, buildApplication, buildMatch, buildReport } from '../
 import { certTags, SESSION_LIFETIME_SEC, type SessionCert } from '../../src/kel/cert.js';
 import { kelEventTemplate } from '../../src/kel/event.js';
 import { digestOf, type KelEntry } from '../../src/kel/kel.js';
-import { advanceRatings, initialState } from '../../src/rating/pipeline.js';
+import { advanceRatings, initialState, type RatingState } from '../../src/rating/pipeline.js';
 import { def } from '../helpers/def.js';
 import { icp, ixn, newDevice, newNextKey, signed } from '../helpers/kel.js';
 
@@ -92,15 +92,6 @@ describe('advanceRatings with key event logs', () => {
     expect(state.players[a.aid]!.wins).toBe(1);
   });
 
-  test('excluded accounts are treated as if they had published nothing', async () => {
-    const a = account(T0);
-    const b = account(T0);
-    const evs = [...a.kelEvents(), ...b.kelEvents(), ...(await playedBy(a, b, T0))];
-    const { state } = advanceRatings(def, initialState(def, 1, T0 - 100), evs, T0 + DAY, { exclude: new Set([a.aid]) });
-    expect(state.players[a.aid]).toBeUndefined();
-    expect(state.players[b.aid]?.matches ?? 0).toBe(0);
-  });
-
   test('a backdated KEL event for a recorded account is ignored', async () => {
     const a = account(T0);
     const b = account(T0);
@@ -109,5 +100,84 @@ describe('advanceRatings with key event logs', () => {
     a.revoke(a.d1, a.d2, T0 - 2 * DAY + 10);
     const second = advanceRatings(def, first, a.kelEvents(), T0 + 2 * DAY).state;
     expect(second.kels[a.aid]).toHaveLength(1);
+  });
+});
+
+describe('accounts whose events could not all be fetched', () => {
+  /**
+   * a（p1）と b（p2）の対戦。紐づけは前の回に記録しておく（取り切れなかった回は、その回の紐づけを使わないため）。
+   * 報告は a の「勝ち」と、b の bResult
+   */
+  async function played(bResult: 'win' | 'lose' | null, aReports = true) {
+    const a = account(T0);
+    const b = account(T0);
+    const [claimA, claimB, app, m, winA, loseB] = await playedBy(a, b, T0);
+    const kels = [...a.kelEvents(), ...b.kelEvents()];
+    const first = advanceRatings(def, initialState(def, 1, T0 - 100), [...kels, claimA!, claimB!], T0).state;
+    const bReport =
+      bResult === 'lose' ? loseB! : bResult === 'win' ? await b.sign(b.d2, T0 - 3600, buildReport(G, { matchId: m!.id, opponent: a.sessionKey(a.d1, T0 - 3600), result: 'win' }, T0 + 61)) : null;
+    const evs = [...kels, claimA!, claimB!, app!, m!, ...(aReports ? [winA!] : []), ...(bReport ? [bReport] : [])];
+    return { a, b, first, evs };
+  }
+  const record = (s: RatingState, pk: string) => {
+    const p = s.players[pk];
+    return p ? { wins: p.wins, losses: p.losses, noReport: p.manners.noReport, mismatch: p.manners.mismatch } : null;
+  };
+
+  test('the loser cannot erase a loss by making its own events unfetchable', async () => {
+    const { a, b, first, evs } = await played('lose');
+    const { state } = advanceRatings(def, first, evs, T0 + DAY, { exclude: new Set([b.aid]) });
+    expect([record(state, a.aid), record(state, b.aid)]).toEqual([
+      { wins: 1, losses: 0, noReport: 0, mismatch: 0 },
+      { wins: 0, losses: 1, noReport: 0, mismatch: 0 },
+    ]);
+  });
+
+  test('its own reports are not used; it is taken to agree with the latest report of the opponent', async () => {
+    // ふだんなら双方が勝ちを報告した食い違い
+    const { a, b, first, evs } = await played('win');
+    const { state } = advanceRatings(def, first, evs, T0 + DAY, { exclude: new Set([b.aid]) });
+    expect([record(state, a.aid), record(state, b.aid)]).toEqual([
+      { wins: 1, losses: 0, noReport: 0, mismatch: 0 },
+      { wins: 0, losses: 1, noReport: 0, mismatch: 0 },
+    ]);
+  });
+
+  test('a match it signed counts when the opponent reported on it', async () => {
+    const { a, b, first, evs } = await played('lose');
+    const { state } = advanceRatings(def, first, evs, T0 + DAY, { exclude: new Set([a.aid]) });
+    expect([record(state, a.aid), record(state, b.aid)]).toEqual([
+      { wins: 1, losses: 0, noReport: 0, mismatch: 0 },
+      { wins: 0, losses: 1, noReport: 0, mismatch: 0 },
+    ]);
+  });
+
+  test('nothing is counted when the opponent did not report', async () => {
+    const { a, b, first, evs } = await played('lose', false);
+    const { state } = advanceRatings(def, first, evs, T0 + DAY, { exclude: new Set([b.aid]) });
+    expect([record(state, a.aid), record(state, b.aid)]).toEqual([
+      { wins: 0, losses: 0, noReport: 0, mismatch: 0 },
+      { wins: 0, losses: 0, noReport: 0, mismatch: 0 },
+    ]);
+  });
+
+  test('nothing is counted when both could not be fetched', async () => {
+    const { a, b, first, evs } = await played('lose');
+    const { state } = advanceRatings(def, first, evs, T0 + DAY, { exclude: new Set([a.aid, b.aid]) });
+    expect([record(state, a.aid), record(state, b.aid)]).toEqual([
+      { wins: 0, losses: 0, noReport: 0, mismatch: 0 },
+      { wins: 0, losses: 0, noReport: 0, mismatch: 0 },
+    ]);
+  });
+
+  test('when its key event log could not be fetched, only the recorded version is used in that run', async () => {
+    const { a, b, first, evs } = await played('lose');
+    // 使い捨ての鍵の証明書（T0 - 3600 から）より前に、端末1を取り消す。ふだんなら、端末1の使い捨ての鍵が出した対戦は数えない
+    a.revoke(a.d1, a.d2, T0 - 3700);
+    const withRevoke = [...evs, ...a.kelEvents()];
+    expect(record(advanceRatings(def, first, withRevoke, T0 + DAY).state, a.aid)).toEqual({ wins: 0, losses: 0, noReport: 0, mismatch: 0 });
+    const { state } = advanceRatings(def, first, withRevoke, T0 + DAY, { exclude: new Set([a.aid]), excludeKel: new Set([a.aid]) });
+    expect(record(state, a.aid)).toEqual({ wins: 1, losses: 0, noReport: 0, mismatch: 0 });
+    expect(state.kels[a.aid]).toEqual(first.kels[a.aid]);
   });
 });

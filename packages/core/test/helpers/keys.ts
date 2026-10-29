@@ -93,6 +93,9 @@ export function newUser() {
     },
     /** その時刻の使い捨ての鍵で振る舞うための SessionIdentity */
     identityAt: (t: number): SessionIdentity => ({ aid, signer: new LocalSigner(sessionAt(t).sk), cert: sessionAt(t).cert }),
+    /** 端末の掲載用の鍵で、同じ秒に n 個のお知らせ（kind 3755）を出す（KEL の問い合わせをあふれさせる） */
+    publisherFlood: (n: number, at: number): NostrEvent[] =>
+      Array.from({ length: n }, (_, i) => finalizeEvent({ kind: KIND.cert, created_at: at, tags: [['t', APP_TAG], ['aid', aid]], content: String(i) }, first.publisherSk)),
     /** KEL を Nostr のイベント（kind 3753）にする */
     kelEvents: (): NostrEvent[] => kel.map((i, n) => finalizeEvent(kelEventTemplate(i.entry, i.at), kelPublishers[n]!)),
   };

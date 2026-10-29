@@ -60,14 +60,14 @@ const digestOfEntry = (i: KelInput) => digestOf(i.entry.body);
 /** 使い捨ての鍵が署名したイベントを、証明書から aid に結び付ける。結び付かなければ null */
 export type Attributor = (ev: NostrEvent) => Pubkey | null;
 
-export function attributor(states: Map<string, KelState>, exclude: ReadonlySet<string> = new Set()): Attributor {
+export function attributor(states: Map<string, KelState>): Attributor {
   const cache = new WeakMap<NostrEvent, Pubkey | null>();
   return (ev) => {
     if (cache.has(ev)) return cache.get(ev)!;
     // 証明書は署名したイベントの pubkey と時刻を見るので、イベントの署名も確かめる
     const signed = isValidEvent(ev) ? certOf(ev) : null;
     let aid: Pubkey | null = null;
-    if (signed && !exclude.has(signed.cert.aid)) {
+    if (signed) {
       const state = states.get(signed.cert.aid);
       if (state && verifyCert(state, signed, ev)) aid = signed.cert.aid;
     }

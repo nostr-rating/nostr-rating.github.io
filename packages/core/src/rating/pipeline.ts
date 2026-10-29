@@ -9,11 +9,12 @@ import {
   type MatchRecord,
   type ResultReport,
 } from '../events/codec.js';
-import { isValidEvent } from '../events/kinds.js';
+import { isValidEvent, KIND } from '../events/kinds.js';
 import { attributor, buildKelBook, type Attributor, type KelRecords } from '../kel/book.js';
+import { parseKelEvent } from '../kel/event.js';
 import { seasonById, type GameDefinition } from '../game/definition.js';
 import type { LocalView } from '../match/conditions.js';
-import { mannersDelta, settleMatch, type MannersCount, type Settlement } from '../match/settle.js';
+import { mannersDelta, settleAgreeing, settleMatch, type MannersCount, type Settlement } from '../match/settle.js';
 import { dedupeById } from '../relay/client.js';
 import type { Pubkey } from '../types.js';
 import { applyWeight, glicko2Update, inflateRd, type PlayerRating } from './glicko2.js';
@@ -151,8 +152,10 @@ interface Inputs {
  * 署名を確かめてから重複を除き、対戦を申し込みに結び付ける。
  * 対戦が有効なのは、p2 が署名して p1 の募集を指した申し込みに、成立待ちの時間内に応えたものだけ。
  * 1つの申し込みには最小 id の対戦だけを結び付ける。
+ * exclude（取り切れなかったアカウント）の公開情報と報告は、取れた分によって変わるので使わない。
+ * そのアカウントが出した対戦も、相手が報告したものだけを使う
  */
-function collect(def: GameDefinition, season: number, events: NostrEvent[], author: Attributor, until: number): Inputs {
+function collect(def: GameDefinition, season: number, events: NostrEvent[], author: Attributor, until: number, exclude: ReadonlySet<string> = new Set()): Inputs {
   const unique = dedupeById(events.filter((e) => isValidEvent(e)));
   const { startsAt, endsAt } = seasonById(def, season);
 
@@ -166,6 +169,7 @@ function collect(def: GameDefinition, season: number, events: NostrEvent[], auth
     if (!by) continue;
     const ids = parseAccountInfo(ev, by);
     if (ids) {
+      if (exclude.has(by)) continue;
       const last = latest.get(ids.pubkey);
       if (ids.createdAt <= until && (!last || byTimeThenId({ createdAt: last.createdAt, id: last.eventId }, { createdAt: ids.createdAt, id: ids.eventId }) < 0)) {
         latest.set(ids.pubkey, ids);
@@ -188,7 +192,7 @@ function collect(def: GameDefinition, season: number, events: NostrEvent[], auth
       continue;
     }
     const r = parseReport(def.id, ev, by);
-    if (r) reports.set(r.matchId, [...(reports.get(r.matchId) ?? []), r]);
+    if (r && !exclude.has(by)) reports.set(r.matchId, [...(reports.get(r.matchId) ?? []), r]);
   }
 
   const byApplication = new Map<string, Linked>();
@@ -196,6 +200,7 @@ function collect(def: GameDefinition, season: number, events: NostrEvent[], auth
     const app = applications.get(m.applicationId);
     // シーズンの境目をまたぐ対戦（締め切りが次のシーズンに入るもの）は、どちらのシーズンでも数えない
     if (m.createdAt < startsAt || m.createdAt + def.report.deadlineSec > endsAt || !isLinkedMatch(def, m, app)) continue;
+    if (exclude.has(m.p1) && !reports.get(m.id)?.some((r) => r.reporter === m.p2)) continue;
     const cur = byApplication.get(app.eventId);
     if (!cur || byId(m.id, cur.match.id) < 0) byApplication.set(app.eventId, { match: m, application: app, reports: reports.get(m.id) ?? [] });
   }
@@ -299,8 +304,13 @@ class Applier {
 }
 
 export interface AdvanceOptions {
-  /** 取り切れなかったアカウント。その回は、これらが署名したイベントをすべて無視する（docs/adr/0008） */
+  /**
+   * イベントを取り切れなかったアカウント（docs/protocol.md「取得」）。その回は、これらの報告と公開情報を使わず、
+   * 対戦は相手の最新の報告に合わせて確定する
+   */
   exclude?: ReadonlySet<string>;
+  /** KEL を取り切れなかったアカウント。その回は、これらの新しい KEL のイベントを使わず、記録済みの版で判定する */
+  excludeKel?: ReadonlySet<string>;
 }
 
 /**
@@ -316,9 +326,11 @@ export function advanceRatings(
   cutoff: number,
   opts: AdvanceOptions = {},
 ): { state: RatingState; usedEventIds: string[] } {
-  const book = buildKelBook(prev.kels, events, prev.cutoff - def.report.deadlineSec, cutoff);
-  const author = attributor(book.states, opts.exclude);
-  const { identities, linked, latest } = collect(def, prev.season, events, author, cutoff);
+  const exclude = opts.exclude ?? new Set<string>();
+  const excludeKel = opts.excludeKel ?? new Set<string>();
+  const kelEvents = excludeKel.size === 0 ? events : events.filter((e) => e.kind !== KIND.kel || !excludeKel.has(parseKelEvent(e)?.aid ?? ''));
+  const book = buildKelBook(prev.kels, kelEvents, prev.cutoff - def.report.deadlineSec, cutoff);
+  const { identities, linked, latest } = collect(def, prev.season, events, attributor(book.states), cutoff, exclude);
   const ap = new Applier(def, prev);
   ap.markIdentities(identities);
   const accounts = mergeAccounts(prev.accounts, latest);
@@ -327,7 +339,12 @@ export function advanceRatings(
   for (const l of linked) {
     const deadline = l.match.createdAt + def.report.deadlineSec;
     if (deadline <= prev.cutoff || deadline > cutoff) continue;
-    const s = settleMatch(l.match, l.reports, deadline, def.report.deadlineSec, def.results.draw);
+    const absent = [l.match.p1, l.match.p2].filter((p) => exclude.has(p));
+    if (absent.length === 2) continue;
+    const s =
+      absent.length === 1
+        ? settleAgreeing(l.match, l.reports, absent[0]!, def.report.deadlineSec, def.results.draw)
+        : settleMatch(l.match, l.reports, deadline, def.report.deadlineSec, def.results.draw);
     if (s.status !== 'pending') ap.apply(l, s, true);
   }
 

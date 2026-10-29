@@ -107,6 +107,22 @@ describe('runSnapshot', () => {
     expect(read('snapshots/smash_sp/season_1/2026-10-02.ids.txt')).toBe(ids);
   });
 
+  test('the loser cannot erase a loss by sending more events in one second than a page holds', async () => {
+    const b = fixedAccount(2, T0 - DAY);
+    const flood = Array.from({ length: 301 }, (_, i) => b.sign({ kind: KIND.report, created_at: T0 + 100, tags: [['e', 'f'.repeat(64)]], content: String(i) }));
+    const relay = await relaysWith([...(await seededEvents()), ...flood]);
+    // 紐づけは前の回に記録される（取り切れなかった回は、その回の紐づけを使わない）
+    await runSnapshot({ root, cutoff: T0, relay });
+    const out = await runSnapshot({ root, cutoff: T0 + DAY, relay });
+    const snap = JSON.parse(read(out.path));
+    expect(snap.excluded).toEqual([b.aid]);
+    expect(Object.entries(snap.players).map(([pk, p]: [string, any]) => [pk === b.aid ? 'b' : 'a', p.wins, p.losses]).sort()).toEqual([
+      ['a', 1, 0],
+      ['b', 0, 1],
+    ]);
+    // 300件を超える署名に時間がかかる
+  }, 60_000);
+
   test('chains from the previous snapshot without double counting', async () => {
     const relay = await relaysWith(await seededEvents());
     await runSnapshot({ root, cutoff: T0 + DAY, relay });

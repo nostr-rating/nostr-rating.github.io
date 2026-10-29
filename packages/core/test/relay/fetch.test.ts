@@ -1,7 +1,7 @@
 import type { NostrEvent } from 'nostr-tools/pure';
 import { describe, expect, test } from 'vitest';
 import { buildMatch, buildReport } from '../../src/events/codec.js';
-import { isValidEvent } from '../../src/events/kinds.js';
+import { isValidEvent, KIND } from '../../src/events/kinds.js';
 import type { RelayClient } from '../../src/relay/client.js';
 import { fetchRatingEvents } from '../../src/relay/fetch.js';
 import { MemoryRelay } from '../../src/relay/memory.js';
@@ -157,6 +157,37 @@ describe('fetchRatingEvents', () => {
     const got = await fetchRatingEvents(relay, def, registeredKels(), T0 - 100, T0 + 1000, { pageSize: 10, strict: true });
     expect([...got.incomplete]).toEqual([spammer.pk]);
     for (const e of evs) expect(has(got.events, e)).toBe(true);
+  });
+
+  test('strict mode tells a flood of key events apart from a flood of other events', async () => {
+    const relay = new MemoryRelay(now);
+    const a = newUser();
+    const b = newUser();
+    const kelSpammer = newUser();
+    const spammer = newUser();
+    await publishAll(relay, [...(await p1Wins(a, b, T0)), ...[a, b, kelSpammer, spammer].map((u) => u.certAnnouncement(T0))]);
+    await publishAll(relay, kelSpammer.publisherFlood(15, T0));
+    for (let i = 0; i < 15; i++) await relay.publish(await spamMatch(spammer, a, i));
+    const got = await fetchRatingEvents(relay, def, registeredKels(), T0 - 100, T0 + 1000, { pageSize: 10, strict: true });
+    expect([[...got.incomplete].sort(), [...got.incompleteKel]]).toEqual([[kelSpammer.pk, spammer.pk].sort(), [kelSpammer.pk]]);
+  });
+
+  test('a match that only the report of the opponent points to is fetched by its id', async () => {
+    const inner = new MemoryRelay(now);
+    const a = newUser();
+    const b = newUser();
+    const evs = await p1Wins(a, b, T0);
+    await publishAll(inner, [...evs, a.certAnnouncement(T0), b.certAnnouncement(T0)]);
+    // a が出した対戦は、id で問い合わせたときにしか返さない（a の分を取り切れなかったときと同じ）
+    const m = evs.find((e) => e.kind === KIND.match)!;
+    const relay: RelayClient = {
+      publish: (e) => inner.publish(e),
+      query: async (filters) => (await inner.query(filters)).filter((e) => e.id !== m.id || filters.some((f) => f.ids?.includes(m.id))),
+      subscribe: (f, on) => inner.subscribe(f, on),
+      close: () => undefined,
+    };
+    const got = await fetchRatingEvents(relay, def, registeredKels(), T0 - 100, T0 + 1000, { pageSize: 10 });
+    expect(ids(got.events)).toEqual(ids([...evs, a.certAnnouncement(T0), b.certAnnouncement(T0)]));
   });
 
   test('pages through each relay separately so a shallower relay does not hide events', async () => {
