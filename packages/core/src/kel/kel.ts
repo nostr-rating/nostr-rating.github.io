@@ -2,6 +2,7 @@ import { p256 } from '@noble/curves/nist.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 import { verifyEvent, type NostrEvent } from 'nostr-tools/pure';
+import { fastVerifyEvent } from '../events/fast.js';
 import type { Pubkey } from '../types.js';
 
 /** 端末の登録の既定の長さと、1回の登録・延長で許す上限 */
@@ -106,13 +107,25 @@ export function attestationTemplate(digest: string, createdAt: number) {
 const checked = new Map<string, boolean>();
 const CHECKED_MAX = 50_000;
 
+const checkedKey = (key: KeyRef, digest: string, sig: KelSig) =>
+  `${key.type}:${key.pub}:${digest}:${'p256' in sig ? sig.p256 : `${sig.created_at}:${sig.sig}`}`;
+
+/** 別の実装（WebCrypto など）で確かめた結果を控えに入れる（kel/warm.ts） */
+export function rememberKeySig(key: KeyRef, digest: string, sig: KelSig, ok: boolean): void {
+  if (checked.size >= CHECKED_MAX) checked.delete(checked.keys().next().value!);
+  checked.set(checkedKey(key, digest, sig), ok);
+}
+
+/** すでに確かめた組か */
+export function isCheckedKeySig(key: KeyRef, digest: string, sig: KelSig): boolean {
+  return checked.has(checkedKey(key, digest, sig));
+}
+
 export function verifyKeySig(key: KeyRef, digest: string, sig: KelSig): boolean {
-  const k = `${key.type}:${key.pub}:${digest}:${'p256' in sig ? sig.p256 : `${sig.created_at}:${sig.sig}`}`;
-  const hit = checked.get(k);
+  const hit = checked.get(checkedKey(key, digest, sig));
   if (hit !== undefined) return hit;
   const ok = checkKeySig(key, digest, sig);
-  if (checked.size >= CHECKED_MAX) checked.delete(checked.keys().next().value!);
-  checked.set(k, ok);
+  rememberKeySig(key, digest, sig, ok);
   return ok;
 }
 
@@ -126,7 +139,7 @@ function checkKeySig(key: KeyRef, digest: string, sig: KelSig): boolean {
     const t = attestationTemplate(digest, sig.created_at);
     const ev = { ...t, pubkey: key.pub, sig: sig.sig, id: '' } as NostrEvent;
     ev.id = eventId(ev);
-    return verifyEvent(ev);
+    return fastVerifyEvent(ev) ?? verifyEvent(ev);
   } catch {
     return false;
   }

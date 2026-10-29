@@ -6,6 +6,7 @@ import {
   fetchRatingEvents,
   initialState,
   KelBook,
+  warmKelSignatures,
   parseGameDefinition,
   ratingConfigHash,
   seasonById,
@@ -68,6 +69,7 @@ function loadPrevious(root: string, game: string): Previous | null {
  */
 async function advance(def: GameDefinition, relay: RelayClient, prev: RatingState, cutoff: number) {
   // 前回のスナップショットの KEL は信じずに、1回の実行で全員分を1回だけ確かめる（docs/adr/0011）
+  await warmKelSignatures(prev.kels, Object.keys(prev.kels));
   new KelBook(prev.kels, -Infinity, Infinity).verifyRecorded();
   const { events, incomplete, incompleteKel } = await fetchRatingEvents(relay, def, prev.kels, prev.cutoff - def.report.deadlineSec, cutoff, { strict: true });
   const excluded = [...incomplete].sort();

@@ -1,4 +1,5 @@
 import { getEventHash, verifyEvent, type NostrEvent } from 'nostr-tools/pure';
+import { fastVerifyEvent } from './fast.js';
 
 export const KIND = {
   profile: 0,
@@ -70,15 +71,8 @@ export function isValidEvent(ev: unknown): ev is NostrEvent {
   }
   let ok: boolean;
   try {
-    ok = verifyEvent({
-      id: e.id,
-      pubkey: e.pubkey,
-      created_at: e.created_at,
-      kind: e.kind,
-      tags: e.tags,
-      content: e.content,
-      sig: e.sig,
-    });
+    const plain = { id: e.id, pubkey: e.pubkey, created_at: e.created_at, kind: e.kind, tags: e.tags, content: e.content, sig: e.sig };
+    ok = fastVerifyEvent(plain) ?? verifyEvent(plain);
   } catch {
     ok = false;
   }

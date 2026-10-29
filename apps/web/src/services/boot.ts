@@ -1,4 +1,4 @@
-import { createNostrRelayClient } from '@nostr-rating/core';
+import { createNostrRelayClient, initFastVerify } from '@nostr-rating/core';
 import { Account } from '../account/account.js';
 import { idbKeyStore } from '../account/idb-store.js';
 import { openEventStore } from '../storage/db.js';
@@ -6,7 +6,7 @@ import type { AppDeps } from '../state/AppContext.js';
 import { gameDefinitions, relayUrls, snapshotBase } from './config.js';
 
 export async function boot(): Promise<{ deps: AppDeps; account: Account | null }> {
-  const [store, urls] = await Promise.all([openEventStore(), relayUrls()]);
+  const [store, urls] = await Promise.all([openEventStore(), relayUrls(), initFastVerify()]);
   const deps: AppDeps = {
     games: gameDefinitions(),
     relay: createNostrRelayClient(urls),

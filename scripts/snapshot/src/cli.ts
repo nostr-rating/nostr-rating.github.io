@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { createNostrRelayClient, RATING_PAGE_SIZE } from '@nostr-rating/core';
+import { createNostrRelayClient, initFastVerify, RATING_PAGE_SIZE } from '@nostr-rating/core';
 import { relaysBelowPageSize } from './relayInfo.js';
 import { listGames, runSnapshot } from './run.js';
 
@@ -19,6 +19,7 @@ if (!values.cutoff || !/^\d+$/.test(values.cutoff)) {
   process.exit(2);
 }
 
+await initFastVerify();
 const root = resolve(values.root);
 const urls = values.relays
   ? values.relays.split(',').map((s) => s.trim()).filter(Boolean)

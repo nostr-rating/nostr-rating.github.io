@@ -1,5 +1,6 @@
 import {
   advanceRatings,
+  aidsIn,
   currentSeason,
   fetchRatingEvents,
   initialState,
@@ -13,6 +14,7 @@ import {
   type RatingState,
   type RelayClient,
   type Snapshot,
+  warmKelSignatures,
 } from '@nostr-rating/core';
 import type { EventStore } from '../storage/types.js';
 
@@ -68,6 +70,8 @@ export async function syncRatings(
     ...(await store.query({ kinds: [KIND.match, KIND.report], since })),
     ...(await store.query({ kinds: [KIND.application, KIND.account, KIND.kel] })),
   ];
+  // 計算は同期で KEL を評価するので、出てくるアカウントの署名を先に速い実装で確かめておく
+  await warmKelSignatures(start.kels, aidsIn(cached), cached);
   const { state } = advanceRatings(def, start, cached, t);
   const shown = provisionalRatings(def, state, cached, t);
 

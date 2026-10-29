@@ -8,6 +8,7 @@ import {
   type NostrEvent,
   type Pubkey,
   type RelayClient,
+  warmKelSignatures,
 } from '@nostr-rating/core';
 
 const RETRY_MS = 60_000;
@@ -17,6 +18,7 @@ const RETRY_MS = 60_000;
  * x タグから KEL を探して覚える。スナップショットに記録済みの KEL を「先に見た版」にする。
  */
 export class Resolver {
+  #known: KelRecords = {};
   #extra: NostrEvent[] = [];
   #book = new KelBook({}, -Infinity, Infinity);
   #author = attributor(this.#book.states);
@@ -28,6 +30,7 @@ export class Resolver {
 
   /** スナップショットと手元の計算で分かっている KEL を入れ直す */
   setKnown(records: KelRecords): void {
+    this.#known = records;
     this.#book = new KelBook(records, -Infinity, Infinity).add(this.#extra);
     this.#author = attributor(this.#book.states);
   }
@@ -41,6 +44,8 @@ export class Resolver {
 
   /** 必要なら KEL を取りに行って結び付ける */
   author = async (ev: NostrEvent): Promise<Pubkey | null> => {
+    const aid = certOf(ev)?.cert.aid;
+    if (aid && this.#known[aid]) await warmKelSignatures(this.#known, [aid], [ev]);
     const now = this.#author(ev);
     if (now) return now;
     const c = certOf(ev);
@@ -55,7 +60,8 @@ export class Resolver {
     if (last !== undefined && Date.now() - last < RETRY_MS) return null;
     this.#looked.set(c.cert.aid, Date.now());
     const filters = [{ kinds: [KIND.kel], '#x': [c.cert.aid] }, ...(typeof c.cert.publisher === 'string' ? [{ kinds: [KIND.kel], authors: [c.cert.publisher] }] : [])];
-    const lookup = this.relay.query(filters).then((evs) => {
+    const lookup = this.relay.query(filters).then(async (evs) => {
+      await warmKelSignatures(this.#known, [c.cert.aid], [...evs, ev]);
       // 増えたアカウントの分だけを評価し直す。結び付けの控えは、知らなかったアカウントの分が変わるので作り直す
       this.#extra.push(...evs);
       this.#book.add(evs);

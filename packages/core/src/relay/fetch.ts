@@ -5,6 +5,7 @@ import { APP_TAG, isValidEvent, KIND } from '../events/kinds.js';
 import type { GameDefinition } from '../game/definition.js';
 import { attributor, KelBook, type KelRecords } from '../kel/book.js';
 import { certOf, SESSION_LIFETIME_SEC, verifyCert, type SignedCert } from '../kel/cert.js';
+import { aidsIn, warmKelSignatures } from '../kel/warm.js';
 import type { Pubkey } from '../types.js';
 import { dedupeById, type RelayClient } from './client.js';
 
@@ -117,11 +118,14 @@ export async function fetchRatingEvents(
   const from = since - SESSION_LIFETIME_SEC;
   all.push(...(await queryAll(relay, { kinds: [KIND.kel, KIND.match], '#t': [APP_TAG], since: from, until }, pageSize, false)));
   // 1回の取得の中では同じ一覧にイベントを足していき、イベントが増えたアカウントだけを評価し直す
-  const book = new KelBook(known, -Infinity, until).add(all);
-  const pushed = (events: NostrEvent[]) => {
-    all.push(...events);
+  const book = new KelBook(known, -Infinity, until);
+  /** 署名を先に速い実装で確かめてから、一覧に足す */
+  const pushed = async (events: NostrEvent[]) => {
+    await warmKelSignatures(known, aidsIn(events), events);
+    if (events !== all) all.push(...events);
     book.add(events);
   };
+  await pushed(all);
   const visited = new Set<Pubkey>();
   // 2周目は、1周目で鍵が増えたアカウント（新しい端末・入れ替え）を取り直す
   for (let round = 0; round < 2; round++) {
@@ -129,7 +133,7 @@ export async function fetchRatingEvents(
       const holders = book.holders(aid).filter((k) => !visited.has(`${aid}:${k}`));
       holders.forEach((k) => visited.add(`${aid}:${k}`));
       for (const authors of chunks(holders, CHUNK)) {
-        pushed(await perAccount(aid, { kinds: [KIND.kel, KIND.cert], authors, since: from, until }));
+        await pushed(await perAccount(aid, { kinds: [KIND.kel, KIND.cert], authors, since: from, until }));
       }
     }
   }
@@ -143,13 +147,13 @@ export async function fetchRatingEvents(
     }
     if (unknown.size === 0) return;
     for (const [publisher, aid] of unknown) {
-      pushed(await perAccount(aid, { kinds: [KIND.kel], authors: [publisher], until }));
+      await pushed(await perAccount(aid, { kinds: [KIND.kel], authors: [publisher], until }));
     }
     for (const aid of book.aids()) {
       const holders = book.holders(aid).filter((k) => !visited.has(`${aid}:${k}`));
       holders.forEach((k) => visited.add(`${aid}:${k}`));
       for (const authors of chunks(holders, CHUNK)) {
-        pushed(await perAccount(aid, { kinds: [KIND.kel, KIND.cert], authors, until }));
+        await pushed(await perAccount(aid, { kinds: [KIND.kel, KIND.cert], authors, until }));
       }
     }
   };
