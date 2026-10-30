@@ -5,7 +5,7 @@ import { createNostrRelayClient, initFastVerify, RATING_PAGE_SIZE } from '@nostr
 import { relaysBelowPageSize } from './relayInfo.js';
 import { partStore } from './parts.js';
 import { cliPath } from './paths.js';
-import { listGames, runSnapshot } from './run.js';
+import { eachGame, listGames, runSnapshot } from './run.js';
 
 const { values } = parseArgs({
   options: {
@@ -42,13 +42,16 @@ if (small.length > 0) {
 
 // 取り切れなかった問い合わせは試し直し、それでも駄目なら集計をやめる（翌日の集計でやり直す）
 const relay = createNostrRelayClient(urls, { strict: true, maxWaitMs: 10_000 });
+let failed: { game: string; error: unknown }[];
 try {
-  for (const game of values.game ? [values.game] : listGames(root)) {
+  failed = await eachGame(values.game ? [values.game] : listGames(root), async (game) => {
     const { path, toc, release, uploads } = await runSnapshot({ root, cutoff: Number(values.cutoff), relay, parts, game });
     console.log(`wrote ${path} (events: ${toc.inputs.event_count}; ${uploads} new parts for release ${release})`);
     if (toc.inputs.event_count === 0) console.warn(`warning: ${game}: no events were used (no matches in the window)`);
-  }
+  });
 } finally {
   relay.close();
 }
-process.exit(0);
+// 書けたゲームの分はワークフローが上げてコミットする。失敗したゲームがあれば、最後に失敗として終える
+for (const f of failed) console.error(`${f.game}: ${f.error instanceof Error ? (f.error.stack ?? f.error.message) : String(f.error)}`);
+process.exit(failed.length > 0 ? 1 : 0);

@@ -137,6 +137,22 @@ export async function runSnapshot(opts: RunOptions): Promise<RunResult> {
   return write(opts.root, opts.parts, path, buildSnapshot(state, meta(path, usedEventIds, 'rolling', excluded)));
 }
 
+/**
+ * ゲームごとに run を呼ぶ。1つのゲームが失敗しても、ほかのゲームは続ける（そのゲームの原因が残っても、
+ * ほかのゲームのスナップショットが止まらないように）。失敗したゲームとその理由を返す
+ */
+export async function eachGame(games: string[], run: (game: string) => Promise<void>): Promise<{ game: string; error: unknown }[]> {
+  const failed: { game: string; error: unknown }[] = [];
+  for (const game of games) {
+    try {
+      await run(game);
+    } catch (error) {
+      failed.push({ game, error });
+    }
+  }
+  return failed;
+}
+
 /** configs/games.json にあるゲームの id */
 export function listGames(root: string): string[] {
   const j = JSON.parse(readFileSync(join(root, 'configs/games.json'), 'utf8')) as { games?: unknown };

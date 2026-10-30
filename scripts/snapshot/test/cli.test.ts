@@ -21,7 +21,7 @@ import {
   type SnapshotToc,
 } from '@nostr-rating/core';
 import { partStore, type PartStore } from '../src/parts.js';
-import { runSnapshot, type RunOptions } from '../src/run.js';
+import { eachGame, runSnapshot, type RunOptions } from '../src/run.js';
 import { fixedAccount } from './account.js';
 
 const REPO = resolve(__dirname, '../../..');
@@ -281,5 +281,16 @@ describe('runSnapshot', () => {
     await expect(run({ cutoff: 1_700_000_000, relay: new MemoryRelay(() => 0) })).rejects.toThrow(
       'cutoff 1700000000 is before the first season',
     );
+  });
+});
+
+describe('eachGame', () => {
+  test('one game that fails does not stop the others, and the failures are returned', async () => {
+    const ran: string[] = [];
+    const failed = await eachGame(['a', 'b', 'c'], async (g) => {
+      ran.push(g);
+      if (g === 'b') throw new Error('broken config');
+    });
+    expect([ran, failed.map((f) => [f.game, String(f.error)])]).toEqual([['a', 'b', 'c'], [['b', 'Error: broken config']]]);
   });
 });

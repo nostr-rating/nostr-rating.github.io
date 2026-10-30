@@ -32,7 +32,10 @@ jobs:
       # シーズンが終わった日は最終スナップショットだけが書かれる。新しいシーズンの最初の分は翌日に作る。
       # その間にだけ、レート計算に関わる設定を変えられる（docs/protocol.md「スナップショット」）
       # 前回の部品は、手元に無ければリリースから取る
-      - run: npm run snapshot -- --cutoff "$(date +%s)"
+      - id: snapshot
+        # ゲームが1つ失敗しても、書けたゲームの分は上げてコミットし、最後の段で失敗にする
+        continue-on-error: true
+        run: npm run snapshot -- --cutoff "$(date +%s)"
         env:
           SNAPSHOT_RELEASE_BASE: ${{ github.server_url }}/${{ github.repository }}/releases/download/
       # 目次が指す部品が無い時間を作らないよう、部品を先にリリースへ上げてから目次を積む
@@ -66,3 +69,8 @@ jobs:
           gh workflow run pages.yml --ref "${GITHUB_REF_NAME}"
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: Fail if a game failed
+        if: steps.snapshot.outcome == 'failure'
+        run: |
+          echo "スナップショットを作れなかったゲームがあります。上の snapshot の段のログを見てください。"
+          exit 1
