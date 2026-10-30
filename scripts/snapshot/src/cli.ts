@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util';
 import { createNostrRelayClient, initFastVerify, RATING_PAGE_SIZE } from '@nostr-rating/core';
 import { relaysBelowPageSize } from './relayInfo.js';
 import { partStore } from './parts.js';
+import { cliPath } from './paths.js';
 import { listGames, runSnapshot } from './run.js';
 
 const { values } = parseArgs({
@@ -27,8 +28,8 @@ if (!values.cutoff || !/^\d+$/.test(values.cutoff)) {
 }
 
 await initFastVerify();
-const root = resolve(values.root);
-const parts = partStore(resolve(values.parts ?? join(root, '.snapshot-parts')), values['release-base'] || null);
+const root = cliPath(values.root);
+const parts = partStore(values.parts ? cliPath(values.parts) : join(root, '.snapshot-parts'), values['release-base'] || null);
 const urls = values.relays
   ? values.relays.split(',').map((s) => s.trim()).filter(Boolean)
   : (JSON.parse(readFileSync(join(root, 'configs/relays.json'), 'utf8')) as { relays: string[] }).relays;

@@ -1,6 +1,7 @@
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { partStore } from './parts.js';
+import { cliPath } from './paths.js';
 import { buildSite } from './site.js';
 
 const { values } = parseArgs({
@@ -28,7 +29,7 @@ const fetchFn: typeof fetch = (input, init) => {
 };
 
 const appUrl = values['app-url'].endsWith('/') ? values['app-url'] : `${values['app-url']}/`;
-const root = resolve(values.root);
-const parts = partStore(resolve(values.parts ?? join(root, '.snapshot-parts')), values['release-base'] || null);
-const { players } = await buildSite({ root, out: resolve(values.out), appUrl, fetchFn, parts });
+const root = cliPath(values.root);
+const parts = partStore(values.parts ? cliPath(values.parts) : join(root, '.snapshot-parts'), values['release-base'] || null);
+const { players } = await buildSite({ root, out: cliPath(values.out), appUrl, fetchFn, parts });
 console.log(`wrote ${players} player pages and API files to ${values.out}`);
