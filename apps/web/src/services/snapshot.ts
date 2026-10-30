@@ -50,7 +50,7 @@ export async function loadClientSnapshot(fetchFn: typeof fetch, base: string, ga
   if (toc.schema_version !== 3) throw new Error(`${pointer.path}: schema_version ${toc.schema_version} is not supported`);
 
   const part = async <T,>(sha256: string): Promise<T> => {
-    const text = await fetchText(fetchFn, `${base}${partPath(game, sha256)}`);
+    const text = await fetchText(fetchFn, `${base}${partPath(sha256)}`);
     if (sha256Hex(text) !== sha256) throw new Error(`sha256 mismatch: part ${sha256}`);
     return JSON.parse(text) as T;
   };

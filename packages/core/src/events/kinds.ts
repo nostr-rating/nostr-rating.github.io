@@ -21,9 +21,15 @@ export const KIND = {
 
 export const APP_TAG = 'nostr-rating';
 
+/** ゲームごとの t タグの値。リレーは1文字のタグでしか絞れないので、game タグとは別に付ける */
+export function gameTag(game: string): string {
+  return `${APP_TAG}:${game}`;
+}
+
 export function appTags(game: string): string[][] {
   return [
     ['t', APP_TAG],
+    ['t', gameTag(game)],
     ['game', game],
   ];
 }
@@ -49,7 +55,13 @@ export function tagValues(ev: NostrEvent, name: string): string[] {
  * 別のオブジェクトとして届くので、オブジェクトではなく id と署名で覚える
  */
 const verified = new Map<string, boolean>();
-const VERIFIED_MAX = 50_000;
+let verifiedMax = 50_000;
+
+/** 控えに置く件数の上限（kel.ts の setVerifyCacheLimit から変える） */
+export function setVerifiedEventsLimit(n: number): void {
+  verifiedMax = n;
+  while (verified.size > verifiedMax) verified.delete(verified.keys().next().value!);
+}
 
 /**
  * 署名を必ず検証し直す。nostr-tools は検証済みの印をシンボルで持つため、
@@ -78,7 +90,7 @@ export function isValidEvent(ev: unknown): ev is NostrEvent {
   }
   // 中身が id と合わないものは、同じ id と署名の正しい中身を後から受け付けられるように覚えない
   if (ok || safeHash(e) === e.id) {
-    if (verified.size >= VERIFIED_MAX) verified.delete(verified.keys().next().value!);
+    while (verified.size >= verifiedMax && verified.size > 0) verified.delete(verified.keys().next().value!);
     verified.set(key, ok);
   }
   return ok;

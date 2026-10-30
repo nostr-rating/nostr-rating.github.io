@@ -96,7 +96,7 @@ function snapshotAt(path: string) {
     toc,
     players: part<PlayersPart>(toc.parts.players.sha256),
     seasons: Object.fromEntries(Object.entries(toc.parts.seasons).map(([s, r]) => [s, part<SeasonPart>(r.sha256)])),
-    kels: part<KelRecords>(toc.parts.kels.sha256),
+    kels: Object.assign({}, ...Object.values(toc.parts.kels).map((r) => part<KelRecords>(r.sha256))) as KelRecords,
   };
 }
 
@@ -109,10 +109,14 @@ describe('runSnapshot', () => {
     expect(read('snapshots/smash_sp/latest.json')).toBe(readFileSync(join(FIXTURES, 'latest.json'), 'utf8'));
     expect(read(`.parts/${out.toc.parts.players.sha256}.json`)).toBe(readFileSync(join(FIXTURES, 'players.json'), 'utf8'));
     expect(read(`.parts/${out.toc.parts.ids.sha256}.json`)).toBe(readFileSync(join(FIXTURES, 'ids.json'), 'utf8'));
-    expect(read(`.parts/${out.toc.parts.accounts.sha256}.json`)).toBe(readFileSync(join(FIXTURES, 'accounts.json'), 'utf8'));
-    expect(read(`.parts/${out.toc.parts.kels.sha256}.json`)).toBe(readFileSync(join(FIXTURES, 'kels.json'), 'utf8'));
+    // 公開情報と KEL は aid の先頭1文字ごとの部品（fixtures の accounts-<文字>.json と kels-<文字>.json）
+    for (const kind of ['accounts', 'kels'] as const) {
+      const golden = readdirSync(FIXTURES).filter((f) => f.startsWith(`${kind}-`)).map((f) => f.slice(kind.length + 1, -'.json'.length));
+      expect(Object.keys(out.toc.parts[kind])).toEqual(golden);
+      for (const [k, ref] of Object.entries(out.toc.parts[kind])) expect(read(`.parts/${ref.sha256}.json`)).toBe(readFileSync(join(FIXTURES, `${kind}-${k}.json`), 'utf8'));
+    }
     // 新しい部品は、リリースに上げるまで upload/<タグ>/ にも置く
-    const uploaded = ['players', 'accounts', 'kels', 'ids'].map((k) => out.toc.parts[k as 'players'].sha256).sort();
+    const uploaded = [out.toc.parts.players, out.toc.parts.ids, ...Object.values(out.toc.parts.accounts), ...Object.values(out.toc.parts.kels)].map((r) => r.sha256).sort();
     expect(readdirSync(join(root, '.parts/upload', out.release)).sort()).toEqual(uploaded.map((sha) => `${sha}.json`));
   });
 
@@ -120,8 +124,13 @@ describe('runSnapshot', () => {
     const relay = await relaysWith(await seededEvents());
     const first = await run({ cutoff: T0 + DAY, relay });
     const next = await run({ cutoff: T0 + 3 * DAY, relay });
-    expect([next.toc.parts.kels.release, next.toc.parts.accounts.release, next.toc.parts.players.release]).toEqual([first.release, first.release, next.release]);
-    expect(readdirSync(join(root, '.parts/upload', next.release))).not.toContain(`${next.toc.parts.kels.sha256}.json`);
+    const kels = Object.values(next.toc.parts.kels);
+    expect([kels.map((r) => r.release), Object.values(next.toc.parts.accounts).map((r) => r.release), next.toc.parts.players.release]).toEqual([
+      kels.map(() => first.release),
+      Object.values(next.toc.parts.accounts).map(() => first.release),
+      next.release,
+    ]);
+    for (const r of kels) expect(readdirSync(join(root, '.parts/upload', next.release))).not.toContain(`${r.sha256}.json`);
   });
 
   test('reads the previous parts from the release when they are not in the folder', async () => {
@@ -136,15 +145,16 @@ describe('runSnapshot', () => {
     }) as typeof fetch;
     parts = partStore(join(root, 'empty'), 'https://github.com/o/r/releases/download/', fetchFn);
     await run({ cutoff: T0 + 3 * DAY, relay });
-    expect(asked).toContain(`https://github.com/o/r/releases/download/${first.release}/${first.toc.parts.kels.sha256}.json`);
+    for (const r of Object.values(first.toc.parts.kels)) expect(asked).toContain(`https://github.com/o/r/releases/download/${first.release}/${r.sha256}.json`);
   });
 
   test('rejects a previous part whose bytes do not match its sha256', async () => {
     const relay = await relaysWith(await seededEvents());
     const out = await run({ cutoff: T0 + DAY, relay });
-    const kels = `.parts/${out.toc.parts.kels.sha256}.json`;
+    const ref = Object.values(out.toc.parts.kels)[0]!;
+    const kels = `.parts/${ref.sha256}.json`;
     writeFileSync(join(root, kels), read(kels).replace('"at":', '"at": '));
-    await expect(run({ cutoff: T0 + 3 * DAY, relay })).rejects.toThrow(`sha256 mismatch: part ${out.toc.parts.kels.sha256} of ${out.release}`);
+    await expect(run({ cutoff: T0 + 3 * DAY, relay })).rejects.toThrow(new Error(`sha256 mismatch: part ${ref.sha256} of ${out.release}`));
   });
 
   test('a relay that could not answer stops the snapshot without writing anything', async () => {
@@ -205,13 +215,14 @@ describe('runSnapshot', () => {
   test('rejects a previous snapshot whose KEL signatures do not hold', async () => {
     const relay = await relaysWith(await seededEvents());
     const out = await run({ cutoff: T0 + DAY, relay });
-    const kels = snapshotAt(out.path).kels;
+    const [shard, ref] = Object.entries(out.toc.parts.kels)[0]!;
+    const kels = part<KelRecords>(ref.sha256);
     const [aid, kel] = Object.entries(kels)[0]!;
     const sig = kel[0]!.entry.sigs[0]!;
     if ('p256' in sig) sig.p256 = sig.p256.replace(/^./, (c) => (c === '0' ? '1' : '0'));
     const forged = serializePart(kels);
     writeFileSync(join(root, `.parts/${sha256Hex(forged)}.json`), forged);
-    const toc: SnapshotToc = { ...out.toc, parts: { ...out.toc.parts, kels: { ...out.toc.parts.kels, sha256: sha256Hex(forged) } } };
+    const toc: SnapshotToc = { ...out.toc, parts: { ...out.toc.parts, kels: { ...out.toc.parts.kels, [shard]: { ...ref, sha256: sha256Hex(forged) } } } };
     const text = serializeToc(toc);
     writeFileSync(join(root, out.path), text);
     writeFileSync(join(root, 'snapshots/smash_sp/latest.json'), `${JSON.stringify({ path: out.path, sha256: sha256Hex(text) }, null, 2)}\n`);

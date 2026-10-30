@@ -17,7 +17,7 @@ describe('client snapshot', () => {
     const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => (failing ? new Response('busy', { status: 503 }) : ok(input, init))) as typeof fetch;
     const snapshot = await loadClientSnapshot(fetchFn, BASE, 'smash_sp', (await fetchLatest(fetchFn, BASE, 'smash_sp'))!);
     failing = true;
-    await expect(snapshot.loadKels([p.aid])).rejects.toThrow(new Error(`${BASE}snapshots/smash_sp/parts/${JSON.parse(routes[`${BASE}snapshots/smash_sp/season_1/x.json`]!).kel_index.sha256}.json: HTTP 503`));
+    await expect(snapshot.loadKels([p.aid])).rejects.toThrow(new Error(`${BASE}snapshots/parts/${JSON.parse(routes[`${BASE}snapshots/smash_sp/season_1/x.json`]!).kel_index.sha256}.json: HTTP 503`));
     failing = false;
     expect(await snapshot.loadKels([p.aid])).toEqual({ [p.aid]: p.account.kel });
   });

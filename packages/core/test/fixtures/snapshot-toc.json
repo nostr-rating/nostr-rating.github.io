@@ -14,9 +14,16 @@
   "kind": "rolling",
   "parts": {
     "accounts": {
-      "release": "snapshot-smash_sp-season_2-2026-10-28",
-      "sha256": "ab5e92897df358f37d49d5c2b389f2c6a731d55d1876381ae581a22b128a4f19",
-      "size": 440
+      "a": {
+        "release": "snapshot-smash_sp-season_2-2026-10-28",
+        "sha256": "c11c703daf20817008da3659265c404feb74f4d135cbbd12ed8e8006bfbc86ea",
+        "size": 246
+      },
+      "c": {
+        "release": "snapshot-smash_sp-season_2-2026-10-28",
+        "sha256": "7a2a46f27ad377a7f14f3941ec60f4d8a66435cbe989193c0838c9b1523b4677",
+        "size": 196
+      }
     },
     "ids": {
       "release": "snapshot-smash_sp-season_2-2026-10-28",
@@ -24,9 +31,21 @@
       "size": 136
     },
     "kels": {
-      "release": "snapshot-smash_sp-season_2-2026-10-28",
-      "sha256": "4ec7416ffec596da3c524c68cd05591912fc41c83b4f1f7926d50db46231015c",
-      "size": 572
+      "a": {
+        "release": "snapshot-smash_sp-season_2-2026-10-28",
+        "sha256": "bda814b1d1276f44ded1ecbd109ef1778ce07590f1e13b4c67e83a7ed811d9b8",
+        "size": 192
+      },
+      "b": {
+        "release": "snapshot-smash_sp-season_2-2026-10-28",
+        "sha256": "0c769b4ff6e835bcd77318bd8f9965ec35e7dcefa68c5e4246e7372b17dd487e",
+        "size": 192
+      },
+      "c": {
+        "release": "snapshot-smash_sp-season_2-2026-10-28",
+        "sha256": "a61790a768dd213f07ba1da46b7a8a612ee2d1fb16fbb5497d7937a9a39f0064",
+        "size": 192
+      }
     },
     "players": {
       "release": "snapshot-smash_sp-season_2-2026-10-28",

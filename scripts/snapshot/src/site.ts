@@ -23,6 +23,37 @@ export interface SiteOptions {
   fetchFn: typeof fetch;
   /** スナップショットの部品の置き場（docs/adr/0011） */
   parts: PartStore;
+  /** 前回の配信で書き出した紐づけの確認の結果（api/v1/claims.json）。無ければ {} */
+  previousClaims: ClaimResults;
+  /** 確認の時刻（UNIX 秒） */
+  now: number;
+}
+
+/** 紐づけの確認の結果。キーは claimResultKey */
+export type ClaimResults = Record<string, { verified: boolean; at: number }>;
+
+/** この秒数より新しい確認の結果は、確かめ直さずに使う。GitHub の API の回数の上限に当たらないように */
+const CLAIM_RECHECK_SEC = 7 * 86400;
+
+export const claimResultKey = (aid: string, c: IdentityClaim) => `${aid}:${c.platform}:${c.identity.toLowerCase()}:${c.proof}`;
+
+/**
+ * 紐づけを確かめる。応答が無い、または 404 以外の失敗（回数の上限など）のときは、確かめられなかったとして null を返す
+ */
+async function checkClaim(c: IdentityClaim, aid: string, fetchFn: typeof fetch): Promise<boolean | null> {
+  let unavailable = false;
+  const watched: typeof fetch = async (input, init) => {
+    try {
+      const res = await fetchFn(input, init);
+      if (!res.ok && res.status !== 404 && res.status !== 410) unavailable = true;
+      return res;
+    } catch (e) {
+      unavailable = true;
+      throw e;
+    }
+  };
+  const status = await verifyClaim(c, aid, watched);
+  return status === 'verified' ? true : unavailable ? null : false;
 }
 
 /** 公開 API の1人分（docs/api.md） */
@@ -160,7 +191,7 @@ function publishSnapshot(out: string, g: LoadedGame): void {
   const { pointer, toc, tocText, texts } = g.loaded;
   write(join(out, latestOf(g.id)), `${JSON.stringify(pointer, null, 2)}\n`);
   write(join(out, pointer.path), tocText);
-  const files = publishedFiles(g.id, toc, { players: texts.players, seasons: texts.seasons, kels: JSON.parse(texts.kels) as KelRecords });
+  const files = publishedFiles(toc, { players: texts.players, seasons: texts.seasons, kels: texts.kels });
   for (const [path, text] of files) write(join(out, path), text);
 }
 
@@ -186,13 +217,25 @@ export async function buildSite(opts: SiteOptions): Promise<{ players: number; g
       if (!cur || cur.createdAt < a.createdAt) accounts.set(aid, a);
     }
   }
-  // 紐づけは1人につき1回だけ確かめる
+  // 紐づけは1人につき1回だけ確かめる。前回の結果が新しければ使い、確かめられなければ前回の結果を残す
+  const claimResults: ClaimResults = {};
+  let unavailable = 0;
   const accountDocs = new Map<string, PlayerDoc['accounts']>();
   await mapLimit([...accounts.keys()].sort(), CONCURRENCY, async (aid) => {
     const claims = accounts.get(aid)!.claims;
-    const verified = await mapLimit(claims, 1, (c) => verifyClaim(c, aid, opts.fetchFn));
-    accountDocs.set(aid, claims.map((c, i) => ({ platform: c.platform, identity: c.identity, proof_url: proofUrl(c), verified: verified[i] === 'verified' })));
+    const verified = await mapLimit(claims, 1, async (c) => {
+      const key = claimResultKey(aid, c);
+      const before = opts.previousClaims[key];
+      if (before && opts.now - before.at < CLAIM_RECHECK_SEC) return (claimResults[key] = before).verified;
+      const ok = await checkClaim(c, aid, opts.fetchFn);
+      if (ok === null) unavailable++;
+      claimResults[key] = ok === null ? (before ?? { verified: false, at: opts.now }) : { verified: ok, at: opts.now };
+      return claimResults[key].verified;
+    });
+    accountDocs.set(aid, claims.map((c, i) => ({ platform: c.platform, identity: c.identity, proof_url: proofUrl(c), verified: verified[i]! })));
   });
+  if (unavailable > 0) console.warn(`warning: ${unavailable} claims could not be checked (rate limit or network); kept the previous results`);
+  write(join(opts.out, 'api/v1/claims.json'), json(Object.fromEntries(Object.entries(claimResults).sort(([a], [b]) => (a < b ? -1 : 1)))));
   // 確かめられた紐づけが同じなら、同じ人の別のアカウント
   const owners = new Map<string, string[]>();
   for (const [aid, list] of accountDocs) for (const a of list) if (a.verified) owners.set(claimKey(a), [...(owners.get(claimKey(a)) ?? []), aid]);

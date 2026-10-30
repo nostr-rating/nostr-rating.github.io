@@ -3,6 +3,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 import { verifyEvent, type NostrEvent } from 'nostr-tools/pure';
 import { fastVerifyEvent } from '../events/fast.js';
+import { setVerifiedEventsLimit } from '../events/kinds.js';
 import type { Pubkey } from '../types.js';
 
 /** 端末の登録の既定の長さと、1回の登録・延長で許す上限 */
@@ -105,14 +106,24 @@ export function attestationTemplate(digest: string, createdAt: number) {
 
 /** 署名を確かめた結果の控え。結果は鍵・digest・署名だけで決まるので、同じ組は2回確かめない */
 const checked = new Map<string, boolean>();
-const CHECKED_MAX = 50_000;
+let checkedMax = 50_000;
+
+/**
+ * 署名を確かめた結果の控え（KEL と Nostr のイベントの両方）に置く件数の上限。
+ * スナップショットの生成は全員分を先に確かめてから使うので、上限を外す（Infinity）。古いものから捨てると、使う前に消えるため
+ */
+export function setVerifyCacheLimit(n: number): void {
+  checkedMax = n;
+  setVerifiedEventsLimit(n);
+  while (checked.size > checkedMax) checked.delete(checked.keys().next().value!);
+}
 
 const checkedKey = (key: KeyRef, digest: string, sig: KelSig) =>
   `${key.type}:${key.pub}:${digest}:${'p256' in sig ? sig.p256 : `${sig.created_at}:${sig.sig}`}`;
 
 /** 別の実装（WebCrypto など）で確かめた結果を控えに入れる（kel/warm.ts） */
 export function rememberKeySig(key: KeyRef, digest: string, sig: KelSig, ok: boolean): void {
-  if (checked.size >= CHECKED_MAX) checked.delete(checked.keys().next().value!);
+  while (checked.size >= checkedMax && checked.size > 0) checked.delete(checked.keys().next().value!);
   checked.set(checkedKey(key, digest, sig), ok);
 }
 

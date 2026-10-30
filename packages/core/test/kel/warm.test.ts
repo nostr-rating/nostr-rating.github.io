@@ -2,7 +2,7 @@ import { finalizeEvent, generateSecretKey, type NostrEvent } from 'nostr-tools/p
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { isValidEvent } from '../../src/events/kinds.js';
 import { initFastVerify } from '../../src/events/fast.js';
-import { evaluateKel } from '../../src/kel/kel.js';
+import { evaluateKel, setVerifyCacheLimit } from '../../src/kel/kel.js';
 import { warmKelSignatures } from '../../src/kel/warm.js';
 import { newUser, registeredKels } from '../helpers/keys.js';
 
@@ -85,5 +85,25 @@ describe('fast verification', () => {
     await warmKelSignatures({ [a.pk]: kel }, [a.pk]);
     expect(evaluateKel(a.pk, kel)).toBeNull();
     expect(counts.p256).toBe(0);
+  });
+
+  test('with the cache limit lifted, KELs warmed together all evaluate without the slow P-256 check', async () => {
+    const users = Array.from({ length: 3 }, () => newUser());
+    const kels = Object.fromEntries(users.map((u) => [u.pk, registeredKels()[u.pk]!]));
+    try {
+      setVerifyCacheLimit(1);
+      await warmKelSignatures(kels, Object.keys(kels));
+      for (const u of users) evaluateKel(u.pk, kels[u.pk]!);
+      expect(counts.p256).toBeGreaterThan(0);
+      counts.p256 = 0;
+      setVerifyCacheLimit(Infinity);
+      const more = Array.from({ length: 3 }, () => newUser());
+      const moreKels = Object.fromEntries(more.map((u) => [u.pk, registeredKels()[u.pk]!]));
+      await warmKelSignatures(moreKels, Object.keys(moreKels));
+      for (const u of more) evaluateKel(u.pk, moreKels[u.pk]!);
+      expect(counts.p256).toBe(0);
+    } finally {
+      setVerifyCacheLimit(50_000);
+    }
   });
 });

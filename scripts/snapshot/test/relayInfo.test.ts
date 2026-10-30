@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { relaysBelowPageSize } from '../src/relayInfo.js';
+import { relaysBelowPageSize, relaysWithoutLimit } from '../src/relayInfo.js';
 
 /** NIP-11 の問い合わせに答える fetch（Accept を確かめる） */
 function infoFetch(infos: Record<string, unknown>): typeof fetch {
@@ -21,5 +21,13 @@ describe('relaysBelowPageSize', () => {
     });
     const urls = ['wss://small.example', 'wss://large.example', 'ws://local.example:7777', 'wss://silent.example', 'wss://down.example'];
     expect(await relaysBelowPageSize(urls, 300, fetchFn)).toEqual([{ url: 'wss://small.example', maxLimit: 100 }]);
+  });
+
+  test('lists the relays whose limit is not known, to warn about them', async () => {
+    const fetchFn = infoFetch({
+      'https://large.example/': { limitation: { max_limit: 5000 } },
+      'https://silent.example/': { name: 'no limitation' },
+    });
+    expect(await relaysWithoutLimit(['wss://large.example', 'wss://silent.example', 'wss://down.example'], fetchFn)).toEqual(['wss://silent.example', 'wss://down.example']);
   });
 });

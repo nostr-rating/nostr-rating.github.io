@@ -13,6 +13,6 @@ export function snapshotRoutes(base: string, game: string, state: RatingState, p
     [`${base}${path}`]: tocText,
   };
   const seasons = Object.fromEntries(Object.entries(toc.parts.seasons).map(([s, ref]) => [s, text(ref)]));
-  for (const [p, t] of publishedFiles(game, toc, { players: text(toc.parts.players), seasons, kels: state.kels })) routes[`${base}${p}`] = t;
+  for (const [p, t] of publishedFiles(toc, { players: text(toc.parts.players), seasons, kels: state.kels })) routes[`${base}${p}`] = t;
   return routes;
 }

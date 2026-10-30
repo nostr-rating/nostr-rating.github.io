@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
@@ -15,7 +15,7 @@ import {
   type SnapshotToc,
 } from '@nostr-rating/core';
 import { partStore, type PartStore } from '../src/parts.js';
-import { buildSite, type PlayerDoc } from '../src/site.js';
+import { buildSite, claimResultKey, type ClaimResults, type PlayerDoc } from '../src/site.js';
 
 const FIXTURES = resolve(__dirname, 'fixtures');
 const REPO = resolve(__dirname, '../../..');
@@ -24,10 +24,12 @@ let out: string;
 let parts: PartStore;
 
 const fixture = <T>(name: string) => JSON.parse(readFileSync(join(FIXTURES, name), 'utf8')) as T;
+/** aid の先頭1文字ごとの golden の部品（accounts-<文字>.json など）をまとめる */
+const shards = <T>(kind: string): T => Object.assign({}, ...readdirSync(FIXTURES).filter((f) => f.startsWith(`${kind}-`)).map((f) => fixture(f))) as T;
 
 /** golden の部品から作った状態 */
 const snapshot = (): RatingState =>
-  stateFromParts(fixture<SnapshotToc>('toc.json'), { players: fixture('players.json'), seasons: {}, accounts: fixture('accounts.json'), kels: fixture('kels.json') });
+  stateFromParts(fixture<SnapshotToc>('toc.json'), { players: fixture('players.json'), seasons: {}, accounts: shards('accounts'), kels: shards('kels') });
 
 /** 状態を、そのゲームの最新のスナップショットとして置く（目次と latest.json はリポジトリに、部品は置き場に） */
 function put(game: string, state: RatingState): void {
@@ -50,7 +52,9 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 const read = <T>(p: string) => JSON.parse(readFileSync(join(out, p), 'utf8')) as T;
-const site = (fetchFn: typeof fetch) => buildSite({ root, out, appUrl: 'https://example.github.io/nostr-rating/', fetchFn, parts });
+const NOW = 1_790_000_000;
+const site = (fetchFn: typeof fetch, previousClaims: ClaimResults = {}, now = NOW) =>
+  buildSite({ root, out, appUrl: 'https://example.github.io/nostr-rating/', fetchFn, parts, previousClaims, now });
 
 /** a1 の Gist だけが本物（本文に aid がある）。b2 は所有者が違う */
 function stubFetch(): typeof fetch {
@@ -91,7 +95,7 @@ describe('buildSite', () => {
     expect(readFileSync(join(out, path), 'utf8')).toBe(readFileSync(join(root, path), 'utf8'));
     const toc = read<SnapshotToc>(path);
     const part = <T>(sha: string) => {
-      const text = readFileSync(join(out, `snapshots/smash_sp/parts/${sha}.json`), 'utf8');
+      const text = readFileSync(join(out, `snapshots/parts/${sha}.json`), 'utf8');
       expect(sha256Hex(text)).toBe(sha);
       return JSON.parse(text) as T;
     };
@@ -104,7 +108,7 @@ describe('buildSite', () => {
     // アプリはリレーの一覧も同じ配信元から読む
     expect(readFileSync(join(out, 'configs/relays.json'), 'utf8')).toBe(readFileSync(join(root, 'configs/relays.json'), 'utf8'));
     // 生成だけが使う部品は配信しない
-    expect(existsSync(join(out, `snapshots/smash_sp/parts/${toc.parts.accounts.sha256}.json`))).toBe(false);
+    for (const r of Object.values(toc.parts.accounts)) expect(existsSync(join(out, `snapshots/parts/${r.sha256}.json`))).toBe(false);
   });
 
   test('indexes only verified external accounts', async () => {
@@ -113,6 +117,34 @@ describe('buildSite', () => {
     expect(byA1.players).toHaveLength(1);
     expect(byA1.players[0]!.accounts).toEqual([{ platform: 'github', identity: 'a1', proof_url: 'https://gist.github.com/a1/a1', verified: true }]);
     expect(existsSync(join(out, 'api/v1/smash_sp/by/github/b2.json'))).toBe(false);
+  });
+
+  test('records the result of every claim check, so the next publish can reuse it', async () => {
+    await site(stubFetch());
+    const a1 = Object.entries(snapshot().accounts).find(([, a]) => a.claims.some((c) => c.identity === 'a1'))!;
+    const b2 = Object.entries(snapshot().accounts).find(([, a]) => a.claims.some((c) => c.identity === 'b2'))!;
+    expect(read<ClaimResults>('api/v1/claims.json')).toEqual({
+      [claimResultKey(a1[0], a1[1].claims[0]!)]: { verified: true, at: NOW },
+      [claimResultKey(b2[0], b2[1].claims[0]!)]: { verified: false, at: NOW },
+    });
+  });
+
+  test('reuses a recent result without asking again, and keeps the previous result when a check cannot be made', async () => {
+    const [aid, a] = Object.entries(snapshot().accounts).find(([, x]) => x.claims.some((c) => c.identity === 'a1'))!;
+    const key = claimResultKey(aid, a.claims[0]!);
+    const asked: string[] = [];
+    // GitHub の API の上限に当たった
+    const limited = (async (input: string | URL | Request) => {
+      asked.push(String(input));
+      return new Response('rate limited', { status: 403 });
+    }) as typeof fetch;
+    await site(limited, { [key]: { verified: true, at: NOW - 86400 } });
+    expect([asked.includes('https://api.github.com/gists/a1'), read<{ players: PlayerDoc[] }>('api/v1/smash_sp/by/github/a1.json').players.length]).toEqual([false, 1]);
+    // 7日より古い結果は確かめ直す。確かめられなければ前の結果を残す
+    asked.length = 0;
+    await site(limited, { [key]: { verified: true, at: NOW - 8 * 86400 } });
+    expect([asked.includes('https://api.github.com/gists/a1'), read<ClaimResults>('api/v1/claims.json')[key]]).toEqual([true, { verified: true, at: NOW - 8 * 86400 }]);
+    expect(read<{ players: PlayerDoc[] }>('api/v1/smash_sp/by/github/a1.json').players.length).toBe(1);
   });
 
   test('escapes names in the player page', async () => {

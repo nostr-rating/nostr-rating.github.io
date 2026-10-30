@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { createNostrRelayClient, initFastVerify, RATING_PAGE_SIZE } from '@nostr-rating/core';
-import { relaysBelowPageSize } from './relayInfo.js';
+import { createNostrRelayClient, initFastVerify, RATING_PAGE_SIZE, setVerifyCacheLimit } from '@nostr-rating/core';
+import { relaysBelowPageSize, relaysWithoutLimit } from './relayInfo.js';
 import { partStore } from './parts.js';
 import { cliPath } from './paths.js';
 import { eachGame, listGames, runSnapshot } from './run.js';
@@ -28,6 +28,8 @@ if (!values.cutoff || !/^\d+$/.test(values.cutoff)) {
 }
 
 await initFastVerify();
+// 全員分の署名を先に確かめてから使うので、確かめた結果を捨てない（docs/adr/0011）
+setVerifyCacheLimit(Infinity);
 const root = cliPath(values.root);
 const parts = partStore(values.parts ? cliPath(values.parts) : join(root, '.snapshot-parts'), values['release-base'] || null);
 const urls = values.relays
@@ -38,6 +40,9 @@ const small = await relaysBelowPageSize(urls, RATING_PAGE_SIZE);
 if (small.length > 0) {
   for (const r of small) console.error(`${r.url}: 1回に返す件数の上限が ${r.maxLimit} 件で、${RATING_PAGE_SIZE} 件より少ないので使えません`);
   process.exit(1);
+}
+for (const url of await relaysWithoutLimit(urls)) {
+  console.warn(`warning: ${url}: 1回に返す件数の上限を NIP-11 で公開していないか、読めませんでした。上限が ${RATING_PAGE_SIZE} 件より少ないと、取り切ったと見なしてしまいます`);
 }
 
 // 取り切れなかった問い合わせは試し直し、それでも駄目なら集計をやめる（翌日の集計でやり直す）

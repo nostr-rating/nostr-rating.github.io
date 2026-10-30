@@ -18,20 +18,20 @@ export async function identity(u: User, at: number, proof = 'a0'): Promise<Nostr
 }
 
 /** p2 が p1 の募集に申し込んだイベント */
-export async function application(p1: User, p2: User, at: number): Promise<NostrEvent> {
+export async function application(p1: User, p2: User, at: number, game = G): Promise<NostrEvent> {
   return p2.signer.signEvent(
     buildApplication(
-      G,
+      game,
       { recruiter: p1.pk, recruiterSession: p1.sessionAt(at), firstFighter: 'fox', settingsId: '2'.repeat(64), rangeChoice: null, rematchHours: 0, waitingSince: at - 5 },
       at,
     ),
   );
 }
 
-export async function matchFor(p1: User, p2: User, app: NostrEvent, at: number): Promise<NostrEvent> {
+export async function matchFor(p1: User, p2: User, app: NostrEvent, at: number, game = G): Promise<NostrEvent> {
   return p1.signer.signEvent(
     buildMatch(
-      G,
+      game,
       {
         p1: p1.pk,
         p2: p2.pk,
@@ -54,12 +54,13 @@ export async function played(
   at: number,
   results: [ReportResult | null, ReportResult | null],
   reportDelay = 60,
+  game = G,
 ): Promise<NostrEvent[]> {
-  const app = await application(p1, p2, at - 1);
-  const match = await matchFor(p1, p2, app, at);
+  const app = await application(p1, p2, at - 1, game);
+  const match = await matchFor(p1, p2, app, at, game);
   const out = [app, match];
-  if (results[0]) out.push(await p1.signer.signEvent(buildReport(G, { matchId: match.id, opponent: p2.sessionAt(at), result: results[0] }, at + reportDelay)));
-  if (results[1]) out.push(await p2.signer.signEvent(buildReport(G, { matchId: match.id, opponent: p1.sessionAt(at), result: results[1] }, at + reportDelay + 1)));
+  if (results[0]) out.push(await p1.signer.signEvent(buildReport(game, { matchId: match.id, opponent: p2.sessionAt(at), result: results[0] }, at + reportDelay)));
+  if (results[1]) out.push(await p2.signer.signEvent(buildReport(game, { matchId: match.id, opponent: p1.sessionAt(at), result: results[1] }, at + reportDelay + 1)));
   return out;
 }
 

@@ -64,8 +64,8 @@ export interface LoadedSnapshot {
   toc: SnapshotToc;
   /** 目次の本文（リポジトリのものそのまま） */
   tocText: string;
-  /** 部品の本文（配信でそのまま使う） */
-  texts: { players: string; seasons: Record<string, string>; kels: string };
+  /** 部品の本文（配信でそのまま使う）。KEL は部品をまとめたもの */
+  texts: { players: string; seasons: Record<string, string>; kels: KelRecords };
   /** すべての部品から作った状態 */
   state: RatingState;
 }
@@ -80,18 +80,20 @@ export async function loadSnapshot(root: string, game: string, store: PartStore)
   const toc = JSON.parse(tocText) as SnapshotToc;
   if (toc.schema_version !== 3) throw new Error(`${pointer.path}: schema_version ${toc.schema_version} is not supported`);
   const seasonIds = Object.keys(toc.parts.seasons);
-  const [players, accounts, kels, ...seasonTexts] = await Promise.all([
+  const shards = async <T,>(refs: Record<string, PartRef>): Promise<Record<string, T>> =>
+    Object.assign({}, ...(await Promise.all(Object.values(refs).map(async (r) => JSON.parse(await store.get(r)) as Record<string, T>))));
+  const [players, accounts, kels, seasonTexts] = await Promise.all([
     store.get(toc.parts.players),
-    store.get(toc.parts.accounts),
-    store.get(toc.parts.kels),
-    ...seasonIds.map((s) => store.get(toc.parts.seasons[s]!)),
+    shards<SnapshotAccount>(toc.parts.accounts),
+    shards<KelRecords[string]>(toc.parts.kels),
+    Promise.all(seasonIds.map((s) => store.get(toc.parts.seasons[s]!))),
   ]);
   const seasons = Object.fromEntries(seasonIds.map((s, i) => [s, seasonTexts[i]!]));
   const state = stateFromParts(toc, {
-    players: JSON.parse(players!) as PlayersPart,
+    players: JSON.parse(players) as PlayersPart,
     seasons: Object.fromEntries(Object.entries(seasons).map(([s, t]) => [s, JSON.parse(t) as SeasonPart])),
-    accounts: JSON.parse(accounts!) as Record<string, SnapshotAccount>,
-    kels: JSON.parse(kels!) as KelRecords,
+    accounts,
+    kels,
   });
-  return { pointer, toc, tocText, texts: { players: players!, seasons, kels: kels! }, state };
+  return { pointer, toc, tocText, texts: { players, seasons, kels }, state };
 }

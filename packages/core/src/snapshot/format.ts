@@ -68,10 +68,10 @@ export interface SnapshotToc {
   parts: {
     /** PlayersPart */
     players: PartRef;
-    /** aid → 最新のアカウントの公開情報 */
-    accounts: PartRef;
-    /** aid → 採用した KEL（sn の順）。全員の「先に見た版」になる */
-    kels: PartRef;
+    /** aid の先頭1文字 → その aid たちの最新のアカウントの公開情報（aid → SnapshotAccount） */
+    accounts: Record<string, PartRef>;
+    /** aid の先頭1文字 → その aid たちの採用した KEL（aid → sn の順の KEL）。全員の「先に見た版」になる */
+    kels: Record<string, PartRef>;
     /** この回に使ったイベントの id（昇順） */
     ids: PartRef;
     /** シーズン id → SeasonPart。終わったシーズンの部品は、それ以後変わらない */
@@ -158,8 +158,22 @@ export function serializePart(v: unknown): string {
 
 const refOf = (text: string) => ({ sha256: sha256Hex(text), size: utf8ToBytes(text).length });
 
-/** 配信での部品の置き場所 */
-export const partPath = (game: string, sha256: string) => `snapshots/${game}/parts/${sha256}.json`;
+/** 配信での部品の置き場所。名前が sha256 なので、ゲームの間で同じ部品（同じ KEL など）は1つにまとまる */
+export const partPath = (sha256: string) => `snapshots/parts/${sha256}.json`;
+
+/** 公開情報と KEL の部品を分ける単位（aid の先頭1文字）。1つの部品が大きくなりすぎないように分ける */
+export const bulkShard = (aid: Pubkey) => aid.slice(0, 1);
+
+function shards<T>(records: Record<Pubkey, T>): Map<string, Record<Pubkey, T>> {
+  const out = new Map<string, Record<Pubkey, T>>();
+  for (const aid of Object.keys(records).sort()) {
+    const k = bulkShard(aid);
+    const part = out.get(k) ?? {};
+    part[aid] = records[aid]!;
+    out.set(k, part);
+  }
+  return out;
+}
 
 /** KEL の索引を分ける単位（aid の先頭2文字） */
 export const kelPrefix = (aid: Pubkey) => aid.slice(0, 2);
@@ -233,6 +247,8 @@ export function buildSnapshot(
     texts.set(ref.sha256, text);
     return { ...ref, release: meta.release };
   };
+  const putShards = <T>(records: Record<Pubkey, T>, before: Record<string, PartRef> | undefined): Record<string, PartRef> =>
+    Object.fromEntries([...shards(records)].map(([k, part]) => [k, put(serializePart(part), before?.[k])]));
 
   const kel = kelParts(state.kels);
   const aids = Object.keys(state.players);
@@ -269,8 +285,8 @@ export function buildSnapshot(
     excluded: [...(meta.excluded ?? [])].sort(),
     parts: {
       players: put(serializePart(players), prev?.players),
-      accounts: put(serializePart(accountsOf(state, Object.keys(state.accounts))), prev?.accounts),
-      kels: put(serializePart(state.kels), prev?.kels),
+      accounts: putShards(accountsOf(state, Object.keys(state.accounts)), prev?.accounts),
+      kels: putShards(state.kels, prev?.kels),
       ids: put(serializePart(ids), prev?.ids),
       seasons,
     },
@@ -283,11 +299,11 @@ export function buildSnapshot(
  * 配信（GitHub Pages）に置く部品（パス → 本文）。クライアントが読む players、シーズン、KEL の索引、KEL ごとの部品。
  * KEL の索引は kels の部品から作り直し、目次と同じになることを確かめる
  */
-export function publishedFiles(game: string, toc: SnapshotToc, bulk: { players: string; seasons: Record<string, string>; kels: KelRecords }): Map<string, string> {
+export function publishedFiles(toc: SnapshotToc, bulk: { players: string; seasons: Record<string, string>; kels: KelRecords }): Map<string, string> {
   const kel = kelParts(bulk.kels);
   if (kel.index.sha256 !== toc.kel_index.sha256) throw new Error('the KELs do not match kel_index in the table of contents');
   const out = new Map<string, string>();
-  for (const text of [bulk.players, ...Object.values(bulk.seasons), ...kel.texts.values()]) out.set(partPath(game, sha256Hex(text)), text);
+  for (const text of [bulk.players, ...Object.values(bulk.seasons), ...kel.texts.values()]) out.set(partPath(sha256Hex(text)), text);
   return out;
 }
 

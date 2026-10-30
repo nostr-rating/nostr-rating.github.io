@@ -1,7 +1,7 @@
 import type { Filter } from 'nostr-tools/filter';
 import type { NostrEvent } from 'nostr-tools/pure';
 import { parseMatch } from '../events/codec.js';
-import { APP_TAG, isValidEvent, KIND } from '../events/kinds.js';
+import { APP_TAG, gameTag, isValidEvent, KIND } from '../events/kinds.js';
 import type { GameDefinition } from '../game/definition.js';
 import { attributor, KelBook, type KelRecords } from '../kel/book.js';
 import { certOf, SESSION_LIFETIME_SEC, verifyCert, type SignedCert } from '../kel/cert.js';
@@ -175,7 +175,9 @@ export async function fetchRatingEvents(
 
   // 1. KEL と証明書のお知らせ。既知のアカウントは鍵の持ち主ごとに、新しいアカウントは #t から見つける
   const from = since - SESSION_LIFETIME_SEC;
-  all.push(...(await queryAll(relay, { kinds: [KIND.kel, KIND.match], '#t': [APP_TAG], since: from, until }, pageSize, false)));
+  // 対戦はこのゲームの分だけ。KEL はゲームに関係なくアカウントのもの
+  all.push(...(await queryAll(relay, { kinds: [KIND.kel], '#t': [APP_TAG], since: from, until }, pageSize, false)));
+  all.push(...(await queryAll(relay, { kinds: [KIND.match], '#t': [gameTag(def.id)], since: from, until }, pageSize, false)));
   // 1回の取得の中では同じ一覧にイベントを足していき、イベントが増えたアカウントだけを評価し直す
   const records: KelRecords = { ...known };
   const book = new KelBook(known, -Infinity, until);

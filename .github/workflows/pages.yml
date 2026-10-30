@@ -50,7 +50,8 @@ jobs:
       # 選手ページ（p/）、公開 API（api/v1/、docs/api.md）を書き出す。部品はリリースから取る
       - id: pages
         uses: actions/configure-pages@v5
-      - run: npm run site -- --out apps/web/dist --app-url "${{ steps.pages.outputs.base_url }}/"
+      # 紐づけの確認の結果は、前回の配信のものを使い回す（GitHub の API の回数の上限に当たらないように）
+      - run: npm run site -- --out apps/web/dist --app-url "${{ steps.pages.outputs.base_url }}/" --claims-cache "${{ steps.pages.outputs.base_url }}/api/v1/claims.json"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SNAPSHOT_RELEASE_BASE: ${{ github.server_url }}/${{ github.repository }}/releases/download/

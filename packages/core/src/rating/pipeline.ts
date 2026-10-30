@@ -236,13 +236,22 @@ class Applier {
   readonly players: Record<Pubkey, PlayerState>;
   recentPairs: RecentPair[];
   readonly used = new Set<string>();
+  /** 2人の組 → 確定した時刻の並び（連戦の数を、全件を探さずに数える） */
+  readonly #pairTimes = new Map<string, number[]>();
 
   constructor(
     private readonly def: GameDefinition,
     prev: RatingState,
   ) {
     this.players = structuredClone(prev.players);
-    this.recentPairs = [...prev.recentPairs];
+    this.recentPairs = [];
+    for (const p of prev.recentPairs) this.#addPair(p);
+  }
+
+  #addPair(p: RecentPair): void {
+    this.recentPairs.push(p);
+    const k = `${p.a}:${p.b}`;
+    this.#pairTimes.set(k, [...(this.#pairTimes.get(k) ?? []), p.settledAt]);
   }
 
   player(pk: Pubkey): PlayerState {
@@ -292,7 +301,7 @@ class Applier {
     const l1 = glicko2Update(l0, [{ opponent: w0, score: drawn ? 0.5 : 0 }], def.rating.tau);
 
     const [a, b] = pairKey(winnerPk, loserPk);
-    const n = this.recentPairs.filter((p) => p.a === a && p.b === b && t - p.settledAt < def.rematchWeight.windowSec).length;
+    const n = (this.#pairTimes.get(`${a}:${b}`) ?? []).filter((at) => t - at < def.rematchWeight.windowSec).length;
     const weights = def.rematchWeight.weights;
     const weight = weights[Math.min(n, weights.length - 1)]!;
 
@@ -307,7 +316,7 @@ class Applier {
     };
     update(w, w0, w1, true);
     update(l, l0, l1, false);
-    this.recentPairs.push({ a, b, settledAt: t });
+    this.#addPair({ a, b, settledAt: t });
     markUsed();
   }
 }
@@ -391,6 +400,12 @@ export function provisionalRatings(def: GameDefinition, state: RatingState, even
 }
 
 export function toLocalView(def: GameDefinition, state: RatingState): LocalView {
+  // 2人の組 → 最後に確定した時刻。マッチングは候補ごとに引くので、先にまとめておく
+  const lastOf = new Map<string, number>();
+  for (const p of state.recentPairs) {
+    const k = `${p.a}:${p.b}`;
+    if ((lastOf.get(k) ?? -Infinity) < p.settledAt) lastOf.set(k, p.settledAt);
+  }
   return {
     ratingOf: (pk) => state.players[pk]?.rating ?? def.rating.initialRating,
     mannersTotalOf: (pk) => {
@@ -399,9 +414,7 @@ export function toLocalView(def: GameDefinition, state: RatingState): LocalView 
     },
     lastMatchBetween: (x, y) => {
       const [a, b] = pairKey(x, y);
-      let last: number | null = null;
-      for (const p of state.recentPairs) if (p.a === a && p.b === b && (last === null || p.settledAt > last)) last = p.settledAt;
-      return last;
+      return lastOf.get(`${a}:${b}`) ?? null;
     },
     hasIdentity: (pk) => state.players[pk]?.hasIdentity ?? false,
   };

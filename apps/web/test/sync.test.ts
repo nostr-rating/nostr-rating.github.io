@@ -201,7 +201,7 @@ describe('syncRatings', () => {
     await playedMatch(relay, await at(a, clock, CUT + 100), await at(b, clock, CUT + 100), CUT + 100);
     const kels = { [a.aid]: a.account.kel, [b.aid]: b.account.kel };
     const files = snapshotRoutes(BASE, 'smash_sp', { ...initialState(def, 1, CUT), kels }, PATH);
-    const index = `${BASE}snapshots/smash_sp/parts/${JSON.parse(files[`${BASE}${PATH}`]!).kel_index.sha256}.json`;
+    const index = `${BASE}snapshots/parts/${JSON.parse(files[`${BASE}${PATH}`]!).kel_index.sha256}.json`;
     const fetchFn = (async (input: string | URL | Request) => (String(input) === index ? new Response('busy', { status: 503 }) : fakeFetch(files)(input))) as typeof fetch;
     await expect(syncRatings({ def, relay, store: new MemoryEventStore(), fetchFn, base: BASE, now: () => now })).rejects.toThrow(new Error(`${index}: HTTP 503`));
   });

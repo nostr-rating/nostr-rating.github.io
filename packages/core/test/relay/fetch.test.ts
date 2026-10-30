@@ -7,7 +7,7 @@ import { fetchRatingEvents } from '../../src/relay/fetch.js';
 import { MemoryRelay } from '../../src/relay/memory.js';
 import { def } from '../helpers/def.js';
 import { newUser, registeredKels } from '../helpers/keys.js';
-import { identity, p1Wins } from '../helpers/scenario.js';
+import { identity, p1Wins, played } from '../helpers/scenario.js';
 
 const T0 = 1_790_800_000;
 const now = () => T0 + 10_000;
@@ -97,6 +97,22 @@ describe('fetchRatingEvents', () => {
     expect(ids(got.events)).toEqual(ids(evs));
     expect([...new Set(asked)].sort()).toEqual([a.pk, b.pk].sort());
     expect(asked).not.toContain(idle.pk);
+  });
+
+  test('does not read the matches of another game, nor the KELs of accounts that played only there', async () => {
+    const relay = new MemoryRelay(now);
+    const [a, b, c, d] = [newUser(), newUser(), newUser(), newUser()];
+    const smash = [await identity(a, T0 - 10), await identity(b, T0 - 10), ...(await p1Wins(a, b, T0))];
+    const chess = await played(c, d, T0, ['win', 'lose'], 60, 'chess');
+    await publishAll(relay, [...smash, ...chess]);
+    const asked: string[] = [];
+    const loadKels = async (aids: string[]) => {
+      asked.push(...aids);
+      const all = registeredKels();
+      return Object.fromEntries(aids.filter((aid) => all[aid]).map((aid) => [aid, all[aid]!]));
+    };
+    const got = await fetchRatingEvents(relay, def, {}, T0 - 100, T0 + 1000, { loadKels });
+    expect([ids(got.events), [...new Set(asked)].sort()]).toEqual([ids(smash), [a.pk, b.pk].sort()]);
   });
 
   test('finds a new account from its KEL events', async () => {
