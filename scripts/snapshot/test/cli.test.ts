@@ -162,7 +162,7 @@ describe('runSnapshot', () => {
     let calls = 0;
     // 途中の問い合わせで失敗する（それまでの問い合わせは答えている）
     const flaky: RelayClient = { ...inner, query: async (f) => (++calls === 5 ? Promise.reject(new Error('wss://r.example: no EOSE within 10000ms')) : inner.query(f)) };
-    await expect(run({ cutoff: T0 + DAY, relay: flaky })).rejects.toThrow('wss://r.example: no EOSE within 10000ms');
+    await expect(run({ cutoff: T0 + DAY, relay: flaky })).rejects.toThrow(new Error('wss://r.example: no EOSE within 10000ms'));
     expect([existsSync(join(root, 'snapshots')), existsSync(join(root, '.parts'))]).toEqual([false, false]);
   });
 
@@ -226,7 +226,7 @@ describe('runSnapshot', () => {
     const text = serializeToc(toc);
     writeFileSync(join(root, out.path), text);
     writeFileSync(join(root, 'snapshots/smash_sp/latest.json'), `${JSON.stringify({ path: out.path, sha256: sha256Hex(text) }, null, 2)}\n`);
-    await expect(run({ cutoff: T0 + 3 * DAY, relay })).rejects.toThrow(`recorded KEL does not verify: ${aid}`);
+    await expect(run({ cutoff: T0 + 3 * DAY, relay })).rejects.toThrow(new Error(`recorded KEL does not verify: ${aid}`));
   });
 
   test('rejects a change of rating settings in the middle of a season', async () => {

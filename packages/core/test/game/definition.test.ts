@@ -22,43 +22,43 @@ describe('parseGameDefinition', () => {
   test('rejects starter stage not in all', () => {
     const bad = structuredClone(rawJson);
     bad.stages.starter.push('unknown_stage');
-    expect(() => parseGameDefinition(bad)).toThrow('invalid game definition: stages.starter[6] unknown stage unknown_stage');
+    expect(() => parseGameDefinition(bad)).toThrow(new Error('invalid game definition: stages.starter[6] unknown stage unknown_stage'));
   });
 
   test('rejects unknown character in sharedBanGroups', () => {
     const bad = structuredClone(rawJson);
     bad.characters.sharedBanGroups.push(['mario', 'nobody']);
-    expect(() => parseGameDefinition(bad)).toThrow('invalid game definition: characters.sharedBanGroups[3][1] unknown character nobody');
+    expect(() => parseGameDefinition(bad)).toThrow(new Error('invalid game definition: characters.sharedBanGroups[3][1] unknown character nobody'));
   });
 
   test('rejects duplicate character ids', () => {
     const bad = structuredClone(rawJson);
     bad.characters.list.push({ id: 'mario', name: 'x' });
-    expect(() => parseGameDefinition(bad)).toThrow('invalid game definition: characters.list has duplicate ids');
+    expect(() => parseGameDefinition(bad)).toThrow(new Error('invalid game definition: characters.list has duplicate ids'));
   });
 
   test('rejects stages without characters', () => {
     const bad = structuredClone(rawJson);
     delete bad.characters;
-    expect(() => parseGameDefinition(bad)).toThrow('invalid game definition: stages needs characters');
+    expect(() => parseGameDefinition(bad)).toThrow(new Error('invalid game definition: stages needs characters'));
   });
 
   test('rejects missing rating section', () => {
     const bad = structuredClone(rawJson);
     delete bad.rating;
-    expect(() => parseGameDefinition(bad)).toThrow('invalid game definition: rating must be an object');
+    expect(() => parseGameDefinition(bad)).toThrow(new Error('invalid game definition: rating must be an object'));
   });
 
   test('rejects starter stage that is not a counterpick stage', () => {
     const bad = structuredClone(rawJson);
     bad.stages.counterpick = bad.stages.counterpick.filter((s: string) => s !== 'battlefield');
-    expect(() => parseGameDefinition(bad)).toThrow('invalid game definition: stages.starter battlefield must also be a counterpick stage');
+    expect(() => parseGameDefinition(bad)).toThrow(new Error('invalid game definition: stages.starter battlefield must also be a counterpick stage'));
   });
 
   test('rejects even bestOf', () => {
     const bad = structuredClone(rawJson);
     bad.format.bestOf = 4;
-    expect(() => parseGameDefinition(bad)).toThrow('invalid game definition: format.bestOf must be a positive odd integer');
+    expect(() => parseGameDefinition(bad)).toThrow(new Error('invalid game definition: format.bestOf must be a positive odd integer'));
   });
 
   test('room password digits', () => {
@@ -68,7 +68,7 @@ describe('parseGameDefinition', () => {
   test('rejects generated password digits outside the allowed range', () => {
     const bad = structuredClone(rawJson);
     bad.room.password.generatedDigits = 9;
-    expect(() => parseGameDefinition(bad)).toThrow('invalid game definition: room.password.generatedDigits must be between minDigits and maxDigits');
+    expect(() => parseGameDefinition(bad)).toThrow(new Error('invalid game definition: room.password.generatedDigits must be between minDigits and maxDigits'));
   });
 
   test('room notes for the in-game room settings', () => {
@@ -100,7 +100,7 @@ describe('chess and the list of games', () => {
   test('rejects ids that cannot be a folder name', () => {
     const bad = structuredClone(chessJson);
     bad.id = '../x';
-    expect(() => parseGameDefinition(bad)).toThrow('invalid game definition: id must be lowercase letters, digits and _');
+    expect(() => parseGameDefinition(bad)).toThrow(new Error('invalid game definition: id must be lowercase letters, digits and _'));
   });
 });
 
@@ -143,6 +143,6 @@ describe('seasons', () => {
   test('rejects a season definition whose start day may not exist in every month', () => {
     const bad = structuredClone(rawJson);
     bad.seasons.firstStartsAt = 1793372400; // 2026-10-31 00:00 JST
-    expect(() => parseGameDefinition(bad)).toThrow('invalid game definition: seasons.firstStartsAt must be on day 1-28 of the month');
+    expect(() => parseGameDefinition(bad)).toThrow(new Error('invalid game definition: seasons.firstStartsAt must be on day 1-28 of the month'));
   });
 });

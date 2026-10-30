@@ -104,7 +104,7 @@ describe('syncRatings', () => {
         base: BASE,
         now: () => CUT + 10,
       }),
-    ).rejects.toThrow(/sha256/);
+    ).rejects.toThrow(new Error(`sha256 mismatch: ${PATH}`));
   });
 
   test('reuses the snapshot while latest.json points to the same one', async () => {
@@ -129,7 +129,7 @@ describe('syncRatings', () => {
     files[players] = files[players]!.replace('"players":{}', '"players":{ }');
     await expect(
       syncRatings({ def, relay: new MemoryRelay(() => CUT + 10), store: new MemoryEventStore(), fetchFn: fakeFetch(files), base: BASE, now: () => CUT + 10 }),
-    ).rejects.toThrow(`sha256 mismatch: part ${players.split('/').pop()!.replace('.json', '')}`);
+    ).rejects.toThrow(new Error(`sha256 mismatch: part ${players.split('/').pop()!.replace('.json', '')}`));
   });
 
   test('without a snapshot yet, starts the current season from its beginning', async () => {

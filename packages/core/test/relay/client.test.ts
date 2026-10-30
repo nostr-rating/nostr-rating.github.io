@@ -34,7 +34,7 @@ describe('queryUntilEose', () => {
 
   test('fails when EOSE does not come in time instead of returning what arrived', async () => {
     const relay = fakeRelay((p) => p.onevent?.(ev(1)));
-    await expect(queryUntilEose(relay, {}, 50)).rejects.toThrow('no EOSE within 50ms');
+    await expect(queryUntilEose(relay, {}, 50)).rejects.toThrow(new Error('no EOSE within 50ms'));
     expect(relay.closed).toEqual(['closed by caller']);
   });
 
@@ -43,7 +43,7 @@ describe('queryUntilEose', () => {
       p.onevent?.(ev(1));
       p.onclose?.('rate-limited: slow down');
     });
-    await expect(queryUntilEose(relay, {}, 1000)).rejects.toThrow('closed before EOSE: rate-limited: slow down');
+    await expect(queryUntilEose(relay, {}, 1000)).rejects.toThrow(new Error('closed before EOSE: rate-limited: slow down'));
   });
 });
 
@@ -65,7 +65,7 @@ describe('withRetries', () => {
         calls++;
         throw new Error(`fail ${calls}`);
       }, 3, 1),
-    ).rejects.toThrow('fail 3');
+    ).rejects.toThrow(new Error('fail 3'));
     expect(calls).toBe(3);
   });
 });

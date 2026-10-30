@@ -15,7 +15,7 @@ describe('BO3 set', () => {
 
   test('only the previous loser may change fighter', () => {
     let s = recordGame(def, initialSet('mario', 'fox'), 'p1');
-    expect(() => changeFighter(def, s, 'p1', 'luigi')).toThrow('only the previous loser may change fighter');
+    expect(() => changeFighter(def, s, 'p1', 'luigi')).toThrow(new Error('only the previous loser may change fighter'));
     s = changeFighter(def, s, 'p2', 'falco');
     expect(s.p2Fighter).toBe('falco');
     expect(nextStageOptions(def, s, { p1: { falco: ['smashville'] }, p2: {} })).toEqual({
@@ -26,9 +26,9 @@ describe('BO3 set', () => {
 
   test('no fighter change after the set is decided or to an unknown fighter', () => {
     let s = recordGame(def, initialSet('mario', 'fox'), 'p1');
-    expect(() => changeFighter(def, s, 'p2', 'nobody')).toThrow('unknown fighter nobody');
+    expect(() => changeFighter(def, s, 'p2', 'nobody')).toThrow(new Error('unknown fighter nobody'));
     s = recordGame(def, s, 'p1');
-    expect(() => changeFighter(def, s, 'p2', 'falco')).toThrow('set is already decided');
+    expect(() => changeFighter(def, s, 'p2', 'falco')).toThrow(new Error('set is already decided'));
   });
 
   test('undoGame removes the last game and restores the fighters used in it', () => {
@@ -41,7 +41,7 @@ describe('BO3 set', () => {
   });
 
   test('no fighter change before game 1', () => {
-    expect(() => changeFighter(def, initialSet('mario', 'fox'), 'p1', 'luigi')).toThrow('only the previous loser may change fighter');
+    expect(() => changeFighter(def, initialSet('mario', 'fox'), 'p1', 'luigi')).toThrow(new Error('only the previous loser may change fighter'));
   });
 
   test('records fighters used in each game', () => {
@@ -57,6 +57,6 @@ describe('BO3 set', () => {
     expect(setWinner(def, s)).toBeNull();
     s = recordGame(def, s, 'p2');
     expect(setWinner(def, s)).toBe('p2');
-    expect(() => recordGame(def, s, 'p1')).toThrow('set is already decided');
+    expect(() => recordGame(def, s, 'p1')).toThrow(new Error('set is already decided'));
   });
 });

@@ -32,7 +32,7 @@ describe('coalesce', () => {
       if (fail) throw new Error('down');
       return 'ok';
     });
-    await expect(run()).rejects.toThrow('down');
+    await expect(run()).rejects.toThrow(new Error('down'));
     fail = false;
     expect(await run()).toBe('ok');
   });

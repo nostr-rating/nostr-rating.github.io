@@ -76,7 +76,7 @@ describe('KelBook', () => {
     const forged = structuredClone(kels[a.pk]!);
     const sig = forged[0]!.entry.sigs[0]!;
     if ('p256' in sig) sig.p256 = sig.p256.replace(/^./, (c) => (c === '0' ? '1' : '0'));
-    expect(() => new KelBook({ ...kels, [a.pk]: forged }, -Infinity, Infinity).verifyRecorded()).toThrow(a.pk);
+    expect(() => new KelBook({ ...kels, [a.pk]: forged }, -Infinity, Infinity).verifyRecorded()).toThrow(new Error(`recorded KEL does not verify: ${a.pk}`));
     expect(() => new KelBook(kels, -Infinity, Infinity).verifyRecorded()).not.toThrow();
   });
 });
