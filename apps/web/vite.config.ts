@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
+import { formatNotices, thirdPartyPackages } from '../../tools/third-party-notices.mjs';
 import { recoveryUrl, withRecoveryLink } from './src/recoveryLink.js';
 import { repoDataFile } from './src/repoData.js';
 
@@ -80,6 +81,27 @@ function serveFonts(): Plugin {
   };
 }
 
+/** 配布物に入る依存パッケージのライセンスの本文（ヘルプからリンクする） */
+const NOTICES = 'THIRD_PARTY_NOTICES.txt';
+
+function thirdPartyNotices(): Plugin {
+  let base = '/';
+  const text = () => formatNotices(thirdPartyPackages(REPO, ['apps/web']));
+  return {
+    name: 'third-party-notices',
+    configResolved: (c) => void (base = c.base),
+    configureServer: (s) =>
+      void s.middlewares.use((req, res, next) => {
+        if ((req.url ?? '').split('?')[0] !== `${base}${NOTICES}`) return next();
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.end(text());
+      }),
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: NOTICES, source: text() });
+    },
+  };
+}
+
 /** ヘルプに復活の道具の入手先を書き込む。public/ のファイルは変換されないので、開発時は配るときに、ビルドでは書き出したあとに置き換える */
 const RECOVERY_URL = recoveryUrl(process.env);
 const HELP = 'help/account.html';
@@ -123,7 +145,7 @@ const lanHosts = (() => {
 
 export default defineConfig({
   base: process.env.VITE_BASE ?? '/',
-  plugins: [react(), serveRepoData(), serveFonts(), helpRecoveryLink(), ...(lan && !lanCert ? [basicSsl()] : [])],
+  plugins: [react(), serveRepoData(), serveFonts(), thirdPartyNotices(), helpRecoveryLink(), ...(lan && !lanCert ? [basicSsl()] : [])],
   server: lan
     ? {
         host: true,
