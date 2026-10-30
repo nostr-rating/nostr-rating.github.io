@@ -50,6 +50,23 @@ describe('fast verification', () => {
     expect(counts.event).toBe(0);
   });
 
+  test('rejects an event whose id is not the full lowercase hash of its content', () => {
+    const ev = finalizeEvent({ kind: 1, created_at: T0, tags: [], content: 'x' }, generateSecretKey());
+    const withId = (id: string) => ({ ...(JSON.parse(JSON.stringify(ev)) as NostrEvent), id });
+    expect(isValidEvent(withId(''))).toBe(false);
+    expect(isValidEvent(withId(ev.id.slice(0, 2)))).toBe(false);
+    expect(isValidEvent(withId(ev.id.toUpperCase()))).toBe(false);
+    expect(isValidEvent(withId(ev.id))).toBe(true);
+  });
+
+  test('rejects an event whose signature or key is cut short, even right after the full one was checked', () => {
+    const ev = finalizeEvent({ kind: 1, created_at: T0, tags: [], content: 'short' }, generateSecretKey());
+    const copy = () => JSON.parse(JSON.stringify(ev)) as NostrEvent;
+    expect(isValidEvent(copy())).toBe(true);
+    expect(isValidEvent({ ...copy(), sig: ev.sig.slice(0, 64) })).toBe(false);
+    expect(isValidEvent({ ...copy(), sig: '' })).toBe(false);
+  });
+
   test('a KEL warmed ahead evaluates the same without the slow P-256 check', async () => {
     const a = newUser();
     a.sessionAt(T0 + 100 * 86400); // 入れ替えを1回含める

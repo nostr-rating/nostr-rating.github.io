@@ -1,5 +1,5 @@
 import { deviceValidAt } from '@nostr-rating/core';
-import { decodeDeviceRequest } from '../account/account.js';
+import { decodeDeviceRequest, deviceRequestCheck } from '../account/account.js';
 import { QrScanner } from './QrScanner.js';
 import { useState } from 'react';
 import { useApp } from '../state/AppContext.js';
@@ -80,8 +80,9 @@ export function Devices() {
       <div className="field">
         <label htmlFor="device-request-input">端末の申請</label>
         <textarea id="device-request-input" rows={3} autoComplete="off" value={code} onChange={(e) => setCode(e.target.value)} />
-        <p className="slot">{request ? `追加する端末: ${request.label}` : ''}</p>
+        <p className="slot" data-testid="device-check">{request ? `追加する端末: ${request.label}（確認の番号 ${deviceRequestCheck(request)}）` : ''}</p>
       </div>
+      <p className="hint">新しい端末の画面に出ている確認の番号と同じかを確かめてから追加してください。</p>
       <button type="button" className="wide" disabled={busy || !request} onClick={() => void run(async () => void (await app.account!.addDevice(code)), 'この端末を追加しました')}>
         この端末を追加
       </button>

@@ -1,4 +1,4 @@
-import { KIND, MemoryRelay, parseKelEvent, recoveryKey, verificationText } from '@nostr-rating/core';
+import { decodeDeviceRequest, deviceRequestCheck, KIND, MemoryRelay, parseKelEvent, recoveryKey, verificationText } from '@nostr-rating/core';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -143,6 +143,8 @@ describe('Onboarding', () => {
     await user.click(screen.getByRole('button', { name: 'すでにアカウントを持っている' }));
     await waitFor(() => expect(screen.getByTestId('device-request').textContent).toMatch(/^nr-device:/));
     expect((await screen.findByRole('img', { name: '端末の申請の QR コード' })).querySelector('svg')).toBeTruthy();
+    const request = decodeDeviceRequest(screen.getByTestId('device-request').textContent!)!;
+    expect(screen.getByTestId('device-check').textContent).toBe(`確認の番号: ${deviceRequestCheck(request)}`);
     await existing.account.addDevice(screen.getByTestId('device-request').textContent!);
     // 表示名と紐づけがあるアカウントなので、そのままロビーへ進む
     await waitFor(() => expect(location.hash).toBe('#/lobby'), { timeout: 5000 });

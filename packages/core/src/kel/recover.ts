@@ -48,6 +48,16 @@ export function decodeDeviceRequest(code: string): DeviceRequest | null {
   }
 }
 
+/**
+ * 申請の確認の番号（6桁）。新しい端末と、追加する側の両方に出し、同じかを本人が見比べる。
+ * 途中で別の申請に差し替えられたときに気づけるよう、端末の鍵と発行の鍵から作る（名前は攻撃者が自由に決められるので使わない）
+ */
+export function deviceRequestCheck(r: DeviceRequest): string {
+  const n = parseInt(digestOf({ key: r.key, publisher: r.publisher }).slice(0, 8), 16) % 1_000_000;
+  const s = String(n).padStart(6, '0');
+  return `${s.slice(0, 3)} ${s.slice(3)}`;
+}
+
 export function deviceRecordFor(r: DeviceRequest, at: number): DeviceRecord {
   return { id: deviceId(r.key), key: r.key, publisher: r.publisher, label: r.label, expiresAt: at + DEVICE_LIFETIME_SEC };
 }

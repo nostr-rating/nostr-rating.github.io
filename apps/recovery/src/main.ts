@@ -1,6 +1,7 @@
 import {
   createNostrRelayClient,
   decodeDeviceRequest,
+  deviceRequestCheck,
   deviceRecordFor,
   findAccountsByNextKeys,
   loadKel,
@@ -130,6 +131,11 @@ function stepRequest() {
   const input = h('textarea', { rows: 4, autocomplete: 'off', spellcheck: false, placeholder: 'nr-device: で始まる文字列' });
   const next = h('button', { className: 'primary', textContent: '次へ' });
   const status = errorSlot();
+  const check = h('p', { className: 'slot' });
+  input.oninput = () => {
+    const r = decodeDeviceRequest(input.value);
+    check.textContent = r ? `追加する端末: ${r.label}（確認の番号 ${deviceRequestCheck(r)}）` : '';
+  };
   next.onclick = () => {
     const r = decodeDeviceRequest(input.value);
     if (!r) return void (status.textContent = '端末の申請を読み取れませんでした。nr-device: から最後まで、全部を貼ってください。');
@@ -139,7 +145,8 @@ function stepRequest() {
   };
   const scan = h('button', { textContent: 'カメラで QR コードを読み取る' });
   const video = h('video', { className: 'scanner', playsInline: true, muted: true, hidden: true });
-  scan.onclick = () => void scanInto(video, input, () => next.click());
+  // 読み取ったら確認の番号を出して止まり、見比べてから本人が次へ進む
+  scan.onclick = () => void scanInto(video, input, () => input.dispatchEvent(new Event('input')));
   show(
     h('p', {}, `アカウントが見つかりました。今登録されている端末: ${devices.map((d) => d.record.label).join('、') || 'なし'}`),
     h('p', {}, '入れ替えると、これらの端末はすべて使えなくなり、次の手順で登録する新しい端末だけが残ります。'),
@@ -148,6 +155,8 @@ function stepRequest() {
     scan,
     video,
     input,
+    check,
+    h('p', { className: 'hint' }, '新しい端末の画面に出ている確認の番号と同じかを確かめてから、次へ進んでください。'),
     next,
     status,
   );

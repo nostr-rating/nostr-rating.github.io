@@ -103,6 +103,19 @@ describe('advanceRatings', () => {
     }
   });
 
+  test('a second match the recruiter issues for the same application does not replace the one the opponent reported on', async () => {
+    const played_ = await played(alice, bob, T0, ['lose', 'win']);
+    const [app, match] = played_ as [NostrEvent, NostrEvent];
+    // 負けた募集者が、同じ申し込みに id の小さい対戦を出し直し、そちらで勝ちと報告する
+    let alt: NostrEvent | undefined;
+    for (let at = T0 + 1; !alt || alt.id > match.id; at++) alt = await matchFor(alice, bob, app, at);
+    const altWin = await alice.signer.signEvent(buildReport('smash_sp', { matchId: alt.id, opponent: bob.sessionAt(T0), result: 'win' }, T0 + 30));
+    const honest = advanceRatings(def, s0(), [...ids, ...played_], after(T0 + 60));
+    const replaced = advanceRatings(def, s0(), [...ids, ...played_, alt, altWin], after(T0 + 60));
+    expect(replaced.state.players).toEqual(honest.state.players);
+    expect(replaced.state.players[bob.pk]!.wins).toBe(1);
+  });
+
   test('matches whose deadline is at or before prev.cutoff are skipped', async () => {
     const evs = [...ids, ...(await p1Wins(alice, bob, T0))];
     const { state } = advanceRatings(def, initialState(def, 1, after(T0)), evs, after(T0) + 1000);

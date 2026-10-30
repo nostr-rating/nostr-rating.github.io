@@ -13,5 +13,8 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 button:disabled { opacity: .6; cursor: default; }
 .notice { border-left: 3px solid var(--warn); padding-left: 12px; }
 .error { color: var(--warn); font-weight: 700; }
+/* 中身が出たり消えたりしても下の要素が動かないよう、1行分の高さを取っておく */
+.slot { min-height: 1.6em; }
+.hint { font-size: 13px; color: var(--muted); }
 .words { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 4px 16px; font-family: ui-monospace, monospace; padding-left: 2em; }
 .scanner { width: 100%; max-width: 360px; border-radius: 8px; }

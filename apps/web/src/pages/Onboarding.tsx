@@ -11,7 +11,7 @@ import {
   type VerifyStatus,
 } from '@nostr-rating/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Account } from '../account/account.js';
+import { Account, decodeDeviceRequest, deviceRequestCheck } from '../account/account.js';
 import { connectExternal, type ExternalDevice } from '../account/external.js';
 import { CopyButton } from '../components/CopyButton.js';
 import { Dock } from '../components/Dock.js';
@@ -263,6 +263,10 @@ export function Onboarding() {
             <span className="label">端末の申請</span>
             <p className="code-box" data-testid="device-request">{requestCode ?? '作成中…'}</p>
           </div>
+          <p data-testid="device-check">
+            確認の番号: <strong>{requestCode ? deviceRequestCheck(decodeDeviceRequest(requestCode)!) : '作成中…'}</strong>
+          </p>
+          <p className="hint">登録する側の画面にも同じ番号が出ます。違っていたら、その申請は追加しないでください。</p>
           <CopyButton text={requestCode}>申請をコピー</CopyButton>
           <div className="stack">
             <p>文字列を貼る場所は、次のどちらかです。</p>

@@ -148,6 +148,10 @@ test('a second device is added by pasting its request, and the first device revo
 
   await first.goto('/#/settings');
   await first.getByLabel('端末の申請').fill(request);
+  // 両方の端末に同じ確認の番号が出る
+  const check = ((await second.getByTestId('device-check').textContent()) ?? '').replace('確認の番号: ', '');
+  expect(check).toMatch(/^\d{3} \d{3}$/);
+  await expect(first.getByTestId('device-check')).toHaveText(new RegExp(`（確認の番号 ${check}）$`));
   await first.getByRole('button', { name: 'この端末を追加' }).click();
   // 表示名と紐づけがあるアカウントなので、2台目はそのままロビーへ進む
   await expect(second).toHaveURL(/#\/lobby$/, { timeout: 20_000 });
@@ -195,6 +199,8 @@ test('the recovery tool moves the account to a new device and the old device sto
   await openTool();
   await expect(tool.getByText('アカウントが見つかりました', { exact: false })).toBeVisible({ timeout: 20_000 });
   await tool.getByPlaceholder('nr-device: で始まる文字列').fill(request);
+  const freshCheck = ((await fresh.getByTestId('device-check').textContent()) ?? '').replace('確認の番号: ', '');
+  await expect(tool.getByText(`（確認の番号 ${freshCheck}）`, { exact: false })).toBeVisible();
   await tool.getByRole('button', { name: '次へ' }).click();
   await expect(tool.locator('ol.words li')).toHaveCount(12);
   const newWords = await tool.locator('ol.words li').allTextContents();

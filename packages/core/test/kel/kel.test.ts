@@ -80,6 +80,21 @@ describe('evaluateKel', () => {
     expect(deviceValidAt(s3, a.record.id, revokeAt)).toBe(false);
   });
 
+  it('does not bring a revoked device back with a renewal', () => {
+    const { a, aid, inputs } = setup();
+    const s0 = evaluateKel(aid, inputs)!;
+    const b = newDevice(T0 + DAY, 'pc');
+    inputs.push({ entry: signed(ixn(aid, 1, s0.tip, { add: [b.record] }), [a]), at: T0 + DAY });
+    const s1 = evaluateKel(aid, inputs)!;
+    inputs.push({ entry: signed(ixn(aid, 2, s1.tip, { revoke: [a.record.id] }), [b]), at: T0 + 2 * DAY });
+    const s2 = evaluateKel(aid, inputs)!;
+    const renewAt = T0 + 3 * DAY;
+    inputs.push({ entry: signed(ixn(aid, 3, s2.tip, { renew: [{ id: a.record.id, expiresAt: renewAt + DAY }] }), [b]), at: renewAt });
+    const s3 = evaluateKel(aid, inputs)!;
+    expect(s3.sn).toBe(2);
+    expect(deviceValidAt(s3, a.record.id, renewAt)).toBe(false);
+  });
+
   it('ignores an interaction signed by a revoked or expired device', () => {
     const { a, aid, inputs } = setup();
     const s0 = evaluateKel(aid, inputs)!;

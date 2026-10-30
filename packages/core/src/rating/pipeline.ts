@@ -151,10 +151,18 @@ interface Inputs {
 /**
  * 署名を確かめてから重複を除き、対戦を申し込みに結び付ける。
  * 対戦が有効なのは、p2 が署名して p1 の募集を指した申し込みに、成立待ちの時間内に応えたものだけ。
- * 1つの申し込みには最小 id の対戦だけを結び付ける。
+ * 1つの申し込みには対戦を1つだけ結び付ける。対戦を出すのは募集者だけなので、申し込んだ側（p2）が報告した対戦を先に選び、
+ * 募集者が出し直した対戦で結果を差し替えられないようにする。どちらも同じなら最小 id のもの。
  * exclude（取り切れなかったアカウント）の公開情報と報告は、取れた分によって変わるので使わない。
  * そのアカウントが出した対戦も、相手が報告したものだけを使う
  */
+/** 同じ申し込みに結び付く対戦 a を、b より優先するか */
+function preferMatch(a: Linked, b: Linked): boolean {
+  const answered = (l: Linked) => l.reports.some((r) => r.reporter === l.match.p2);
+  if (answered(a) !== answered(b)) return answered(a);
+  return byId(a.match.id, b.match.id) < 0;
+}
+
 function collect(def: GameDefinition, season: number, events: NostrEvent[], author: Attributor, until: number, exclude: ReadonlySet<string> = new Set()): Inputs {
   const unique = dedupeById(events.filter((e) => isValidEvent(e)));
   const { startsAt, endsAt } = seasonById(def, season);
@@ -202,7 +210,8 @@ function collect(def: GameDefinition, season: number, events: NostrEvent[], auth
     if (m.createdAt < startsAt || m.createdAt + def.report.deadlineSec > endsAt || !isLinkedMatch(def, m, app)) continue;
     if (exclude.has(m.p1) && !reports.get(m.id)?.some((r) => r.reporter === m.p2)) continue;
     const cur = byApplication.get(app.eventId);
-    if (!cur || byId(m.id, cur.match.id) < 0) byApplication.set(app.eventId, { match: m, application: app, reports: reports.get(m.id) ?? [] });
+    const next = { match: m, application: app, reports: reports.get(m.id) ?? [] };
+    if (!cur || preferMatch(next, cur)) byApplication.set(app.eventId, next);
   }
 
   return {

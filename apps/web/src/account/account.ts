@@ -109,7 +109,7 @@ function recordOf(d: StoredDevice, at: number): DeviceRecord {
   return { id: d.id, key: d.key, publisher: publisherOf(d), label: d.label, expiresAt: at + DEVICE_LIFETIME_SEC };
 }
 
-export { decodeDeviceRequest, encodeDeviceRequest } from '@nostr-rating/core';
+export { decodeDeviceRequest, deviceRequestCheck, encodeDeviceRequest } from '@nostr-rating/core';
 
 /** aid の KEL を集める（x タグと、分かっている鍵の持ち主から） */
 /** 先の日時のイベントは使わない（その上に続けると、こちらの取り消しや延長の日時まで先になる） */

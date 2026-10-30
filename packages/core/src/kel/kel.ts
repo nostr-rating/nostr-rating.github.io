@@ -182,6 +182,8 @@ function validNext(n: NextKeys, allowEmpty: boolean): boolean {
 export interface DeviceState {
   record: DeviceRecord;
   intervals: { from: number; to: number }[];
+  /** ixn で取り消した。renew では有効に戻せず、戻せるのは rot だけ */
+  revoked?: boolean;
 }
 
 export interface KelState {
@@ -206,7 +208,7 @@ export interface KelInput {
 
 function cloneState(s: KelState): KelState {
   const devices = new Map<string, DeviceState>();
-  for (const [id, d] of s.devices) devices.set(id, { record: d.record, intervals: d.intervals.map((i) => ({ ...i })) });
+  for (const [id, d] of s.devices) devices.set(id, { ...d, intervals: d.intervals.map((i) => ({ ...i })) });
   return { ...s, devices, next: { keys: [...s.next.keys], threshold: s.next.threshold }, digests: [...s.digests] };
 }
 
@@ -265,7 +267,7 @@ function applyIxn(s: KelState, input: KelInput): KelState | null {
   }
   for (const r of b.renew) {
     const d = n.devices.get(r.id);
-    if (!d || !Number.isSafeInteger(r.expiresAt) || r.expiresAt <= input.at || r.expiresAt - input.at > DEVICE_LIFETIME_SEC) return null;
+    if (!d || d.revoked || !Number.isSafeInteger(r.expiresAt) || r.expiresAt <= input.at || r.expiresAt - input.at > DEVICE_LIFETIME_SEC) return null;
     d.record = { ...d.record, expiresAt: r.expiresAt };
     openUntil(d, input.at, r.expiresAt);
   }
@@ -273,6 +275,7 @@ function applyIxn(s: KelState, input: KelInput): KelState | null {
     const d = n.devices.get(id);
     if (!d) return null;
     closeAt(d, input.at);
+    d.revoked = true;
   }
   return { ...n, sn: b.sn, tip: digest, at: input.at, digests: [...n.digests, digest] };
 }
@@ -298,6 +301,7 @@ function applyRot(s: KelState, input: KelInput): KelState | null {
     const cur = n.devices.get(d.id);
     if (cur) {
       cur.record = d;
+      cur.revoked = false;
       openUntil(cur, input.at, d.expiresAt);
     } else {
       n.devices.set(d.id, { record: d, intervals: [{ from: input.at, to: d.expiresAt }] });
