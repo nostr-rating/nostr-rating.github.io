@@ -323,7 +323,7 @@ class Applier {
 
 export interface AdvanceOptions {
   /**
-   * イベントを取り切れなかったアカウント（docs/protocol.md「取得」）。その回は、これらの報告と公開情報を使わず、
+   * イベントを取り切れなかったアカウント（docs/spec.md「取得」）。その回は、これらの報告と公開情報を使わず、
    * 対戦は相手の最新の報告に合わせて確定する
    */
   exclude?: ReadonlySet<string>;
@@ -332,7 +332,7 @@ export interface AdvanceOptions {
 }
 
 /**
- * docs/protocol.md「レート計算」。締め切り（作成時刻 + deadlineSec）が (prev.cutoff, cutoff] に入る対戦を、
+ * docs/spec.md「レート計算」。締め切り（作成時刻 + deadlineSec）が (prev.cutoff, cutoff] に入る対戦を、
  * (作成時刻, 対戦 ID) の昇順に1件ずつ、1回だけ評価する。締め切り後に評価するので、
  * 遅れて届いた報告も取りこぼさず、日時を遡った報告で処理の窓を逃れることもできない。
  * 入力の順番、重複、スナップショットの区切り方に結果は左右されない。

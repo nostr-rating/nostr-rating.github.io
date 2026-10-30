@@ -14,7 +14,7 @@ export function StatusBadge({ status }: { status: VerifyStatus }) {
 const PLATFORM: Record<IdentityClaim['platform'], string> = { github: 'GitHub', twitter: 'X' };
 
 /**
- * 相手の紐づけ。主張ごとに確かめて状態を出す（docs/protocol.md「外部アカウントの紐づけ」）。
+ * 相手の紐づけ。主張ごとに確かめて状態を出す（docs/spec.md「外部アカウントの紐づけ」）。
  * claims が undefined の間は読み込み中で、「なし」とは出さない。
  */
 export function IdentityBadge({

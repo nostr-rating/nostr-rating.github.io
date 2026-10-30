@@ -32,7 +32,7 @@ export interface FetchOptions {
 
 export interface FetchResult {
   events: NostrEvent[];
-  /** 取り切れなかったアカウント。その回の計算では、これらの報告と公開情報を使わない（docs/protocol.md「取得」） */
+  /** 取り切れなかったアカウント。その回の計算では、これらの報告と公開情報を使わない（docs/spec.md「取得」） */
   incomplete: Set<Pubkey>;
   /** incomplete のうち、KEL と証明書のお知らせを取り切れなかったアカウント。その回は記録済みの KEL で判定する */
   incompleteKel: Set<Pubkey>;

@@ -51,7 +51,7 @@ export interface DerivedRef {
   size: number;
 }
 
-/** docs/protocol.md「スナップショット」の目次。キーは snake_case で、JSON とそのまま対応する */
+/** docs/spec.md「スナップショット」の目次。キーは snake_case で、JSON とそのまま対応する */
 export interface SnapshotToc {
   schema_version: 3;
   game: string;

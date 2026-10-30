@@ -62,7 +62,7 @@ function waitedLonger(a: { waitingSince: number; pubkey: Pubkey }, b: { waitingS
 }
 
 /**
- * docs/protocol.md「マッチング」の手順。
+ * docs/spec.md「マッチング」の手順。
  * 条件に合う募集があれば申し込み、なければ自分が募集を出す。募集中も他人の募集を探し、
  * 自分より先に待っていた相手が見つかれば自分の募集を閉じてそちらへ申し込む。
  */

@@ -17,7 +17,7 @@ export interface MannersCount {
 }
 
 /**
- * docs/protocol.md「結果の確定」。報告を時刻順に走査し、噛み合う報告の組（勝ち+負け、中止+中止）が
+ * docs/spec.md「結果の確定」。報告を時刻順に走査し、噛み合う報告の組（勝ち+負け、中止+中止）が
  * 初めてそろった瞬間に確定する。「最新の報告どうし」ではなく「これまでに出した報告」で
  * 判定するので、日時を遡らせた報告を後から足しても確定は覆らない。
  * 締め切り（createdAt + deadlineSec）までにそろわなければ、最新報告から食い違い／未報告とする。
@@ -47,7 +47,7 @@ export function settleMatch(match: MatchRecord, reports: ResultReport[], now: nu
 }
 
 /**
- * docs/protocol.md「取得」。片方（absent）のイベントを取り切れなかった対戦を、締め切りの時点で確定する。
+ * docs/spec.md「取得」。片方（absent）のイベントを取り切れなかった対戦を、締め切りの時点で確定する。
  * absent の報告は使わず、相手の最新の報告に合わせたものとみなす。相手が報告していなければ数えない
  */
 export function settleAgreeing(match: MatchRecord, reports: ResultReport[], absent: Pubkey, deadlineSec: number, allowDraw = false): Settlement {

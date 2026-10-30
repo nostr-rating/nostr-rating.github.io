@@ -188,14 +188,14 @@ npm run recover                  # 復活の道具の CLI 版
 | `configs/` | リレー一覧、ゲームの一覧と定義 |
 | `snapshots/` | レートのスナップショットの目次（ゲームごと。部品はリリースに置く） |
 | `relay-server/` | 開発用ローカルリレー（nostr-rs-relay の Docker Compose） |
-| `docs/protocol.md` | イベントの形式と計算の決まり |
+| `docs/spec.md` | 内部設計仕様書（イベントの形式、計算の決まり、取得・同期・効率化の作り） |
 | `docs/adr/` | 設計判断の記録 |
 | `docs/self-hosting.md` | 自分でアプリを動かす手順 |
 | `docs/api.md` | ほかのサイトからレートを読む公開 API |
 
 ## 参加する
 
-[CONTRIBUTING.md](CONTRIBUTING.md) を見てください。コードとリレーの追加の PR を歓迎します。スナップショットは GitHub Actions が作るので PR は要りませんが、手元で作り直して確かめてもらえると助かります。イベントの形式と計算の決まりは [docs/protocol.md](docs/protocol.md)、設計判断の理由は [docs/adr/](docs/adr/) にあります。
+[CONTRIBUTING.md](CONTRIBUTING.md) を見てください。コードとリレーの追加の PR を歓迎します。スナップショットは GitHub Actions が作るので PR は要りませんが、手元で作り直して確かめてもらえると助かります。仕組みと計算の決まり、実装の作りは [docs/spec.md](docs/spec.md)（内部設計仕様書）、設計判断の理由は [docs/adr/](docs/adr/) にあります。
 
 ## ライセンス
 
