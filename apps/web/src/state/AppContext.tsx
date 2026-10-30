@@ -21,9 +21,9 @@ import {
   type Settings,
   type Signer,
 } from '@nostr-rating/core';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Account, type KeyStore } from '../account/account.js';
-import { Resolver } from '../account/resolver.js';
+import { AUTHORS_CHUNK, Resolver } from '../account/resolver.js';
 import { rememberedGame, rememberGame } from '../services/config.js';
 import { coalesce } from '../services/coalesce.js';
 import type { ClientSnapshot } from '../services/snapshot.js';
@@ -83,7 +83,8 @@ export interface AppValue extends AppDeps {
   profiles: Record<Pubkey, string>;
   identities: Record<Pubkey, IdentityClaim[]>;
   /** 名前と SNS の主張をリレーから読み込む（初めて見る相手にも使う） */
-  loadPeople(pks: Pubkey[]): Promise<void>;
+  /** 公開情報をリレーから読む。since を渡すと、それより新しい版だけを聞く */
+  loadPeople(pks: Pubkey[], since?: number): Promise<void>;
   mySettings: Settings | null;
   settingsStatus: SettingsStatus;
   setMySettings(s: Settings): void;
@@ -124,8 +125,8 @@ export function displayName(app: Pick<AppValue, 'profiles'>, pk: Pubkey): string
   return app.profiles[pk] || `${pk.slice(0, 8)}…`;
 }
 
-/** authors に一度に並べる数（大きいとリレーに拒否される） */
-const AUTHORS_CHUNK = 100;
+/** 公開情報の問い合わせを同時に流す数 */
+const PEOPLE_PARALLEL = 4;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | null; children: ReactNode }) {
@@ -195,16 +196,23 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
   }, [account]);
 
   const loadPeople = useCallback(
-    async (pks: Pubkey[]) => {
+    async (pks: Pubkey[], since?: number) => {
       const unique = [...new Set(pks)];
       const latest: Record<Pubkey, { at: number; name: string; claims: IdentityClaim[] }> = {};
-      for (let i = 0; i < unique.length; i += AUTHORS_CHUNK) {
-        const d = unique.slice(i, i + AUTHORS_CHUNK);
-        const evs = await deps.relay.query([{ kinds: [KIND.account], '#d': d }]);
-        for (const ev of evs) {
-          const a = parseAccountInfo(ev, await resolver.author(ev));
-          if (a && (!latest[a.pubkey] || latest[a.pubkey]!.at < a.createdAt)) latest[a.pubkey] = { at: a.createdAt, name: a.name, claims: a.claims };
-        }
+      const chunks: Pubkey[][] = [];
+      for (let i = 0; i < unique.length; i += AUTHORS_CHUNK) chunks.push(unique.slice(i, i + AUTHORS_CHUNK));
+      // 問い合わせは PEOPLE_PARALLEL 本ずつ並べて流す。結び付けは問い合わせごとにまとめて行う
+      for (let i = 0; i < chunks.length; i += PEOPLE_PARALLEL) {
+        await Promise.all(
+          chunks.slice(i, i + PEOPLE_PARALLEL).map(async (d) => {
+            const evs = await deps.relay.query([{ kinds: [KIND.account], '#d': d, ...(since !== undefined ? { since } : {}) }]);
+            const authors = await resolver.authorAll(evs);
+            for (const [j, ev] of evs.entries()) {
+              const a = parseAccountInfo(ev, authors[j]!);
+              if (a && (!latest[a.pubkey] || latest[a.pubkey]!.at < a.createdAt)) latest[a.pubkey] = { at: a.createdAt, name: a.name, claims: a.claims };
+            }
+          }),
+        );
       }
       const names: Record<Pubkey, string> = {};
       const ids: Record<Pubkey, IdentityClaim[]> = {};
@@ -220,11 +228,11 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     [deps.relay, resolver],
   );
 
-  const snapshotCache = useMemo(() => new Map<string, ClientSnapshot>(), []);
+  const snapshotCache = useMemo(() => new Map<string, { sha256: string; snapshot: ClientSnapshot }>(), []);
   const syncNow = useCallback(async () => {
     setSyncing(true);
     try {
-      const { shown, loadKels } = await syncRatings({
+      const { shown, loadKels, snapshotCutoff } = await syncRatings({
         def,
         relay: deps.relay,
         store: deps.store,
@@ -243,7 +251,13 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
         ...Object.fromEntries(Object.entries(shown.accounts).filter(([pk]) => !(prev[pk]?.length)).map(([pk, a]) => [pk, a.claims])),
       }));
       setSyncError(null);
-      await loadPeople([...Object.keys(shown.players), ...(pubkey ? [pubkey] : [])]);
+      // スナップショットに公開情報がある選手は、それより新しい版だけをリレーに聞く（docs/adr/0011）
+      const recorded = Object.keys(shown.players).filter((pk) => shown.accounts[pk] && pk !== pubkey);
+      const rest = [...Object.keys(shown.players).filter((pk) => !shown.accounts[pk]), ...(pubkey ? [pubkey] : [])];
+      await Promise.all([
+        loadPeople(recorded, snapshotCutoff !== null ? snapshotCutoff - def.report.deadlineSec : undefined),
+        loadPeople(rest),
+      ]);
     } catch (e) {
       if (gameRef.current !== def.id) return;
       setSyncError(e instanceof Error ? e.message : String(e));
@@ -260,7 +274,10 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     slot.run = coalesce(() => slot.latest());
     syncs.current.set(def.id, slot);
   }
-  slot.latest = syncNow;
+  // 最新の syncNow は、確定した render のあとで差し替える（捨てられた render の値を使わない）
+  useLayoutEffect(() => {
+    slot.latest = syncNow;
+  }, [slot, syncNow]);
   const refresh = slot.run;
 
   useEffect(() => {

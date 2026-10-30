@@ -18,6 +18,8 @@ import {
 export interface ClientSnapshot {
   /** KEL は空。公開情報は、そのシーズンの選手と終わったシーズンの選手の分だけ */
   state: RatingState;
+  /** シーズンの途中（rolling）か、終わったシーズンの最終版（final）か */
+  kind: SnapshotToc['kind'];
   /** 記録済みの KEL を、必要なアカウントの分だけ読む。記録のないアカウントは返さない */
   loadKels(aids: Pubkey[]): Promise<KelRecords>;
 }
@@ -53,44 +55,40 @@ export async function loadClientSnapshot(fetchFn: typeof fetch, base: string, ga
     return JSON.parse(text) as T;
   };
   const seasonIds = Object.keys(toc.parts.seasons);
-  const [players, ...seasons] = await Promise.all([
+  const [players, seasons] = await Promise.all([
     part<PlayersPart>(toc.parts.players.sha256),
-    ...seasonIds.map((s) => part<SeasonPart>(toc.parts.seasons[s]!.sha256)),
+    Promise.all(seasonIds.map((s) => part<SeasonPart>(toc.parts.seasons[s]!.sha256))),
   ]);
-  const state = stateFromParts(toc, {
-    players: players as PlayersPart,
-    seasons: Object.fromEntries(seasonIds.map((s, i) => [s, seasons[i] as SeasonPart])),
-  });
+  const state = stateFromParts(toc, { players, seasons: Object.fromEntries(seasonIds.map((s, i) => [s, seasons[i]!])) });
 
+  /** 読んだ部品を覚える。失敗したものは覚えず、次に頼まれたときに読み直す */
+  const memo = <K, V>(cache: Map<K, Promise<V>>, key: K, load: () => Promise<V>): Promise<V> => {
+    let p = cache.get(key);
+    if (!p) {
+      p = load();
+      p.catch(() => cache.delete(key));
+      cache.set(key, p);
+    }
+    return p;
+  };
   // 索引は、そのシーズンの選手でないアカウントが出てきたときにだけ読む
-  let index: Promise<KelIndexPart> | null = null;
+  const index = new Map<'index', Promise<KelIndexPart>>();
   const prefixes = new Map<string, Promise<KelPrefixPart>>();
   const kels = new Map<Pubkey, Promise<KelRecords[string] | null>>();
   const shaOf = async (aid: Pubkey): Promise<string | null> => {
-    const own = (players as PlayersPart).kels[aid];
+    const own = players.kels[aid];
     if (own) return own;
-    index ??= part<KelIndexPart>(toc.kel_index.sha256);
-    const ref = (await index)[kelPrefix(aid)];
+    const ref = (await memo(index, 'index', () => part<KelIndexPart>(toc.kel_index.sha256)))[kelPrefix(aid)];
     if (!ref) return null;
-    let p = prefixes.get(kelPrefix(aid));
-    if (!p) {
-      p = part<KelPrefixPart>(ref.sha256);
-      prefixes.set(kelPrefix(aid), p);
-    }
-    return (await p)[aid] ?? null;
+    return (await memo(prefixes, kelPrefix(aid), () => part<KelPrefixPart>(ref.sha256)))[aid] ?? null;
   };
-  const kelOf = (aid: Pubkey) => {
-    let k = kels.get(aid);
-    if (!k) {
-      k = shaOf(aid).then((sha) => (sha ? part<KelRecords[string]>(sha) : null));
-      // 失敗したら次に頼まれたときに読み直す
-      k.catch(() => kels.delete(aid));
-      kels.set(aid, k);
-    }
-    return k;
-  };
+  const kelOf = (aid: Pubkey) => memo(kels, aid, async () => {
+    const sha = await shaOf(aid);
+    return sha ? part<KelRecords[string]>(sha) : null;
+  });
   return {
     state,
+    kind: toc.kind,
     async loadKels(aids) {
       const got = await Promise.all(aids.map(async (aid) => [aid, await kelOf(aid)] as const));
       return Object.fromEntries(got.filter((x): x is [Pubkey, KelRecords[string]] => x[1] !== null));

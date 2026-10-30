@@ -7,6 +7,7 @@ import {
   initialState,
   currentSeason,
   kelParts,
+  KIND,
 } from '@nostr-rating/core';
 import { describe, expect, test } from 'vitest';
 import rawDef from '../../../configs/smash_sp.json';
@@ -70,6 +71,25 @@ describe('syncRatings across seasons', () => {
     const { state } = await syncRatings({ def, relay: new MemoryRelay(() => s2 + 100), store: new MemoryEventStore(), fetchFn: fakeFetch(files), base: BASE, now: () => s2 + 100 });
     expect([state.season, state.cutoff, state.players]).toEqual([2, s2 + 100, {}]);
     expect(state.seasonSummaries).toEqual(final.seasonSummaries);
+  });
+});
+
+describe('syncRatings at the start of a season before the final snapshot', () => {
+  test('keeps KEL events made between the last snapshot of the previous season and the start of the new one', async () => {
+    const s2 = 1_798_729_200; // 2027-01-01 JST
+    const rollingCut = s2 - 3 * 86400;
+    const now = s2 + 5000;
+    const relay = new MemoryRelay(() => now);
+    const clock = { t: rollingCut - 2 * 86400 };
+    const [a, b] = [await playerAt(relay, clock, 'a'), await playerAt(relay, clock, 'b')];
+    const kels = { [a.aid]: a.account.kel, [b.aid]: b.account.kel };
+    // 前のシーズンの rolling のスナップショットのあと、新しいシーズンが始まる前に a が端末を足す
+    clock.t = rollingCut + 3600;
+    await a.account.addDevice(await Account.prepareDevice(memoryKeyStore(), 'pc'));
+    await playedMatch(relay, await at(a, clock, s2 + 100), await at(b, clock, s2 + 100), s2 + 100);
+    const files = snapshotRoutes(BASE, 'smash_sp', { ...initialState(def, 1, rollingCut), kels }, 'snapshots/smash_sp/season_1/2026-12-28.json');
+    const { shown } = await syncRatings({ def, relay, store: new MemoryEventStore(), fetchFn: fakeFetch(files), base: BASE, now: () => now });
+    expect([shown.season, shown.kels[a.aid]!.length]).toEqual([2, 2]);
   });
 });
 
@@ -145,6 +165,45 @@ describe('syncRatings', () => {
     const sha = kelParts(kels).kelSha;
     const parts = new Set(asked.filter((u) => u.includes('/parts/')).map((u) => u.split('/').pop()!.replace('.json', '')));
     expect([parts.has(sha.get(a.aid)!), parts.has(sha.get(b.aid)!), parts.has(sha.get(idle.aid)!)]).toEqual([true, true, false]);
+  });
+
+  test('does not read the KEL of an account that appears only in old cached events', async () => {
+    const now = CUT + 5000;
+    const relay = new MemoryRelay(() => now);
+    const clock = { t: CUT - 90 * 86400 };
+    // idle の KEL と公開情報は、前に同期したときの手元の控えにだけある
+    const old = new MemoryRelay(() => clock.t);
+    const idle = await playerAt(old, clock, 'idle');
+    const store = new MemoryEventStore();
+    await store.put(await old.query([{ kinds: [KIND.kel, KIND.account] }]));
+    clock.t = CUT - 86400;
+    const [a, b] = [await playerAt(relay, clock, 'a'), await playerAt(relay, clock, 'b')];
+    const { pa } = await playedMatch(relay, await at(a, clock, CUT + 100), await at(b, clock, CUT + 100), CUT + 100);
+    const kels = { [a.aid]: a.account.kel, [b.aid]: b.account.kel, [idle.aid]: idle.account.kel };
+    const files = snapshotRoutes(BASE, 'smash_sp', { ...initialState(def, 1, CUT), kels }, PATH);
+    const asked: string[] = [];
+    const fetchFn = (async (input: string | URL | Request) => {
+      asked.push(String(input));
+      return fakeFetch(files)(input);
+    }) as typeof fetch;
+    const { shown } = await syncRatings({ def, relay, store, fetchFn, base: BASE, now: () => now });
+    expect(shown.players[pa]!.wins).toBe(1);
+    const sha = kelParts(kels).kelSha;
+    const parts = new Set(asked.filter((u) => u.includes('/parts/')).map((u) => u.split('/').pop()!.replace('.json', '')));
+    expect([parts.has(sha.get(a.aid)!), parts.has(sha.get(idle.aid)!)]).toEqual([true, false]);
+  });
+
+  test('fails the sync when a recorded KEL cannot be read, instead of treating it as a relay failure', async () => {
+    const now = CUT + 5000;
+    const relay = new MemoryRelay(() => now);
+    const clock = { t: CUT - 86400 };
+    const [a, b] = [await playerAt(relay, clock, 'a'), await playerAt(relay, clock, 'b')];
+    await playedMatch(relay, await at(a, clock, CUT + 100), await at(b, clock, CUT + 100), CUT + 100);
+    const kels = { [a.aid]: a.account.kel, [b.aid]: b.account.kel };
+    const files = snapshotRoutes(BASE, 'smash_sp', { ...initialState(def, 1, CUT), kels }, PATH);
+    const index = `${BASE}snapshots/smash_sp/parts/${JSON.parse(files[`${BASE}${PATH}`]!).kel_index.sha256}.json`;
+    const fetchFn = (async (input: string | URL | Request) => (String(input) === index ? new Response('busy', { status: 503 }) : fakeFetch(files)(input))) as typeof fetch;
+    await expect(syncRatings({ def, relay, store: new MemoryEventStore(), fetchFn, base: BASE, now: () => now })).rejects.toThrow(new Error(`${index}: HTTP 503`));
   });
 
   test('shows confirmed matches before their deadline and caches the events', async () => {

@@ -98,18 +98,24 @@ export class Matchmaker {
     const recent = await this.#recentOpponents(me, mySession);
     const unsubs = [
       relay.subscribe([{ kinds: [KIND.application], '#p': [mySession], since }], (ev) => {
-        void author(ev).then((by) => {
-          const a = parseApplication(game, ev, by);
-          if (a && a.recruiter === me) applications.push(a);
-        });
+        author(ev).then(
+          (by) => {
+            const a = parseApplication(game, ev, by);
+            if (a && a.recruiter === me) applications.push(a);
+          },
+          (e: unknown) => console.warn('could not resolve the author of an application', e),
+        );
       }),
       relay.subscribe([{ kinds: [KIND.match], '#p': [mySession], since }], (ev) => {
-        void author(ev).then((by) => {
-          const m = parseMatch(game, ev, by);
-          if (!m || m.p2 !== me || matches.has(m.applicationId)) return;
-          const app = sentApplications.get(m.applicationId);
-          if (app && this.#answers(m, app)) matches.set(m.applicationId, m);
-        });
+        author(ev).then(
+          (by) => {
+            const m = parseMatch(game, ev, by);
+            if (!m || m.p2 !== me || matches.has(m.applicationId)) return;
+            const app = sentApplications.get(m.applicationId);
+            if (app && this.#answers(m, app)) matches.set(m.applicationId, m);
+          },
+          (e: unknown) => console.warn('could not resolve the author of a match', e),
+        );
       }),
     ];
 

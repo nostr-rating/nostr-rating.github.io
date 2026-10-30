@@ -210,12 +210,15 @@ export function MatchRoom({ matchId }: { matchId: string }) {
     if (!match) return;
     const got = new Map<string, ResultReport>();
     return app.relay.subscribe([{ kinds: [KIND.report], '#e': [match.id] }], (ev) => {
-      void app.author(ev).then((by) => {
-        const r = parseReport(def.id, ev, by);
-        if (!r || r.matchId !== match.id || got.has(r.id)) return;
-        got.set(r.id, r);
-        setReports([...got.values()]);
-      });
+      app.author(ev).then(
+        (by) => {
+          const r = parseReport(def.id, ev, by);
+          if (!r || r.matchId !== match.id || got.has(r.id)) return;
+          got.set(r.id, r);
+          setReports([...got.values()]);
+        },
+        (e: unknown) => console.warn('could not resolve the author of a report', e),
+      );
     });
   }, [app.relay, def.id, match]);
 
