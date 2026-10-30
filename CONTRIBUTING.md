@@ -21,16 +21,16 @@
 
 ## スナップショットを確かめる
 
-スナップショットは GitHub Actions が毎日作り、`snapshots/` に積みます（[ADR 0009](docs/adr/0009-daily-snapshots.md)）。誰が作っても同じバイト列になるので、次の手順で確かめられます。
+スナップショットは GitHub Actions が毎日作り、目次を `snapshots/` に積み、部品をリリースに置きます（[ADR 0009](docs/adr/0009-daily-snapshots.md)、[ADR 0011](docs/adr/0011-scale.md)）。誰が作っても同じバイト列になるので、次の手順で確かめられます。
 
 ```bash
 git checkout <確かめるスナップショットの直前のコミット>
 npm install
-npm run snapshot -- --cutoff <確かめるスナップショットの cutoff>
+npm run snapshot -- --cutoff <確かめるスナップショットの cutoff> --release-base https://github.com/<owner>/<repo>/releases/download/
 git diff <確かめるスナップショットのコミット> -- snapshots/
 ```
 
-差分がなければ、そのスナップショットは正しく計算されています。リレーが手元と違うイベントを持っていると差分が出ることがあるので、その場合は `.ids.txt` の ID を見比べてください。
+目次は部品の sha256 を持つので、目次に差分がなければ部品も同じで、そのスナップショットは正しく計算されています。リレーが手元と違うイベントを持っていると差分が出ることがあります。その場合は、使ったイベントの id の部品（目次の `parts.ids`）を、手元の `.snapshot-parts/` とリリースで見比べてください。
 
 - `cutoff` は生成する時刻より前でなければなりません（未来の時刻は拒否されます）。
 - 同じ日付（JST）のスナップショットは1つだけです。
