@@ -31,7 +31,7 @@ interface Fresh {
  * 記録済みの KEL を確かめずに使うことはしない（偽の KEL で他人の端末を足せるため）
  */
 export class KelBook {
-  readonly #recorded: KelRecords;
+  #recorded: KelRecords;
   readonly #fresh = new Map<string, Map<string, Fresh>>();
   readonly #evaluated = new Map<string, KelState | null>();
 
@@ -58,6 +58,23 @@ export class KelBook {
       fresh.set(ev.id, { input: parsed.input, id: ev.id, createdAt: ev.created_at });
       this.#fresh.set(parsed.aid, fresh);
       this.#evaluated.delete(parsed.aid);
+    }
+    return this;
+  }
+
+  /**
+   * 記録済みの KEL をあとから足す（クライアントが、必要なアカウントの分だけを読んだとき）。
+   * すでに記録のあるアカウントは変えない。足したアカウントの新しいイベントは、受け付ける幅で選び直す
+   */
+  addRecorded(records: KelRecords): this {
+    const added = Object.keys(records).filter((aid) => !this.#recorded[aid]);
+    if (added.length === 0) return this;
+    this.#recorded = { ...this.#recorded, ...Object.fromEntries(added.map((aid) => [aid, records[aid]!])) };
+    for (const aid of added) {
+      const fresh = this.#fresh.get(aid);
+      if (fresh) for (const [id, f] of fresh) if (f.createdAt <= this.acceptAfter) fresh.delete(id);
+      if (fresh?.size === 0) this.#fresh.delete(aid);
+      this.#evaluated.delete(aid);
     }
     return this;
   }

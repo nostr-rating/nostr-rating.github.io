@@ -1,15 +1,16 @@
 name: Snapshot
 
-# 毎日、締め切りを迎えた対戦を集計して snapshots/ に積む。
-# アプリはスナップショットを raw.githubusercontent.com から読むので、配信し直す必要はない
+# 毎日、締め切りを迎えた対戦を集計して、部品をリリースに上げ、目次を snapshots/ に積む（docs/adr/0011）。
+# アプリはスナップショットを GitHub Pages から読むので、積んだあとに配信し直す
 on:
   schedule:
     - cron: '0 20 * * *' # 05:00 JST
   workflow_dispatch:
 
 permissions:
+  # 目次のコミットと、部品のリリース
   contents: write
-  # 積んだあとに、選手ページと公開 API を作り直すため配信のワークフローを起動する
+  # 積んだあとに、スナップショット・選手ページ・公開 API を配信し直すため、配信のワークフローを起動する
   actions: write
 
 concurrency:
@@ -30,7 +31,25 @@ jobs:
       - run: npm ci
       # シーズンが終わった日は最終スナップショットだけが書かれる。新しいシーズンの最初の分は翌日に作る。
       # その間にだけ、レート計算に関わる設定を変えられる（docs/protocol.md「スナップショット」）
+      # 前回の部品は、手元に無ければリリースから取る
       - run: npm run snapshot -- --cutoff "$(date +%s)"
+        env:
+          SNAPSHOT_RELEASE_BASE: ${{ github.server_url }}/${{ github.repository }}/releases/download/
+      # 目次が指す部品が無い時間を作らないよう、部品を先にリリースへ上げてから目次を積む
+      - name: Upload parts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          for dir in .snapshot-parts/upload/*/; do
+            tag=$(basename "$dir")
+            files=("$dir"*.json)
+            if [ ${#files[@]} -eq 0 ]; then continue; fi
+            if ! gh release view "$tag" >/dev/null 2>&1; then
+              gh release create "$tag" --title "$tag" --notes "スナップショットの部品（docs/adr/0011）" --target "${GITHUB_SHA}" --latest=false
+            fi
+            gh release upload "$tag" "${files[@]}" --clobber
+          done
       - name: Commit
         run: |
           git add snapshots

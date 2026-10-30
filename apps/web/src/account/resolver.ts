@@ -25,11 +25,16 @@ export class Resolver {
   /** 探した時刻。見つからなかったアカウントは RETRY_MS たってから探し直す */
   #looked = new Map<string, number>();
   #inflight = new Map<string, Promise<void>>();
+  #loadKels: ((aids: Pubkey[]) => Promise<KelRecords>) | null = null;
 
   constructor(private readonly relay: RelayClient) {}
 
-  /** スナップショットと手元の計算で分かっている KEL を入れ直す */
-  setKnown(records: KelRecords): void {
+  /**
+   * スナップショットと手元の計算で分かっている KEL を入れ直す。
+   * loadKels は、知らないアカウントの記録済みの KEL をスナップショットから読む（docs/adr/0011）
+   */
+  setKnown(records: KelRecords, loadKels?: (aids: Pubkey[]) => Promise<KelRecords>): void {
+    this.#loadKels = loadKels ?? null;
     this.#known = records;
     this.#book = new KelBook(records, -Infinity, Infinity).add(this.#extra);
     this.#author = attributor(this.#book.states);
@@ -60,7 +65,15 @@ export class Resolver {
     if (last !== undefined && Date.now() - last < RETRY_MS) return null;
     this.#looked.set(c.cert.aid, Date.now());
     const filters = [{ kinds: [KIND.kel], '#x': [c.cert.aid] }, ...(typeof c.cert.publisher === 'string' ? [{ kinds: [KIND.kel], authors: [c.cert.publisher] }] : [])];
-    const lookup = this.relay.query(filters).then(async (evs) => {
+    const lookup = (async () => {
+      // 記録済みの KEL を先に入れる。そのあとの新しいイベントはリレーから探す
+      const recorded = (await this.#loadKels?.([c.cert.aid])) ?? {};
+      if (recorded[c.cert.aid]) {
+        this.#known = { ...this.#known, ...recorded };
+        this.#book.addRecorded(recorded);
+      }
+      return this.relay.query(filters);
+    })().then(async (evs) => {
       await warmKelSignatures(this.#known, [c.cert.aid], [...evs, ev]);
       // 増えたアカウントの分だけを評価し直す。結び付けの控えは、知らなかったアカウントの分が変わるので作り直す
       this.#extra.push(...evs);

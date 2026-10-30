@@ -1,22 +1,34 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import type { KelRecords } from '../../src/kel/book.js';
 import type { RatingState } from '../../src/rating/pipeline.js';
 import { def } from '../helpers/def.js';
 import {
+  buildSnapshot,
   eventIdsHash,
+  kelPrefix,
+  publishedFiles,
   ratingConfigHash,
-  serializeSnapshot,
+  serializeToc,
   sha256Hex,
-  snapshotToState,
-  stateToSnapshot,
+  stateFromParts,
+  type KelIndexPart,
+  type KelPrefixPart,
+  type PlayersPart,
+  type SeasonPart,
 } from '../../src/snapshot/format.js';
 
 const A = 'a'.repeat(64);
 const B = 'b'.repeat(64);
+/** そのシーズンに対戦していない、前のシーズンの選手 */
+const C = 'c'.repeat(64);
+
+/** 形式のテストなので、KEL の中身は確かめられる形でなくてよい */
+const fakeKel = (aid: string) => [{ entry: { body: { t: 'icp', aid }, sigs: [] }, at: 1 }] as unknown as KelRecords[string];
 
 const fixtureState: RatingState = {
-  season: 1,
+  season: 2,
   cutoff: 1790900000,
   players: {
     [B]: {
@@ -47,41 +59,129 @@ const fixtureState: RatingState = {
     },
   },
   recentPairs: [{ a: A, b: B, settledAt: 1790850000 }],
-  seasonSummaries: {},
-  kels: {},
-  accounts: {},
+  seasonSummaries: { '1': { [C]: { finalRating: 1612, peakRating: 1650, matches: 9, wins: 6, losses: 3, draws: 0 } } },
+  kels: { [A]: fakeKel(A), [B]: fakeKel(B), [C]: fakeKel(C) },
+  accounts: {
+    [A]: { name: 'a', claims: [{ platform: 'github', identity: 'a1', proof: 'a1' }], eventId: '1'.repeat(64), createdAt: 1790800000 },
+    [C]: { name: 'c', claims: [], eventId: '3'.repeat(64), createdAt: 1780000000 },
+  },
 };
 
 const meta = {
   game: 'smash_sp',
-  previous: 'snapshots/season_1/2026-10-27.json',
-  previousSha256: 'c'.repeat(64),
+  previous: 'snapshots/smash_sp/season_2/2026-10-27.json',
+  previousSha256: 'e'.repeat(64),
   eventIds: ['2'.repeat(64), '1'.repeat(64)],
   configSha256: 'd'.repeat(64),
+  release: 'snapshot-smash_sp-season_2-2026-10-28',
 };
 
+const FIXTURES = resolve(__dirname, '../fixtures');
+const parse = <T>(text: string) => JSON.parse(text) as T;
+
+/** 部品の sha256 から本文を引く */
+function textOf(texts: Map<string, string>, sha256: string): string {
+  const t = texts.get(sha256);
+  if (t === undefined) throw new Error(`no part ${sha256}`);
+  return t;
+}
+
 describe('snapshot format', () => {
-  test('serializeSnapshot matches golden fixture', () => {
-    expect(serializeSnapshot(stateToSnapshot(fixtureState, meta))).toBe(
-      readFileSync(resolve(__dirname, '../fixtures/snapshot-basic.json'), 'utf8'),
-    );
+  test('the table of contents matches the golden file', () => {
+    expect(serializeToc(buildSnapshot(fixtureState, meta).toc)).toBe(readFileSync(resolve(FIXTURES, 'snapshot-toc.json'), 'utf8'));
   });
 
-  test('stateToSnapshot ↔ snapshotToState roundtrip', () => {
-    expect(snapshotToState(stateToSnapshot(fixtureState, meta))).toEqual(fixtureState);
+  test('the players part matches the golden file', () => {
+    const { toc, texts } = buildSnapshot(fixtureState, meta);
+    expect(textOf(texts, toc.parts.players.sha256)).toBe(readFileSync(resolve(FIXTURES, 'snapshot-players.json'), 'utf8'));
   });
 
-  test('serialize is independent of object key insertion order', () => {
+  test('every part is named by the sha256 of its bytes and records its size', () => {
+    const { toc, texts } = buildSnapshot(fixtureState, meta);
+    const refs = [toc.parts.players, toc.parts.accounts, toc.parts.kels, toc.parts.ids, ...Object.values(toc.parts.seasons)];
+    for (const ref of refs) {
+      const text = textOf(texts, ref.sha256);
+      expect([sha256Hex(text), ref.size, ref.release]).toEqual([ref.sha256, new TextEncoder().encode(text).length, meta.release]);
+    }
+  });
+
+  test('the state comes back from the parts', () => {
+    const { toc, texts } = buildSnapshot(fixtureState, meta);
+    const back = stateFromParts(toc, {
+      players: parse<PlayersPart>(textOf(texts, toc.parts.players.sha256)),
+      seasons: { '1': parse<SeasonPart>(textOf(texts, toc.parts.seasons['1']!.sha256)) },
+      accounts: parse(textOf(texts, toc.parts.accounts.sha256)),
+      kels: parse(textOf(texts, toc.parts.kels.sha256)),
+    });
+    expect(back).toEqual(fixtureState);
+  });
+
+  test('without the accounts and kels parts, only the accounts of season players and past seasons come back, and no KEL', () => {
+    const { toc, texts } = buildSnapshot(fixtureState, meta);
+    const back = stateFromParts(toc, {
+      players: parse<PlayersPart>(textOf(texts, toc.parts.players.sha256)),
+      seasons: { '1': parse<SeasonPart>(textOf(texts, toc.parts.seasons['1']!.sha256)) },
+    });
+    expect([Object.keys(back.accounts).sort(), back.kels]).toEqual([[A, C], {}]);
+  });
+
+  test('the result does not depend on the order of object keys', () => {
     const reordered: RatingState = {
+      accounts: { [C]: fixtureState.accounts[C]!, [A]: fixtureState.accounts[A]! },
+      kels: { [C]: fixtureState.kels[C]!, [B]: fixtureState.kels[B]!, [A]: fixtureState.kels[A]! },
+      seasonSummaries: fixtureState.seasonSummaries,
       recentPairs: fixtureState.recentPairs,
       players: { [A]: fixtureState.players[A]!, [B]: fixtureState.players[B]! },
       cutoff: fixtureState.cutoff,
-      season: 1,
-      seasonSummaries: {},
-      kels: {},
-      accounts: {},
+      season: 2,
     };
-    expect(serializeSnapshot(stateToSnapshot(reordered, meta))).toBe(serializeSnapshot(stateToSnapshot(fixtureState, meta)));
+    expect(serializeToc(buildSnapshot(reordered, meta).toc)).toBe(serializeToc(buildSnapshot(fixtureState, meta).toc));
+  });
+
+  test('an unchanged part stays in the release where it was first put, and only new parts are returned', () => {
+    const first = buildSnapshot(fixtureState, meta);
+    const changed: RatingState = { ...fixtureState, cutoff: fixtureState.cutoff + 86400, players: { [A]: fixtureState.players[A]! } };
+    const next = buildSnapshot(changed, { ...meta, release: 'later', prevToc: first.toc });
+    expect([next.toc.parts.players.release, next.toc.parts.kels.release, next.toc.parts.accounts.release]).toEqual(['later', meta.release, meta.release]);
+    expect(next.texts.has(next.toc.parts.players.sha256)).toBe(true);
+    expect(next.texts.has(next.toc.parts.kels.sha256)).toBe(false);
+  });
+
+  test('a past season part is kept as it was, even when the account changed later', () => {
+    const first = buildSnapshot(fixtureState, meta);
+    const renamed: RatingState = { ...fixtureState, accounts: { ...fixtureState.accounts, [C]: { ...fixtureState.accounts[C]!, name: 'renamed' } } };
+    const next = buildSnapshot(renamed, { ...meta, release: 'later', prevToc: first.toc });
+    expect(next.toc.parts.seasons['1']).toEqual(first.toc.parts.seasons['1']);
+    expect(next.toc.parts.accounts.release).toBe('later');
+  });
+
+  test('the players part gives the KEL of season players, and the index gives everyone else', () => {
+    const { toc, texts } = buildSnapshot(fixtureState, meta);
+    const players = parse<PlayersPart>(textOf(texts, toc.parts.players.sha256));
+    const files = publishedFiles('smash_sp', toc, {
+      players: textOf(texts, toc.parts.players.sha256),
+      seasons: { '1': textOf(texts, toc.parts.seasons['1']!.sha256) },
+      kels: fixtureState.kels,
+    });
+    const part = (sha: string) => {
+      const text = files.get(`snapshots/smash_sp/parts/${sha}.json`);
+      expect(text === undefined ? null : sha256Hex(text)).toBe(sha);
+      return parse<unknown>(text!);
+    };
+    expect(Object.keys(players.kels).sort()).toEqual([A, B]);
+    expect(part(players.kels[A]!)).toEqual(fixtureState.kels[A]);
+    const index = part(toc.kel_index.sha256) as KelIndexPart;
+    const prefix = part(index[kelPrefix(C)]!.sha256) as KelPrefixPart;
+    expect(part(prefix[C]!)).toEqual(fixtureState.kels[C]);
+    expect(part(toc.parts.seasons['1']!.sha256)).toEqual(parse(textOf(texts, toc.parts.seasons['1']!.sha256)));
+  });
+
+  test('publishing stops when the KELs do not give the index in the table of contents', () => {
+    const { toc, texts } = buildSnapshot(fixtureState, meta);
+    const bulk = { players: textOf(texts, toc.parts.players.sha256), seasons: { '1': textOf(texts, toc.parts.seasons['1']!.sha256) } };
+    expect(() => publishedFiles('smash_sp', toc, { ...bulk, kels: { ...fixtureState.kels, [C]: fakeKel(A) } })).toThrow(
+      'the KELs do not match kel_index in the table of contents',
+    );
   });
 
   test('ratingConfigHash covers rating-relevant settings only', () => {

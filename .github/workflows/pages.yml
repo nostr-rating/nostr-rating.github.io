@@ -26,26 +26,25 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      # 復活の道具の入手先は、一番新しい recovery-v* のリリースのページにする。まだ無ければアプリはリリースの一覧を指す
+      # 復活の道具の入手先は、一番新しい recovery-v* のリリースのページにする。まだ無ければアプリはリリースの一覧を指す。
+      # スナップショットの部品のリリースが毎日増えるので、リリースの一覧ではなくタグから探す
       - id: recovery
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          tag=$(gh release list --repo "${{ github.repository }}" --limit 100 --exclude-drafts --json tagName,publishedAt \
-            --jq '[.[] | select(.tagName | startswith("recovery-v"))] | sort_by(.publishedAt) | last | .tagName // ""')
+          tag=$(git ls-remote --tags --sort=-v:refname origin 'refs/tags/recovery-v*' | sed -n '1s#.*refs/tags/##p')
           echo "url=${tag:+https://github.com/${{ github.repository }}/releases/tag/${tag}}" >> "$GITHUB_OUTPUT"
       - run: npm -w @nostr-rating/web run build
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
-          VITE_SNAPSHOT_BASE: https://raw.githubusercontent.com/${{ github.repository }}/main/
           VITE_REPO_URL: https://github.com/${{ github.repository }}
           VITE_RECOVERY_URL: ${{ steps.recovery.outputs.url }}
-      # 最新のスナップショットから、選手ページ（p/）と公開 API（api/v1/）を書き出す（docs/api.md）
+      # 最新のスナップショットから、アプリが読むスナップショット（snapshots/、docs/adr/0011）、
+      # 選手ページ（p/）、公開 API（api/v1/、docs/api.md）を書き出す。部品はリリースから取る
       - id: pages
         uses: actions/configure-pages@v5
       - run: npm run site -- --out apps/web/dist --app-url "${{ steps.pages.outputs.base_url }}/"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SNAPSHOT_RELEASE_BASE: ${{ github.server_url }}/${{ github.repository }}/releases/download/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: apps/web/dist

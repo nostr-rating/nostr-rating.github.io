@@ -9,11 +9,16 @@ import { repoDataFile } from './src/repoData.js';
 
 const REPO = resolve(import.meta.dirname, '../..');
 
-/** 開発時とプレビュー時に、リポジトリの snapshots/ と configs/ を同じ配信元から返す */
+/** 開発時とプレビュー時に、書き出したスナップショットとリポジトリの configs/ を同じ配信元から返す（無ければアプリは今のシーズンの最初から計算する） */
 function serveRepoData(): Plugin {
   const handler = (req: { url?: string }, res: any, next: () => void) => {
     const file = repoDataFile(REPO, req.url ?? '');
-    if (!file || !existsSync(file) || !statSync(file).isFile()) return next();
+    if (!file) return next();
+    // 無いファイルを index.html で返さない（スナップショットがまだ無いことを、Pages と同じく 404 で伝える）
+    if (!existsSync(file) || !statSync(file).isFile()) {
+      res.statusCode = 404;
+      return void res.end();
+    }
     res.setHeader('Content-Type', file.endsWith('.json') ? 'application/json' : 'text/plain');
     res.setHeader('Cache-Control', 'no-cache');
     createReadStream(file).pipe(res);

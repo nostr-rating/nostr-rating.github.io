@@ -3,7 +3,7 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import type { GameDefinition } from '../game/definition.js';
 import { parseClaim } from '../identity/claims.js';
 import type { KelRecords } from '../kel/book.js';
-import type { RatingState } from '../rating/pipeline.js';
+import type { AccountSummary, RatingState } from '../rating/pipeline.js';
 import type { Pubkey } from '../types.js';
 
 export interface SnapshotPlayer {
@@ -20,9 +20,40 @@ export interface SnapshotPlayer {
   has_identity: boolean;
 }
 
-/** docs/protocol.md「スナップショット」。キーは snake_case で、JSON とそのまま対応する */
-export interface Snapshot {
-  schema_version: 2;
+export interface SnapshotSeasonSummary {
+  final_rating: number;
+  peak_rating: number;
+  matches: number;
+  wins: number;
+  losses: number;
+  draws: number;
+}
+
+export interface SnapshotAccount {
+  name: string;
+  claims: { platform: string; identity: string; proof: string }[];
+  event_id: string;
+  created_at: number;
+}
+
+/** リリースに置いた部品（docs/adr/0011）。リリースの中の名前は `<sha256>.json` */
+export interface PartRef {
+  sha256: string;
+  /** バイト数 */
+  size: number;
+  /** 部品を置いたリリースのタグ。前の回と同じ部品は、最初に置いたリリースを指したままにする */
+  release: string;
+}
+
+/** 配信のときに kels の部品から作り直す部品。リリースには置かない */
+export interface DerivedRef {
+  sha256: string;
+  size: number;
+}
+
+/** docs/protocol.md「スナップショット」の目次。キーは snake_case で、JSON とそのまま対応する */
+export interface SnapshotToc {
+  schema_version: 3;
   game: string;
   season: number;
   kind: 'rolling' | 'final';
@@ -32,27 +63,45 @@ export interface Snapshot {
   /** 計算に使った設定値（ratingConfigHash）。シーズン途中で変わっていないかの確認に使う */
   config_sha256: string;
   inputs: { event_count: number; event_ids_sha256: string };
+  /** 取り切れなかったので、この回はイベントを無視したアカウント（作り直して確かめるときに使う） */
+  excluded: Pubkey[];
+  parts: {
+    /** PlayersPart */
+    players: PartRef;
+    /** aid → 最新のアカウントの公開情報 */
+    accounts: PartRef;
+    /** aid → 採用した KEL（sn の順）。全員の「先に見た版」になる */
+    kels: PartRef;
+    /** この回に使ったイベントの id（昇順） */
+    ids: PartRef;
+    /** シーズン id → SeasonPart。終わったシーズンの部品は、それ以後変わらない */
+    seasons: Record<string, PartRef>;
+  };
+  /** KelIndexPart */
+  kel_index: DerivedRef;
+}
+
+/** そのシーズンの選手。クライアントは同期のたびにこれを読む */
+export interface PlayersPart {
   /** キーは aid（docs/adr/0008） */
   players: Record<Pubkey, SnapshotPlayer>;
   recent_pairs: { a: Pubkey; b: Pubkey; settled_at: number }[];
-  /** シーズン id → aid → 成績 */
-  season_summaries: Record<string, Record<Pubkey, SnapshotSeasonSummary>>;
-  /** aid → 採用した KEL（sn の順）。全員の「先に見た版」になる */
-  kels: KelRecords;
-  /** 取り切れなかったので、この回はイベントを無視したアカウント（作り直して確かめるときに使う） */
-  excluded: Pubkey[];
-  /** aid → 最新のアカウントの公開情報 */
-  accounts: Record<Pubkey, { name: string; claims: { platform: string; identity: string; proof: string }[]; event_id: string; created_at: number }>;
+  /** 選手の公開情報（ある人だけ） */
+  accounts: Record<Pubkey, SnapshotAccount>;
+  /** 選手の KEL の部品の sha256 */
+  kels: Record<Pubkey, string>;
 }
 
-export interface SnapshotSeasonSummary {
-  final_rating: number;
-  peak_rating: number;
-  matches: number;
-  wins: number;
-  losses: number;
-  draws: number;
+/** 終わったシーズンの成績と、その時点の選手の公開情報 */
+export interface SeasonPart {
+  summaries: Record<Pubkey, SnapshotSeasonSummary>;
+  accounts: Record<Pubkey, SnapshotAccount>;
 }
+
+/** aid の先頭2文字 → KelPrefixPart */
+export type KelIndexPart = Record<string, DerivedRef>;
+/** aid → KEL の部品の sha256 */
+export type KelPrefixPart = Record<Pubkey, string>;
 
 export interface LatestPointer {
   path: string;
@@ -65,108 +114,6 @@ export function sha256Hex(text: string): string {
 
 export function eventIdsHash(ids: string[]): string {
   return sha256Hex([...ids].sort().join('\n'));
-}
-
-export function stateToSnapshot(
-  state: RatingState,
-  meta: {
-    game: string;
-    previous: string | null;
-    previousSha256: string | null;
-    eventIds: string[];
-    configSha256: string;
-    kind?: Snapshot['kind'];
-    excluded?: Pubkey[];
-  },
-): Snapshot {
-  const players: Record<Pubkey, SnapshotPlayer> = {};
-  for (const [pk, p] of Object.entries(state.players)) {
-    players[pk] = {
-      rating: p.rating,
-      rd: p.rd,
-      volatility: p.volatility,
-      peak_rating: p.peakRating,
-      matches: p.matches,
-      wins: p.wins,
-      losses: p.losses,
-      draws: p.draws,
-      manners: { no_report: p.manners.noReport, cancel: p.manners.cancel, mismatch: p.manners.mismatch },
-      last_match_at: p.lastMatchAt,
-      has_identity: p.hasIdentity,
-    };
-  }
-  return {
-    schema_version: 2,
-    game: meta.game,
-    season: state.season,
-    kind: meta.kind ?? 'rolling',
-    cutoff: state.cutoff,
-    previous: meta.previous,
-    previous_sha256: meta.previousSha256,
-    config_sha256: meta.configSha256,
-    inputs: { event_count: meta.eventIds.length, event_ids_sha256: eventIdsHash(meta.eventIds) },
-    players,
-    recent_pairs: state.recentPairs.map((p) => ({ a: p.a, b: p.b, settled_at: p.settledAt })),
-    season_summaries: Object.fromEntries(
-      Object.entries(state.seasonSummaries).map(([season, players]) => [
-        season,
-        Object.fromEntries(
-          Object.entries(players).map(([pk, x]) => [
-            pk,
-            { final_rating: x.finalRating, peak_rating: x.peakRating, matches: x.matches, wins: x.wins, losses: x.losses, draws: x.draws },
-          ]),
-        ),
-      ]),
-    ),
-    kels: state.kels,
-    excluded: [...(meta.excluded ?? [])].sort(),
-    accounts: Object.fromEntries(
-      Object.entries(state.accounts).map(([aid, a]) => [aid, { name: a.name, claims: a.claims, event_id: a.eventId, created_at: a.createdAt }]),
-    ),
-  };
-}
-
-export function snapshotToState(s: Snapshot): RatingState {
-  const players: RatingState['players'] = {};
-  for (const [pk, p] of Object.entries(s.players)) {
-    players[pk] = {
-      rating: p.rating,
-      rd: p.rd,
-      volatility: p.volatility,
-      peakRating: p.peak_rating,
-      matches: p.matches,
-      wins: p.wins,
-      losses: p.losses,
-      draws: p.draws ?? 0,
-      manners: { noReport: p.manners.no_report, cancel: p.manners.cancel, mismatch: p.manners.mismatch },
-      lastMatchAt: p.last_match_at,
-      hasIdentity: p.has_identity,
-    };
-  }
-  return {
-    season: s.season,
-    cutoff: s.cutoff,
-    players,
-    recentPairs: s.recent_pairs.map((p) => ({ a: p.a, b: p.b, settledAt: p.settled_at })),
-    seasonSummaries: Object.fromEntries(
-      Object.entries(s.season_summaries ?? {}).map(([season, players]) => [
-        season,
-        Object.fromEntries(
-          Object.entries(players).map(([pk, x]) => [
-            pk,
-            { finalRating: x.final_rating, peakRating: x.peak_rating, matches: x.matches, wins: x.wins, losses: x.losses, draws: x.draws ?? 0 },
-          ]),
-        ),
-      ]),
-    ),
-    kels: s.kels ?? {},
-    accounts: Object.fromEntries(
-      Object.entries(s.accounts ?? {}).map(([aid, a]) => [
-        aid,
-        { name: a.name, claims: a.claims.map((c) => parseClaim(c)).filter((c) => c !== null), eventId: a.event_id, createdAt: a.created_at },
-      ]),
-    ),
-  };
 }
 
 /** レート計算の結果を左右する設定値だけのハッシュ（表示名などの変更では変わらない） */
@@ -199,7 +146,223 @@ function sortKeys(v: unknown): unknown {
   return v;
 }
 
-/** 誰が生成しても同じバイト列になる正規化 JSON（キー昇順、2スペース、末尾改行1つ） */
-export function serializeSnapshot(s: Snapshot): string {
-  return `${JSON.stringify(sortKeys(s), null, 2)}\n`;
+/** 誰が生成しても同じバイト列になる正規化 JSON（キー昇順、2スペース、末尾改行1つ）。目次はリポジトリで差分を読むのでこの形にする */
+export function serializeToc(toc: SnapshotToc): string {
+  return `${JSON.stringify(sortKeys(toc), null, 2)}\n`;
 }
+
+/** 部品の正規化 JSON（キー昇順、空白なし、末尾改行1つ） */
+export function serializePart(v: unknown): string {
+  return `${JSON.stringify(sortKeys(v))}\n`;
+}
+
+const refOf = (text: string) => ({ sha256: sha256Hex(text), size: utf8ToBytes(text).length });
+
+/** 配信での部品の置き場所 */
+export const partPath = (game: string, sha256: string) => `snapshots/${game}/parts/${sha256}.json`;
+
+/** KEL の索引を分ける単位（aid の先頭2文字） */
+export const kelPrefix = (aid: Pubkey) => aid.slice(0, 2);
+
+const toAccount = (a: AccountSummary): SnapshotAccount => ({ name: a.name, claims: a.claims, event_id: a.eventId, created_at: a.createdAt });
+const fromAccount = (a: SnapshotAccount): AccountSummary => ({
+  name: a.name,
+  claims: a.claims.map((c) => parseClaim(c)).filter((c) => c !== null),
+  eventId: a.event_id,
+  createdAt: a.created_at,
+});
+
+function accountsOf(state: RatingState, aids: Iterable<Pubkey>): Record<Pubkey, SnapshotAccount> {
+  const out: Record<Pubkey, SnapshotAccount> = {};
+  for (const aid of aids) {
+    const a = state.accounts[aid];
+    if (a) out[aid] = toAccount(a);
+  }
+  return out;
+}
+
+/** KEL ごとの部品と、その索引（配信用）。誰が作っても同じバイト列になる */
+export function kelParts(kels: KelRecords): { index: DerivedRef; kelSha: Map<Pubkey, string>; texts: Map<string, string> } {
+  const texts = new Map<string, string>();
+  const kelSha = new Map<Pubkey, string>();
+  const prefixes = new Map<string, KelPrefixPart>();
+  for (const [aid, kel] of Object.entries(kels)) {
+    const text = serializePart(kel);
+    const sha = sha256Hex(text);
+    texts.set(sha, text);
+    kelSha.set(aid, sha);
+    const p = prefixes.get(kelPrefix(aid)) ?? {};
+    p[aid] = sha;
+    prefixes.set(kelPrefix(aid), p);
+  }
+  const index: KelIndexPart = {};
+  for (const [prefix, part] of prefixes) {
+    const text = serializePart(part);
+    texts.set(sha256Hex(text), text);
+    index[prefix] = refOf(text);
+  }
+  const text = serializePart(index);
+  texts.set(sha256Hex(text), text);
+  return { index: refOf(text), kelSha, texts };
+}
+
+/**
+ * 状態から目次と部品を作る（docs/adr/0011）。texts は、この回に新しくリリースへ置く部品（sha256 → 本文）。
+ * 前の回の目次と同じ部品は、前のリリースを指したままにする。終わったシーズンの部品は、前の目次にあればそのまま使う
+ */
+export function buildSnapshot(
+  state: RatingState,
+  meta: {
+    game: string;
+    previous: string | null;
+    previousSha256: string | null;
+    eventIds: string[];
+    configSha256: string;
+    kind?: SnapshotToc['kind'];
+    excluded?: Pubkey[];
+    /** この回の部品を置くリリースのタグ */
+    release: string;
+    prevToc?: SnapshotToc | null;
+  },
+): { toc: SnapshotToc; texts: Map<string, string> } {
+  const texts = new Map<string, string>();
+  const prev = meta.prevToc?.parts;
+  const put = (text: string, before: PartRef | undefined): PartRef => {
+    const ref = refOf(text);
+    if (before?.sha256 === ref.sha256) return before;
+    texts.set(ref.sha256, text);
+    return { ...ref, release: meta.release };
+  };
+
+  const kel = kelParts(state.kels);
+  const aids = Object.keys(state.players);
+  const players: PlayersPart = {
+    players: Object.fromEntries(Object.entries(state.players).map(([pk, p]) => [pk, toPlayer(p)])),
+    recent_pairs: state.recentPairs.map((p) => ({ a: p.a, b: p.b, settled_at: p.settledAt })),
+    accounts: accountsOf(state, aids),
+    kels: Object.fromEntries(aids.filter((aid) => kel.kelSha.has(aid)).map((aid) => [aid, kel.kelSha.get(aid)!])),
+  };
+  const seasons: Record<string, PartRef> = {};
+  for (const [season, summaries] of Object.entries(state.seasonSummaries)) {
+    const before = prev?.seasons[season];
+    if (before) {
+      seasons[season] = before;
+      continue;
+    }
+    const part: SeasonPart = {
+      summaries: Object.fromEntries(Object.entries(summaries).map(([pk, x]) => [pk, toSummary(x)])),
+      accounts: accountsOf(state, Object.keys(summaries)),
+    };
+    seasons[season] = put(serializePart(part), undefined);
+  }
+  const ids = [...meta.eventIds].sort();
+  const toc: SnapshotToc = {
+    schema_version: 3,
+    game: meta.game,
+    season: state.season,
+    kind: meta.kind ?? 'rolling',
+    cutoff: state.cutoff,
+    previous: meta.previous,
+    previous_sha256: meta.previousSha256,
+    config_sha256: meta.configSha256,
+    inputs: { event_count: ids.length, event_ids_sha256: eventIdsHash(ids) },
+    excluded: [...(meta.excluded ?? [])].sort(),
+    parts: {
+      players: put(serializePart(players), prev?.players),
+      accounts: put(serializePart(accountsOf(state, Object.keys(state.accounts))), prev?.accounts),
+      kels: put(serializePart(state.kels), prev?.kels),
+      ids: put(serializePart(ids), prev?.ids),
+      seasons,
+    },
+    kel_index: kel.index,
+  };
+  return { toc, texts };
+}
+
+/**
+ * 配信（GitHub Pages）に置く部品（パス → 本文）。クライアントが読む players、シーズン、KEL の索引、KEL ごとの部品。
+ * KEL の索引は kels の部品から作り直し、目次と同じになることを確かめる
+ */
+export function publishedFiles(game: string, toc: SnapshotToc, bulk: { players: string; seasons: Record<string, string>; kels: KelRecords }): Map<string, string> {
+  const kel = kelParts(bulk.kels);
+  if (kel.index.sha256 !== toc.kel_index.sha256) throw new Error('the KELs do not match kel_index in the table of contents');
+  const out = new Map<string, string>();
+  for (const text of [bulk.players, ...Object.values(bulk.seasons), ...kel.texts.values()]) out.set(partPath(game, sha256Hex(text)), text);
+  return out;
+}
+
+/**
+ * 部品から状態を作る。accounts と kels の部品を渡さないとき（クライアント）は、公開情報はそのシーズンの選手と
+ * 終わったシーズンの選手の分だけになり、KEL は空になる（必要な分をあとから読む）
+ */
+export function stateFromParts(
+  toc: SnapshotToc,
+  parts: { players: PlayersPart; seasons: Record<string, SeasonPart>; accounts?: Record<Pubkey, SnapshotAccount>; kels?: KelRecords },
+): RatingState {
+  let accounts = parts.accounts;
+  if (!accounts) {
+    accounts = {};
+    for (const s of Object.keys(parts.seasons).sort((a, b) => Number(a) - Number(b))) Object.assign(accounts, parts.seasons[s]!.accounts);
+    Object.assign(accounts, parts.players.accounts);
+  }
+  return {
+    season: toc.season,
+    cutoff: toc.cutoff,
+    players: Object.fromEntries(Object.entries(parts.players.players).map(([pk, p]) => [pk, fromPlayer(p)])),
+    recentPairs: parts.players.recent_pairs.map((p) => ({ a: p.a, b: p.b, settledAt: p.settled_at })),
+    seasonSummaries: Object.fromEntries(
+      Object.entries(parts.seasons).map(([season, part]) => [season, Object.fromEntries(Object.entries(part.summaries).map(([pk, x]) => [pk, fromSummary(x)]))]),
+    ),
+    kels: parts.kels ?? {},
+    accounts: Object.fromEntries(Object.entries(accounts).map(([aid, a]) => [aid, fromAccount(a)])),
+  };
+}
+
+type Player = RatingState['players'][string];
+type Summary = RatingState['seasonSummaries'][string][string];
+
+const toPlayer = (p: Player): SnapshotPlayer => ({
+  rating: p.rating,
+  rd: p.rd,
+  volatility: p.volatility,
+  peak_rating: p.peakRating,
+  matches: p.matches,
+  wins: p.wins,
+  losses: p.losses,
+  draws: p.draws,
+  manners: { no_report: p.manners.noReport, cancel: p.manners.cancel, mismatch: p.manners.mismatch },
+  last_match_at: p.lastMatchAt,
+  has_identity: p.hasIdentity,
+});
+
+const fromPlayer = (p: SnapshotPlayer): Player => ({
+  rating: p.rating,
+  rd: p.rd,
+  volatility: p.volatility,
+  peakRating: p.peak_rating,
+  matches: p.matches,
+  wins: p.wins,
+  losses: p.losses,
+  draws: p.draws,
+  manners: { noReport: p.manners.no_report, cancel: p.manners.cancel, mismatch: p.manners.mismatch },
+  lastMatchAt: p.last_match_at,
+  hasIdentity: p.has_identity,
+});
+
+const toSummary = (x: Summary): SnapshotSeasonSummary => ({
+  final_rating: x.finalRating,
+  peak_rating: x.peakRating,
+  matches: x.matches,
+  wins: x.wins,
+  losses: x.losses,
+  draws: x.draws,
+});
+
+const fromSummary = (x: SnapshotSeasonSummary): Summary => ({
+  finalRating: x.final_rating,
+  peakRating: x.peak_rating,
+  matches: x.matches,
+  wins: x.wins,
+  losses: x.losses,
+  draws: x.draws,
+});

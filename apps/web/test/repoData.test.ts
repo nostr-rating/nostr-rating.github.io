@@ -3,15 +3,17 @@ import { describe, expect, test } from 'vitest';
 import { repoDataFile } from '../src/repoData.js';
 
 const REPO = resolve('/work/repo');
+/** npm run site -- --out .snapshot-parts/site で書き出したスナップショット */
+const SITE = join(REPO, '.snapshot-parts/site');
 
 describe('repoDataFile', () => {
-  test('finds a file under snapshots/ and configs/', () => {
-    expect(repoDataFile(REPO, '/snapshots/smash/2026-10-01.json?t=1')).toBe(join(REPO, 'snapshots/smash/2026-10-01.json'));
+  test('finds a snapshot file in the published folder, and a file under configs/ in the repository', () => {
+    expect(repoDataFile(REPO, '/snapshots/smash/2026-10-01.json?t=1')).toBe(join(SITE, 'snapshots/smash/2026-10-01.json'));
     expect(repoDataFile(REPO, '/configs/smash.json')).toBe(join(REPO, 'configs/smash.json'));
   });
 
   test('accepts the path under the base of the site', () => {
-    expect(repoDataFile(REPO, '/nostr-rating/snapshots/a.json')).toBe(join(REPO, 'snapshots/a.json'));
+    expect(repoDataFile(REPO, '/nostr-rating/snapshots/a.json')).toBe(join(SITE, 'snapshots/a.json'));
   });
 
   test('ignores other paths', () => {

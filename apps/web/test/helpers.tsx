@@ -3,14 +3,12 @@ import {
   MemoryRelay,
   newRecoveryWords,
   parseGameDefinition,
-  serializeSnapshot,
   sha256Hex,
   buildAccountInfo,
   buildApplication,
   buildMatch,
   buildSettings,
   parseMatch,
-  stateToSnapshot,
   type MatchRecord,
   type IdentityClaim,
   type RelayClient,
@@ -24,6 +22,7 @@ import rawChess from '../../../configs/chess.json';
 import { Account, memoryKeyStore } from '../src/account/account.js';
 import { AppProvider, type AppDeps } from '../src/state/AppContext.js';
 import { MemoryEventStore } from '../src/storage/memory.js';
+import { snapshotRoutes as snapshotFiles } from './snapshot.js';
 
 export const def = parseGameDefinition(rawDef);
 export const chess = parseGameDefinition(rawChess);
@@ -31,14 +30,7 @@ export const BASE = 'https://example.test/';
 export const SNAP_CUTOFF = 1_793_026_800;
 
 export function snapshotRoutes(): Record<string, unknown> {
-  const text = serializeSnapshot(
-    stateToSnapshot(initialState(def, 1, SNAP_CUTOFF), { game: 'smash_sp', previous: null, previousSha256: null, eventIds: [], configSha256: 'x' }),
-  );
-  const path = 'snapshots/smash_sp/season_1/2026-10-27.json';
-  return {
-    [`${BASE}snapshots/smash_sp/latest.json`]: { path, sha256: sha256Hex(text) },
-    [`${BASE}${path}`]: text,
-  };
+  return snapshotFiles(BASE, 'smash_sp', initialState(def, 1, SNAP_CUTOFF), 'snapshots/smash_sp/season_1/2026-10-27.json');
 }
 
 /** routes の値が文字列ならそのまま、それ以外は JSON で返す */

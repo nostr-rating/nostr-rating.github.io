@@ -7,5 +7,7 @@ test-results/
 .env*
 .DS_Store
 dist-types/
+# スナップショットの部品の手元の置き場（リリースに上げる。docs/adr/0011）
+.snapshot-parts/
 # npm run dev:lan に渡す証明書と秘密鍵（README「スマホで確かめる」）
 *.pem

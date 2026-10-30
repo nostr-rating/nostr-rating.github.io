@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createNostrRelayClient, initFastVerify, RATING_PAGE_SIZE } from '@nostr-rating/core';
 import { relaysBelowPageSize } from './relayInfo.js';
+import { partStore } from './parts.js';
 import { listGames, runSnapshot } from './run.js';
 
 const { values } = parseArgs({
@@ -10,17 +11,24 @@ const { values } = parseArgs({
     cutoff: { type: 'string' },
     relays: { type: 'string' },
     game: { type: 'string' },
+    /** 部品の置き場（git の管理外）。新しい部品は upload/<リリースのタグ>/ にも置く */
+    parts: { type: 'string' },
+    /** 前回の部品を取るリリースの取得元（https://github.com/<owner>/<repo>/releases/download/） */
+    'release-base': { type: 'string', default: process.env.SNAPSHOT_RELEASE_BASE },
     root: { type: 'string', default: resolve(import.meta.dirname, '../../..') },
   },
 });
 
 if (!values.cutoff || !/^\d+$/.test(values.cutoff)) {
-  console.error('usage: npm run snapshot -- --cutoff <unix seconds> [--game <id>（省略すると configs/games.json のすべて）] [--relays wss://a,wss://b] [--root .]');
+  console.error(
+    'usage: npm run snapshot -- --cutoff <unix seconds> [--game <id>（省略すると configs/games.json のすべて）] [--relays wss://a,wss://b] [--root .] [--parts <dir>] [--release-base <url>]',
+  );
   process.exit(2);
 }
 
 await initFastVerify();
 const root = resolve(values.root);
+const parts = partStore(resolve(values.parts ?? join(root, '.snapshot-parts')), values['release-base'] || null);
 const urls = values.relays
   ? values.relays.split(',').map((s) => s.trim()).filter(Boolean)
   : (JSON.parse(readFileSync(join(root, 'configs/relays.json'), 'utf8')) as { relays: string[] }).relays;
@@ -35,9 +43,9 @@ if (small.length > 0) {
 const relay = createNostrRelayClient(urls, { strict: true, maxWaitMs: 10_000 });
 try {
   for (const game of values.game ? [values.game] : listGames(root)) {
-    const { path, snapshot } = await runSnapshot({ root, cutoff: Number(values.cutoff), relay, game });
-    console.log(`wrote ${path} (players: ${Object.keys(snapshot.players).length}, events: ${snapshot.inputs.event_count})`);
-    if (snapshot.inputs.event_count === 0) console.warn(`warning: ${game}: no events were used (no matches in the window)`);
+    const { path, toc, release, uploads } = await runSnapshot({ root, cutoff: Number(values.cutoff), relay, parts, game });
+    console.log(`wrote ${path} (events: ${toc.inputs.event_count}; ${uploads} new parts for release ${release})`);
+    if (toc.inputs.event_count === 0) console.warn(`warning: ${game}: no events were used (no matches in the window)`);
   }
 } finally {
   relay.close();

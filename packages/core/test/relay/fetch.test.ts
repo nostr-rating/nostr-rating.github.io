@@ -82,6 +82,23 @@ describe('fetchRatingEvents', () => {
     expect(got.incomplete.size).toBe(0);
   });
 
+  test('reads the recorded KEL of only the accounts that appear, and collects the same events as with every KEL given', async () => {
+    const relay = new MemoryRelay(now);
+    const [a, b, idle] = [newUser(), newUser(), newUser()];
+    const evs = [await identity(a, T0 - 10), await identity(b, T0 - 10), ...(await p1Wins(a, b, T0))];
+    await publishAll(relay, evs);
+    const asked: string[] = [];
+    const loadKels = async (aids: string[]) => {
+      asked.push(...aids);
+      const all = registeredKels();
+      return Object.fromEntries(aids.filter((aid) => all[aid]).map((aid) => [aid, all[aid]!]));
+    };
+    const got = await fetchRatingEvents(relay, def, {}, T0 - 100, T0 + 1000, { loadKels });
+    expect(ids(got.events)).toEqual(ids(evs));
+    expect([...new Set(asked)].sort()).toEqual([a.pk, b.pk].sort());
+    expect(asked).not.toContain(idle.pk);
+  });
+
   test('finds a new account from its KEL events', async () => {
     const relay = new MemoryRelay(now);
     const a = newUser();

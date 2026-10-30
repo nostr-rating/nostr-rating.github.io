@@ -1,0 +1,42 @@
+{
+  "config_sha256": "4db55f03b0110d8c456f953d620b2f26a73f08cef9333472734b604201750c5f",
+  "cutoff": 1790886400,
+  "excluded": [],
+  "game": "smash_sp",
+  "inputs": {
+    "event_count": 9,
+    "event_ids_sha256": "f54795222861eef86c0d25da269da602163d908abd0131dd9a009ee654d81fdc"
+  },
+  "kel_index": {
+    "sha256": "2730c1531be363e80f49aa163e9f2481434edfcfbf5e1d49db02dd5436d85dc1",
+    "size": 190
+  },
+  "kind": "rolling",
+  "parts": {
+    "accounts": {
+      "release": "snapshot-smash_sp-season_1-2026-10-02",
+      "sha256": "361fbc2a72237e4ceca1f3ad40146ad1c94e2a6a3e4c7c04f37d29b8288981ab",
+      "size": 488
+    },
+    "ids": {
+      "release": "snapshot-smash_sp-season_1-2026-10-02",
+      "sha256": "352d1bcbfe607a9db05eb6597bcce8419b06a11f3ae4f9f35e1708e1934a44dd",
+      "size": 605
+    },
+    "kels": {
+      "release": "snapshot-smash_sp-season_1-2026-10-02",
+      "sha256": "4f7a84dd26d704269d217b451c3cbc5cee43f74ee2f41ff8178a4a6d4dc4438c",
+      "size": 1528
+    },
+    "players": {
+      "release": "snapshot-smash_sp-season_1-2026-10-02",
+      "sha256": "aabf9d888e06d4932423fdbe0df6e0bf367a8128435689fc9b6cbce57822072e",
+      "size": 1546
+    },
+    "seasons": {}
+  },
+  "previous": null,
+  "previous_sha256": null,
+  "schema_version": 3,
+  "season": 1
+}

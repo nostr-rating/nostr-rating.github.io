@@ -1,27 +1,56 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { verificationText, type Snapshot } from '@nostr-rating/core';
+import {
+  buildSnapshot,
+  serializeToc,
+  sha256Hex,
+  stateFromParts,
+  verificationText,
+  type KelPrefixPart,
+  type KelIndexPart,
+  type PlayersPart,
+  type RatingState,
+  type SnapshotToc,
+} from '@nostr-rating/core';
+import { partStore, type PartStore } from '../src/parts.js';
 import { buildSite, type PlayerDoc } from '../src/site.js';
 
 const FIXTURES = resolve(__dirname, 'fixtures');
 const REPO = resolve(__dirname, '../../..');
 let root: string;
 let out: string;
+let parts: PartStore;
+
+const fixture = <T>(name: string) => JSON.parse(readFileSync(join(FIXTURES, name), 'utf8')) as T;
+
+/** golden の部品から作った状態 */
+const snapshot = (): RatingState =>
+  stateFromParts(fixture<SnapshotToc>('toc.json'), { players: fixture('players.json'), seasons: {}, accounts: fixture('accounts.json'), kels: fixture('kels.json') });
+
+/** 状態を、そのゲームの最新のスナップショットとして置く（目次と latest.json はリポジトリに、部品は置き場に） */
+function put(game: string, state: RatingState): void {
+  const path = `snapshots/${game}/season_1/2026-10-02.json`;
+  const { toc, texts } = buildSnapshot(state, { game, previous: null, previousSha256: null, eventIds: [], configSha256: 'x', release: 'r' });
+  for (const [sha, text] of texts) parts.put('r', sha, text);
+  const text = serializeToc(toc);
+  mkdirSync(dirname(join(root, path)), { recursive: true });
+  writeFileSync(join(root, path), text);
+  writeFileSync(join(root, `snapshots/${game}/latest.json`), `${JSON.stringify({ path, sha256: sha256Hex(text) }, null, 2)}\n`);
+}
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'nr-site-'));
   out = join(root, 'dist');
-  // golden のスナップショットを最新として置く
+  parts = partStore(join(root, '.parts'), null);
   cpSync(join(REPO, 'configs'), join(root, 'configs'), { recursive: true });
-  cpSync(join(FIXTURES, 'snapshot.json'), join(root, 'snapshots/smash_sp/season_1/2026-10-02.json'));
-  cpSync(join(FIXTURES, 'latest.json'), join(root, 'snapshots/smash_sp/latest.json'));
+  put('smash_sp', snapshot());
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-const snapshot = () => JSON.parse(readFileSync(join(FIXTURES, 'snapshot.json'), 'utf8')) as Snapshot;
 const read = <T>(p: string) => JSON.parse(readFileSync(join(out, p), 'utf8')) as T;
+const site = (fetchFn: typeof fetch) => buildSite({ root, out, appUrl: 'https://example.github.io/nostr-rating/', fetchFn, parts });
 
 /** a1 の Gist だけが本物（本文に aid がある）。b2 は所有者が違う */
 function stubFetch(): typeof fetch {
@@ -41,7 +70,7 @@ function stubFetch(): typeof fetch {
 
 describe('buildSite', () => {
   test('writes a JSON document and a page for every player', async () => {
-    const { players } = await buildSite({ root, out, appUrl: 'https://example.github.io/nostr-rating/', fetchFn: stubFetch() });
+    const { players } = await site(stubFetch());
     const s = snapshot();
     expect(players).toBe(2);
     for (const [aid, p] of Object.entries(s.players)) {
@@ -54,8 +83,32 @@ describe('buildSite', () => {
     expect(read<{ games: { id: string; players: number }[] }>('api/v1/index.json').games).toEqual([expect.objectContaining({ id: 'smash_sp', players: 2 })]);
   });
 
+  test('publishes the snapshot the app reads: the pointer, the table of contents, the players part and every KEL', async () => {
+    await site(stubFetch());
+    const pointer = readFileSync(join(root, 'snapshots/smash_sp/latest.json'), 'utf8');
+    expect(readFileSync(join(out, 'snapshots/smash_sp/latest.json'), 'utf8')).toBe(pointer);
+    const { path } = JSON.parse(pointer) as { path: string };
+    expect(readFileSync(join(out, path), 'utf8')).toBe(readFileSync(join(root, path), 'utf8'));
+    const toc = read<SnapshotToc>(path);
+    const part = <T>(sha: string) => {
+      const text = readFileSync(join(out, `snapshots/smash_sp/parts/${sha}.json`), 'utf8');
+      expect(sha256Hex(text)).toBe(sha);
+      return JSON.parse(text) as T;
+    };
+    const players = part<PlayersPart>(toc.parts.players.sha256);
+    const index = part<KelIndexPart>(toc.kel_index.sha256);
+    for (const aid of Object.keys(snapshot().kels)) {
+      const prefix = part<KelPrefixPart>(index[aid.slice(0, 2)]!.sha256);
+      expect([part(prefix[aid]!), players.kels[aid]]).toEqual([snapshot().kels[aid], prefix[aid]]);
+    }
+    // アプリはリレーの一覧も同じ配信元から読む
+    expect(readFileSync(join(out, 'configs/relays.json'), 'utf8')).toBe(readFileSync(join(root, 'configs/relays.json'), 'utf8'));
+    // 生成だけが使う部品は配信しない
+    expect(existsSync(join(out, `snapshots/smash_sp/parts/${toc.parts.accounts.sha256}.json`))).toBe(false);
+  });
+
   test('indexes only verified external accounts', async () => {
-    await buildSite({ root, out, appUrl: 'https://example.github.io/nostr-rating/', fetchFn: stubFetch() });
+    await site(stubFetch());
     const byA1 = read<{ players: PlayerDoc[] }>('api/v1/smash_sp/by/github/a1.json');
     expect(byA1.players).toHaveLength(1);
     expect(byA1.players[0]!.accounts).toEqual([{ platform: 'github', identity: 'a1', proof_url: 'https://gist.github.com/a1/a1', verified: true }]);
@@ -66,28 +119,20 @@ describe('buildSite', () => {
     const s = snapshot();
     const aid = Object.keys(s.accounts)[0]!;
     s.accounts[aid]!.name = '<script>alert(1)</script>';
-    const text = `${JSON.stringify(s)}`;
-    const { writeFileSync } = await import('node:fs');
-    const { sha256Hex } = await import('@nostr-rating/core');
-    writeFileSync(join(root, 'snapshots/smash_sp/season_1/2026-10-02.json'), text);
-    writeFileSync(join(root, 'snapshots/smash_sp/latest.json'), JSON.stringify({ path: 'snapshots/smash_sp/season_1/2026-10-02.json', sha256: sha256Hex(text) }));
-    await buildSite({ root, out, appUrl: 'https://example.github.io/nostr-rating/', fetchFn: stubFetch() });
+    put('smash_sp', s);
+    await site(stubFetch());
     const html = readFileSync(join(out, `p/${aid}.html`), 'utf8');
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
   });
 
   test('links another account that verifiably shares an external account and shows its past seasons', async () => {
-    const { writeFileSync } = await import('node:fs');
-    const { sha256Hex } = await import('@nostr-rating/core');
     const s = snapshot();
     const [a, b] = Object.entries(s.accounts).sort(([, x], [, y]) => (x.claims[0]!.identity < y.claims[0]!.identity ? -1 : 1)).map(([aid]) => aid);
     // b は a と同じ GitHub アカウント（A1、大文字小文字は違う）を、別の Gist で紐づけた。b には過去のシーズンの成績がある
     s.accounts[b!]!.claims = [{ platform: 'github', identity: 'A1', proof: 'b9' }];
-    s.season_summaries = { '0': { [b!]: { final_rating: 1700, peak_rating: 1750, matches: 9, wins: 6, losses: 3, draws: 0 } } };
-    const text = JSON.stringify(s);
-    writeFileSync(join(root, 'snapshots/smash_sp/season_1/2026-10-02.json'), text);
-    writeFileSync(join(root, 'snapshots/smash_sp/latest.json'), JSON.stringify({ path: 'snapshots/smash_sp/season_1/2026-10-02.json', sha256: sha256Hex(text) }));
+    s.seasonSummaries = { '0': { [b!]: { finalRating: 1700, peakRating: 1750, matches: 9, wins: 6, losses: 3, draws: 0 } } };
+    put('smash_sp', s);
     const fetchFn = (async (input: string | URL | Request) => {
       const url = String(input);
       const gist = (aid: string) => new Response(JSON.stringify({ owner: { login: 'a1' }, files: { f: { content: verificationText(aid) } } }));
@@ -95,7 +140,7 @@ describe('buildSite', () => {
       if (url === 'https://api.github.com/gists/b9') return gist(b!);
       return new Response('not found', { status: 404 });
     }) as typeof fetch;
-    await buildSite({ root, out, appUrl: 'https://example.github.io/nostr-rating/', fetchFn });
+    await site(fetchFn);
     expect(read<PlayerDoc>(`api/v1/smash_sp/players/${a}.json`).linked_accounts).toEqual([
       { aid: b, name: '', via: [{ platform: 'github', identity: 'a1' }], past_seasons: { '0': { final_rating: 1700, peak_rating: 1750, matches: 9, wins: 6, losses: 3, draws: 0 } } },
     ]);
@@ -103,22 +148,16 @@ describe('buildSite', () => {
   });
 
   test('writes each game under its own path and puts every game on one player page', async () => {
-    const { writeFileSync, mkdirSync } = await import('node:fs');
-    const { sha256Hex } = await import('@nostr-rating/core');
     const c = snapshot();
     // チェスには a1 の Gist で紐づけた a だけが参加し、2回引き分けた
     const a = Object.entries(c.accounts).find(([, x]) => x.claims.some((cl) => cl.identity === 'a1'))![0];
     const b = Object.keys(c.players).find((aid) => aid !== a)!;
-    c.game = 'chess';
     // 紐づけのあるアカウントは、対戦していないゲームのスナップショットにも 0 戦で入る
-    c.players[b] = { ...c.players[b]!, rating: 1500, peak_rating: 1500, matches: 0, wins: 0, losses: 0, draws: 0, manners: { no_report: 0, cancel: 0, mismatch: 0 } };
+    c.players[b] = { ...c.players[b]!, rating: 1500, peakRating: 1500, matches: 0, wins: 0, losses: 0, draws: 0, manners: { noReport: 0, cancel: 0, mismatch: 0 } };
     c.players[a]!.draws = 2;
-    const text = JSON.stringify(c);
-    mkdirSync(join(root, 'snapshots/chess/season_1'), { recursive: true });
-    writeFileSync(join(root, 'snapshots/chess/season_1/2026-10-02.json'), text);
-    writeFileSync(join(root, 'snapshots/chess/latest.json'), JSON.stringify({ path: 'snapshots/chess/season_1/2026-10-02.json', sha256: sha256Hex(text) }));
+    put('chess', c);
 
-    const { players, games } = await buildSite({ root, out, appUrl: 'https://example.github.io/nostr-rating/', fetchFn: stubFetch() });
+    const { players, games } = await site(stubFetch());
     expect(games).toEqual(['smash_sp', 'chess']);
     expect(players).toBe(2);
     expect(read<{ games: { id: string; name: string; players: number }[] }>('api/v1/index.json').games.map((g) => [g.id, g.name, g.players])).toEqual([

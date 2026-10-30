@@ -1,16 +1,16 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
   claimKey,
   proofUrl,
-  sha256Hex,
-  snapshotToState,
+  publishedFiles,
   verifyClaim,
   type AccountSummary,
   type IdentityClaim,
-  type LatestPointer,
-  type Snapshot,
+  type KelRecords,
+  type RatingState,
 } from '@nostr-rating/core';
+import { latestOf, loadSnapshot, type LoadedSnapshot, type PartStore } from './parts.js';
 import { listGames } from './run.js';
 
 export interface SiteOptions {
@@ -21,6 +21,8 @@ export interface SiteOptions {
   /** アプリの公開 URL（末尾の / 付き）。選手ページからのリンクに使う */
   appUrl: string;
   fetchFn: typeof fetch;
+  /** スナップショットの部品の置き場（docs/adr/0011） */
+  parts: PartStore;
 }
 
 /** 公開 API の1人分（docs/api.md） */
@@ -142,34 +144,44 @@ ${games}
 interface LoadedGame {
   id: string;
   name: string;
-  snapshot: Snapshot;
+  loaded: LoadedSnapshot;
   ref: PlayerDoc['snapshot'];
 }
 
-function loadGame(root: string, id: string): LoadedGame | null {
-  const latest = join(root, `snapshots/${id}/latest.json`);
-  if (!existsSync(latest)) return null;
-  const pointer = JSON.parse(readFileSync(latest, 'utf8')) as LatestPointer;
-  const text = readFileSync(join(root, pointer.path), 'utf8');
-  if (sha256Hex(text) !== pointer.sha256) throw new Error(`sha256 mismatch: ${pointer.path}`);
-  const snapshot = JSON.parse(text) as Snapshot;
+async function loadGame(root: string, id: string, parts: PartStore): Promise<LoadedGame | null> {
+  const loaded = await loadSnapshot(root, id, parts);
+  if (!loaded) return null;
   const name = (JSON.parse(readFileSync(join(root, `configs/${id}.json`), 'utf8')) as { name: string }).name;
-  return { id, name, snapshot, ref: { path: pointer.path, sha256: pointer.sha256, cutoff: snapshot.cutoff } };
+  return { id, name, loaded, ref: { path: loaded.pointer.path, sha256: loaded.pointer.sha256, cutoff: loaded.toc.cutoff } };
 }
 
+/** アプリが読むスナップショット（latest.json、目次、クライアントが読む部品）を配信に置く（docs/adr/0011） */
+function publishSnapshot(out: string, g: LoadedGame): void {
+  const { pointer, toc, tocText, texts } = g.loaded;
+  write(join(out, latestOf(g.id)), `${JSON.stringify(pointer, null, 2)}\n`);
+  write(join(out, pointer.path), tocText);
+  const files = publishedFiles(g.id, toc, { players: texts.players, seasons: texts.seasons, kels: JSON.parse(texts.kels) as KelRecords });
+  for (const [path, text] of files) write(join(out, path), text);
+}
+
+type Summary = RatingState['seasonSummaries'][string][string];
+
+const toPast = (x: Summary) => ({ final_rating: x.finalRating, peak_rating: x.peakRating, matches: x.matches, wins: x.wins, losses: x.losses, draws: x.draws });
+
 /**
- * 最新のスナップショットから、公開 API（api/v1/）と選手ページ（p/）を書き出す。
+ * 最新のスナップショットから、アプリが読むスナップショット（snapshots/）、公開 API（api/v1/）、選手ページ（p/）を書き出す。
  * 紐づけはこのとき X・GitHub に問い合わせて確かめ、確かめられたものだけを by/ の索引に入れる。
  */
 export async function buildSite(opts: SiteOptions): Promise<{ players: number; games: string[] }> {
-  const games = listGames(opts.root)
-    .map((id) => loadGame(opts.root, id))
-    .filter((g): g is LoadedGame => g !== null);
+  const games = (await Promise.all(listGames(opts.root).map((id) => loadGame(opts.root, id, opts.parts)))).filter((g): g is LoadedGame => g !== null);
+  for (const g of games) publishSnapshot(opts.out, g);
+  // アプリはリレーの一覧も、スナップショットと同じ配信元から読む
+  write(join(opts.out, 'configs/relays.json'), readFileSync(join(opts.root, 'configs/relays.json'), 'utf8'));
 
   // 表示名と紐づけは全ゲームで共通（docs/adr/0010）。いちばん新しい公開情報を使う
   const accounts = new Map<string, AccountSummary>();
   for (const g of games) {
-    for (const [aid, a] of Object.entries(snapshotToState(g.snapshot).accounts)) {
+    for (const [aid, a] of Object.entries(g.loaded.state.accounts)) {
       const cur = accounts.get(aid);
       if (!cur || cur.createdAt < a.createdAt) accounts.set(aid, a);
     }
@@ -188,19 +200,19 @@ export async function buildSite(opts: SiteOptions): Promise<{ players: number; g
   const pages = new Map<string, PlayerDoc[]>();
   const summary: { id: string; name: string; season: number; players: number; snapshot: PlayerDoc['snapshot'] }[] = [];
   for (const g of games) {
-    const { snapshot } = g;
+    const { state } = g.loaded;
     const pastOf = (aid: string) =>
       Object.fromEntries(
-        Object.entries(snapshot.season_summaries ?? {})
+        Object.entries(state.seasonSummaries)
           .filter(([, players]) => players[aid])
-          .map(([season, players]) => [season, { ...players[aid]!, draws: players[aid]!.draws ?? 0 }]),
+          .map(([season, players]) => [season, toPast(players[aid]!)]),
       );
     // そのゲームに記録のある人だけを載せる。紐づけのあるアカウントは、対戦していないゲームのスナップショットにも 0 戦で入っている
-    const hasRecord = (p: Snapshot['players'][string]) => p.matches > 0 || p.manners.no_report + p.manners.cancel + p.manners.mismatch > 0;
-    const current = Object.entries(snapshot.players).filter(([, p]) => hasRecord(p)).map(([aid]) => aid);
-    const aids = [...new Set([...current, ...Object.values(snapshot.season_summaries ?? {}).flatMap((p) => Object.keys(p))])].sort();
+    const hasRecord = (p: RatingState['players'][string]) => p.matches > 0 || p.manners.noReport + p.manners.cancel + p.manners.mismatch > 0;
+    const current = Object.entries(state.players).filter(([, p]) => hasRecord(p)).map(([aid]) => aid);
+    const aids = [...new Set([...current, ...Object.values(state.seasonSummaries).flatMap((p) => Object.keys(p))])].sort();
     const docs = aids.map((aid): PlayerDoc => {
-      const p = snapshot.players[aid];
+      const p = state.players[aid];
       const accountsOf = accountDocs.get(aid) ?? [];
       const linked = new Map<string, PlayerDoc['linked_accounts'][number]>();
       for (const a of accountsOf) {
@@ -216,15 +228,15 @@ export async function buildSite(opts: SiteOptions): Promise<{ players: number; g
         game: { id: g.id, name: g.name },
         aid,
         name: accounts.get(aid)?.name ?? '',
-        season: snapshot.season,
+        season: state.season,
         rating: p?.rating ?? 0,
         rd: p?.rd ?? 0,
-        peak_rating: p?.peak_rating ?? 0,
+        peak_rating: p?.peakRating ?? 0,
         matches: p?.matches ?? 0,
         wins: p?.wins ?? 0,
         losses: p?.losses ?? 0,
         draws: p?.draws ?? 0,
-        manners: p?.manners ?? { no_report: 0, cancel: 0, mismatch: 0 },
+        manners: p ? { no_report: p.manners.noReport, cancel: p.manners.cancel, mismatch: p.manners.mismatch } : { no_report: 0, cancel: 0, mismatch: 0 },
         accounts: accountsOf,
         past_seasons: pastOf(aid),
         linked_accounts: [...linked.values()].sort((x, y) => (x.aid < y.aid ? -1 : 1)),
@@ -247,8 +259,8 @@ export async function buildSite(opts: SiteOptions): Promise<{ players: number; g
       const players = [...list].sort((a, b) => b.matches - a.matches || (a.aid < b.aid ? -1 : 1));
       write(join(opts.out, `api/v1/${g.id}/by`, `${key}.json`), json({ players }));
     }
-    write(join(opts.out, `api/v1/${g.id}/index.json`), json({ game: { id: g.id, name: g.name }, snapshot: g.ref, season: snapshot.season, players: docs.length }));
-    summary.push({ id: g.id, name: g.name, season: snapshot.season, players: docs.length, snapshot: g.ref });
+    write(join(opts.out, `api/v1/${g.id}/index.json`), json({ game: { id: g.id, name: g.name }, snapshot: g.ref, season: state.season, players: docs.length }));
+    summary.push({ id: g.id, name: g.name, season: state.season, players: docs.length, snapshot: g.ref });
   }
   for (const [aid, docs] of pages) write(join(opts.out, 'p', `${aid}.html`), playerPage(docs, opts.appUrl));
   write(join(opts.out, 'api/v1/index.json'), json({ games: summary }));

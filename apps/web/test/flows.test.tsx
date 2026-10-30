@@ -240,8 +240,8 @@ describe('switching games while loading', () => {
     renderWithApp(<Probe />, { deps, account: a.account });
     await waitFor(() => expect(asked).toBe(true));
     await user.click(screen.getByRole('button', { name: 'chess' }));
-    // チェスにはスナップショットが無いので、読み込みに失敗したと出る
-    await waitFor(() => expect(screen.getByTestId('probe').textContent).toMatch(/^chess \d+ error$/));
+    // チェスにはスナップショットがまだ無いので、今のシーズンの最初から計算する
+    await waitFor(() => expect(screen.getByTestId('probe').textContent).toMatch(/^chess \d+ ok$/));
     const shown = screen.getByTestId('probe').textContent;
     release();
     await new Promise((r) => setTimeout(r, 300));

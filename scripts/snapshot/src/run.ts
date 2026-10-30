@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
   advanceRatings,
+  buildSnapshot,
   currentSeason,
   fetchRatingEvents,
   initialState,
@@ -10,58 +11,44 @@ import {
   parseGameDefinition,
   ratingConfigHash,
   seasonById,
-  serializeSnapshot,
+  serializeToc,
   sha256Hex,
-  snapshotToState,
-  stateToSnapshot,
   summarizeSeason,
   type GameDefinition,
   type LatestPointer,
   type RatingState,
   type RelayClient,
-  type Snapshot,
+  type SnapshotToc,
 } from '@nostr-rating/core';
+import { latestOf, loadSnapshot, type PartStore } from './parts.js';
 
 export interface RunOptions {
   /** リポジトリのルート（configs/ と snapshots/ がある場所） */
   root: string;
   cutoff: number;
   relay: RelayClient;
+  /** 部品の置き場（docs/adr/0011） */
+  parts: PartStore;
   game?: string;
   now?: () => number;
 }
 
-/** ゲームごとに snapshots/<game>/ の下に置く（docs/adr/0010） */
-const latestOf = (game: string) => `snapshots/${game}/latest.json`;
+export interface RunResult {
+  path: string;
+  toc: SnapshotToc;
+  /** この回の部品を置くリリースのタグ */
+  release: string;
+  /** そのリリースに新しく上げる部品の数 */
+  uploads: number;
+}
 
 /** cutoff の JST の日付（YYYY-MM-DD） */
 function jstDate(unix: number): string {
   return new Date((unix + 9 * 3600) * 1000).toISOString().slice(0, 10);
 }
 
-interface Previous {
-  state: RatingState;
-  path: string;
-  sha256: string;
-  configSha256: string;
-  kind: Snapshot['kind'];
-}
-
-function loadPrevious(root: string, game: string): Previous | null {
-  const latestPath = join(root, latestOf(game));
-  if (!existsSync(latestPath)) return null;
-  const pointer = JSON.parse(readFileSync(latestPath, 'utf8')) as LatestPointer;
-  const text = readFileSync(join(root, pointer.path), 'utf8');
-  if (sha256Hex(text) !== pointer.sha256) throw new Error(`sha256 mismatch: ${pointer.path} does not match ${latestOf(game)}`);
-  const snapshot = JSON.parse(text) as Snapshot;
-  return {
-    state: snapshotToState(snapshot),
-    path: pointer.path,
-    sha256: pointer.sha256,
-    configSha256: snapshot.config_sha256,
-    kind: snapshot.kind,
-  };
-}
+/** 目次のパスから決まるリリースのタグ（snapshots/smash_sp/season_1/2026-10-02.json → snapshot-smash_sp-season_1-2026-10-02） */
+export const releaseOf = (path: string) => `snapshot-${path.replace(/^snapshots\//, '').replace(/\.json$/, '').replaceAll('/', '-')}`;
 
 /**
  * スナップショットは取りこぼしが永久に残るので、アカウントごとに取り切る。
@@ -76,24 +63,27 @@ async function advance(def: GameDefinition, relay: RelayClient, prev: RatingStat
   return { ...advanceRatings(def, prev, events, cutoff, { exclude: incomplete, excludeKel: incompleteKel }), excluded };
 }
 
-function write(root: string, game: string, path: string, snapshot: Snapshot, usedEventIds: string[]): void {
-  const text = serializeSnapshot(snapshot);
+/** 部品を先に置いてから、目次と latest.json を書く */
+function write(root: string, parts: PartStore, path: string, built: ReturnType<typeof buildSnapshot>): RunResult {
+  const release = releaseOf(path);
+  for (const [sha, text] of built.texts) parts.put(release, sha, text);
+  const text = serializeToc(built.toc);
   mkdirSync(dirname(join(root, path)), { recursive: true });
   writeFileSync(join(root, path), text);
-  writeFileSync(join(root, path.replace(/\.json$/, '.ids.txt')), usedEventIds.map((id) => `${id}\n`).join(''));
   const pointer: LatestPointer = { path, sha256: sha256Hex(text) };
-  writeFileSync(join(root, latestOf(game)), `${JSON.stringify(pointer, null, 2)}\n`);
+  writeFileSync(join(root, latestOf(built.toc.game)), `${JSON.stringify(pointer, null, 2)}\n`);
+  return { path, toc: built.toc, release, uploads: built.texts.size };
 }
 
 /**
  * 前回のスナップショットに続けて、cutoff までに締め切りを迎えた対戦を処理し、
- * snapshots/season_<N>/<日付>.json と .ids.txt を書き、latest.json を更新する。
+ * 部品を置き場に書き、目次 snapshots/<game>/season_<N>/<日付>.json を書き、latest.json を更新する。
  *
  * 前回のスナップショットが終わったシーズンのものなら、そのシーズンの終わりまでを処理した
  * 最終スナップショット（snapshots/season_<N>/final.json、成績のサマリー付き）だけを書いて止まる。
  * 次の実行から新しいシーズンが始まる。その間にだけ、レート計算に関わる設定を変えてよい。
  */
-export async function runSnapshot(opts: RunOptions): Promise<{ path: string; snapshot: Snapshot }> {
+export async function runSnapshot(opts: RunOptions): Promise<RunResult> {
   const def = parseGameDefinition(
     JSON.parse(readFileSync(join(opts.root, 'configs', `${opts.game ?? 'smash_sp'}.json`), 'utf8')),
   );
@@ -102,9 +92,10 @@ export async function runSnapshot(opts: RunOptions): Promise<{ path: string; sna
   const season = currentSeason(def, opts.cutoff);
   if (!season) throw new Error(`cutoff ${opts.cutoff} is before the first season`);
 
-  const prev = loadPrevious(opts.root, def.id);
+  const loaded = await loadSnapshot(opts.root, def.id, opts.parts);
+  const prev = loaded && { state: loaded.state, path: loaded.pointer.path, sha256: loaded.pointer.sha256, configSha256: loaded.toc.config_sha256, kind: loaded.toc.kind };
   const configSha256 = ratingConfigHash(def);
-  const meta = (eventIds: string[], kind: Snapshot['kind'], excluded: string[]) => ({
+  const meta = (path: string, eventIds: string[], kind: SnapshotToc['kind'], excluded: string[]) => ({
     game: def.id,
     excluded,
     previous: prev?.path ?? null,
@@ -112,6 +103,8 @@ export async function runSnapshot(opts: RunOptions): Promise<{ path: string; sna
     eventIds,
     configSha256,
     kind,
+    release: releaseOf(path),
+    prevToc: loaded?.toc ?? null,
   });
 
   if (prev && prev.kind !== 'final' && prev.configSha256 !== configSha256) {
@@ -124,9 +117,7 @@ export async function runSnapshot(opts: RunOptions): Promise<{ path: string; sna
     const { state, usedEventIds, excluded } = await advance(def, opts.relay, prev.state, ended.endsAt);
     const finalState = { ...state, seasonSummaries: summarizeSeason(state) };
     const path = `snapshots/${def.id}/season_${ended.id}/final.json`;
-    const snapshot = stateToSnapshot(finalState, meta(usedEventIds, 'final', excluded));
-    write(opts.root, def.id, path, snapshot, usedEventIds);
-    return { path, snapshot };
+    return write(opts.root, opts.parts, path, buildSnapshot(finalState, meta(path, usedEventIds, 'final', excluded)));
   }
 
   let start: RatingState;
@@ -143,9 +134,7 @@ export async function runSnapshot(opts: RunOptions): Promise<{ path: string; sna
   const { state, usedEventIds, excluded } = await advance(def, opts.relay, start, opts.cutoff);
   const path = `snapshots/${def.id}/season_${season.id}/${jstDate(opts.cutoff)}.json`;
   if (prev?.path === path) throw new Error(`${path} is the previous snapshot; use a cutoff on a later date`);
-  const snapshot = stateToSnapshot(state, meta(usedEventIds, 'rolling', excluded));
-  write(opts.root, def.id, path, snapshot, usedEventIds);
-  return { path, snapshot };
+  return write(opts.root, opts.parts, path, buildSnapshot(state, meta(path, usedEventIds, 'rolling', excluded)));
 }
 
 /** configs/games.json にあるゲームの id */

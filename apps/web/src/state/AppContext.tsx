@@ -26,6 +26,7 @@ import { Account, type KeyStore } from '../account/account.js';
 import { Resolver } from '../account/resolver.js';
 import { rememberedGame, rememberGame } from '../services/config.js';
 import { coalesce } from '../services/coalesce.js';
+import type { ClientSnapshot } from '../services/snapshot.js';
 import { syncRatings } from '../services/sync.js';
 import type { EventStore } from '../storage/types.js';
 
@@ -219,11 +220,11 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     [deps.relay, resolver],
   );
 
-  const snapshotCache = useMemo(() => new Map<string, RatingState>(), []);
+  const snapshotCache = useMemo(() => new Map<string, ClientSnapshot>(), []);
   const syncNow = useCallback(async () => {
     setSyncing(true);
     try {
-      const { shown } = await syncRatings({
+      const { shown, loadKels } = await syncRatings({
         def,
         relay: deps.relay,
         store: deps.store,
@@ -234,7 +235,7 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
       });
       if (gameRef.current !== def.id) return;
       setRatings(shown);
-      resolver.setKnown({ ...shown.kels, ...(account ? { [account.aid]: account.kel } : {}) });
+      resolver.setKnown({ ...shown.kels, ...(account ? { [account.aid]: account.kel } : {}) }, loadKels);
       // スナップショットにある名前と紐づけを先に出す（リレーの最新はこのあと読む）
       setProfiles((prev) => ({ ...Object.fromEntries(Object.entries(shown.accounts).filter(([, a]) => a.name).map(([pk, a]) => [pk, a.name])), ...prev }));
       setIdentities((prev) => ({

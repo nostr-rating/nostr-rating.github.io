@@ -23,6 +23,11 @@ export interface FetchOptions {
    * false なら取れた分だけを使う（クライアントの表示用）
    */
   strict?: boolean;
+  /**
+   * known にないアカウントの記録済みの KEL を読む（docs/adr/0011。クライアントが、出てきたアカウントの分だけを読むため）。
+   * 記録のないアカウントは返さなくてよい。その KEL はリレーから探す
+   */
+  loadKels?: (aids: Pubkey[]) => Promise<KelRecords>;
 }
 
 export interface FetchResult {
@@ -172,10 +177,24 @@ export async function fetchRatingEvents(
   const from = since - SESSION_LIFETIME_SEC;
   all.push(...(await queryAll(relay, { kinds: [KIND.kel, KIND.match], '#t': [APP_TAG], since: from, until }, pageSize, false)));
   // 1回の取得の中では同じ一覧にイベントを足していき、イベントが増えたアカウントだけを評価し直す
+  const records: KelRecords = { ...known };
   const book = new KelBook(known, -Infinity, until);
+  const asked = new Set<Pubkey>();
+  /** 出てきたアカウントの記録済みの KEL を、まだ読んでいなければ読む */
+  const recordFor = async (aids: Iterable<Pubkey>) => {
+    if (!opts.loadKels) return;
+    const want = [...new Set(aids)].filter((aid) => !records[aid] && !asked.has(aid));
+    if (want.length === 0) return;
+    want.forEach((aid) => asked.add(aid));
+    const got = await opts.loadKels(want);
+    for (const aid of want) if (got[aid]) records[aid] = got[aid];
+    await warmKelSignatures(records, want);
+    book.addRecorded(got);
+  };
   /** 署名を先に速い実装で確かめてから、一覧に足す */
   const pushed = async (events: NostrEvent[]) => {
-    await warmKelSignatures(known, aidsIn(events), events);
+    await recordFor(aidsIn(events));
+    await warmKelSignatures(records, aidsIn(events), events);
     if (events !== all) all.push(...events);
     book.add(events);
   };
@@ -203,7 +222,9 @@ export async function fetchRatingEvents(
       const c = certOf(ev);
       if (c?.cert && !book.states.has(c.cert.aid) && typeof c.cert.publisher === 'string') unknown.set(c.cert.publisher, c.cert.aid);
     }
-    if (unknown.size === 0) return;
+    await recordFor(unknown.values());
+    for (const [publisher, aid] of unknown) if (book.states.has(aid)) unknown.delete(publisher);
+    if (unknown.size === 0) return pushed(await perAccounts(newHolders(), { kinds: [KIND.kel, KIND.cert], since: from, until }));
     await pushed(await perAccounts([...unknown].map(([publisher, aid]) => ({ aid, authors: [publisher] })), { kinds: [KIND.kel], until }));
     await pushed(await perAccounts(newHolders(), { kinds: [KIND.kel, KIND.cert], until }));
   };
@@ -219,17 +240,21 @@ export async function fetchRatingEvents(
     set.add(signed.cert.session);
     sessions.set(signed.cert.aid, set);
   };
-  for (const ev of all) {
-    if (ev.kind === KIND.cert) {
-      try {
-        addSession(JSON.parse(ev.content) as SignedCert);
-      } catch {
-        // 形の合わないお知らせは無視する
+  /** お知らせの証明書と、イベントが持ち歩く証明書から、使い捨ての鍵を集める */
+  const scanSessions = (events: NostrEvent[]) => {
+    for (const ev of events) {
+      if (ev.kind === KIND.cert) {
+        try {
+          addSession(JSON.parse(ev.content) as SignedCert);
+        } catch {
+          // 形の合わないお知らせは無視する
+        }
+      } else if (ev.kind === KIND.match || ev.kind === KIND.application) {
+        addSession(certOf(ev));
       }
-    } else if (ev.kind === KIND.match) {
-      addSession(certOf(ev));
     }
-  }
+  };
+  scanSessions(all);
 
   // 3. 対戦・報告・紐づけ。使い捨ての鍵ごとに取り切る
   all.push(...(await perAccounts([...sessions].map(([aid, keys]) => ({ aid, authors: [...keys] })), { kinds: [KIND.match, KIND.report, KIND.account], since: from, until })));
@@ -247,10 +272,11 @@ export async function fetchRatingEvents(
     .map((e) => parseMatch(def.id, e, author(e)))
     .filter((m) => m !== null);
   const applications = await queryChunked(relay, 'ids', [...new Set(matches.map((m) => m.applicationId))], { kinds: [KIND.application] }, pageSize);
+  const before = new Map([...sessions].map(([aid, s]) => [aid, new Set(s)]));
   all.push(...applications);
   await discoverFrom(applications);
-  const before = new Map([...sessions].map(([aid, s]) => [aid, new Set(s)]));
-  for (const ev of applications) addSession(certOf(ev));
+  // 対戦や申し込みから後で見つけたアカウントは、そのとき取った証明書のお知らせからも鍵を集める
+  scanSessions(all);
   const added = [...sessions].map(([aid, keys]) => ({ aid, authors: [...keys].filter((k) => !before.get(aid)?.has(k)) })).filter((j) => j.authors.length > 0);
   all.push(...(await perAccounts(added, { kinds: [KIND.report], since: from, until })));
 
