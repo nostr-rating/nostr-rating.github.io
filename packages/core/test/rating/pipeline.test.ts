@@ -197,17 +197,27 @@ describe('advanceRatings', () => {
     expect(state.players[alice.pk]!.matches).toBe(0);
   });
 
-  test('identity published after the cutoff still counts and the used version is deterministic', async () => {
+  test('identity published after the cutoff does not count, so the result does not depend on when the snapshot is made', async () => {
     const dave = newUser();
-    const v1 = await identity(dave, after(T0) + 50, 'c1');
-    const v2 = await identity(dave, after(T0) + 60, 'c2');
+    const late = await identity(dave, after(T0) + 50, 'c1');
+    const evs = [...ids, ...(await p1Wins(alice, dave, T0))];
+    const withLate = advanceRatings(def, s0(), [...evs, late], after(T0));
+    expect(withLate).toEqual(advanceRatings(def, s0(), evs, after(T0)));
+    expect(withLate.state.players[dave.pk]?.hasIdentity ?? false).toBe(false);
+    expect(withLate.usedEventIds).not.toContain(late.id);
+  });
+
+  test('the identity used is the earliest one at or before the cutoff, whatever the order', async () => {
+    const dave = newUser();
+    const v1 = await identity(dave, T0 + 50, 'c1');
+    const v2 = await identity(dave, T0 + 60, 'c2');
     const evs = [...ids, ...(await p1Wins(alice, dave, T0))];
     const a = advanceRatings(def, s0(), [...evs, v2, v1], after(T0));
     const b = advanceRatings(def, s0(), [v1, v2, ...evs], after(T0));
     expect(a).toEqual(b);
     expect(a.state.players[dave.pk]!.matches).toBe(1);
-    expect(a.usedEventIds).toContain(v1.id);
-    expect(a.usedEventIds).not.toContain(v2.id);
+    // 紐づけありにしたのは v1、最新の公開情報は v2。どちらも使ったイベントに入る
+    expect([a.usedEventIds.includes(v1.id), a.state.accounts[dave.pk]!.eventId]).toEqual([true, v2.id]);
   });
 
   test('account info without claims does not count as linked', async () => {

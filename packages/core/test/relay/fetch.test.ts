@@ -115,6 +115,16 @@ describe('fetchRatingEvents', () => {
     expect([ids(got.events), [...new Set(asked)].sort()]).toEqual([ids(smash), [a.pk, b.pk].sort()]);
   });
 
+  test('does not collect account info published after the cutoff', async () => {
+    const relay = new MemoryRelay(now);
+    const [a, b] = [newUser(), newUser()];
+    const evs = [await identity(a, T0 - 10), ...(await p1Wins(a, b, T0))];
+    const late = await identity(b, T0 + 1000 + 50);
+    await publishAll(relay, [...evs, late]);
+    const got = await fetchRatingEvents(relay, def, registeredKels(), T0 - 100, T0 + 1000);
+    expect(has(got.events, late)).toBe(false);
+  });
+
   test('finds a new account from its KEL events', async () => {
     const relay = new MemoryRelay(now);
     const a = newUser();

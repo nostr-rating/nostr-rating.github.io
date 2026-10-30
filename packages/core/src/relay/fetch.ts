@@ -284,7 +284,7 @@ export async function fetchRatingEvents(
 
   // 6. 紐づけは古い使い捨ての鍵で出したこともあるので、d（aid）でも探す（取りこぼしを許す）
   const players = [...new Set(matches.flatMap((m) => [m.p1, m.p2]))];
-  all.push(...(await queryChunked(relay, '#d', players, { kinds: [KIND.account] }, pageSize)));
+  all.push(...(await queryChunked(relay, '#d', players, { kinds: [KIND.account], until }, pageSize)));
 
   return { events: dedupeById(all), incomplete, incompleteKel };
 }

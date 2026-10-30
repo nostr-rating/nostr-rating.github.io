@@ -182,7 +182,8 @@ function collect(def: GameDefinition, season: number, events: NostrEvent[], auth
       if (ids.createdAt <= until && (!last || byTimeThenId({ createdAt: last.createdAt, id: last.eventId }, { createdAt: ids.createdAt, id: ids.eventId }) < 0)) {
         latest.set(ids.pubkey, ids);
       }
-      if (ids.claims.length === 0) continue;
+      // cutoff より後の公開情報は、名前と同じく紐づけにも使わない。生成した時刻で結果が変わらないように
+      if (ids.claims.length === 0 || ids.createdAt > until) continue;
       const cur = identities.get(ids.pubkey);
       if (!cur || byTimeThenId({ createdAt: ev.created_at, id: ev.id }, cur) < 0) {
         identities.set(ids.pubkey, { id: ev.id, createdAt: ev.created_at });
