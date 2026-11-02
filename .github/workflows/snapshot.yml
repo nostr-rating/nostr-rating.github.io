@@ -42,16 +42,37 @@ jobs:
       - name: Upload parts
         env:
           GH_TOKEN: ${{ github.token }}
+        # Immutable releases を有効にしているので、公開したリリースには添付を足せない。
+        # gh release create にファイルを渡し、下書きで作って添付してから公開する
         run: |
           shopt -s nullglob
+          # 同じ日にもう一度動かすと、目次のパスが同じなのでタグも同じになる。前の実行がリリースを公開してから
+          # 目次を積めずに止まっていると、そのリリースに部品を足せない。先に全部を確かめ、足せないときは何も上げずに止める。
+          # 翌日の実行は新しいタグになるので、そこから続く
+          pending=()
           for dir in .snapshot-parts/upload/*/; do
             tag=$(basename "$dir")
             files=("$dir"*.json)
             if [ ${#files[@]} -eq 0 ]; then continue; fi
-            if ! gh release view "$tag" >/dev/null 2>&1; then
-              gh release create "$tag" --title "$tag" --notes "スナップショットの部品（docs/adr/0011）" --target "${GITHUB_SHA}" --latest=false
+            state=$(gh release view "$tag" --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null || echo none)
+            if [ "$state" = published ]; then
+              # 部品の名前は sha256 なので、名前がそろっていれば中身も同じ
+              have=$(gh release view "$tag" --json assets --jq '.assets[].name')
+              for f in "${files[@]}"; do
+                if ! grep -qxF "$(basename "$f")" <<<"$have"; then
+                  echo "::error::${tag} は公開済みで、部品 $(basename "$f") を足せません。今日の分は積まず、明日の実行で新しいタグに作ります"
+                  exit 1
+                fi
+              done
+              continue
             fi
-            gh release upload "$tag" "${files[@]}" --clobber
+            pending+=("$dir")
+          done
+          for dir in "${pending[@]}"; do
+            tag=$(basename "$dir")
+            # 前の実行が添付の途中で止まった下書きは、消して作り直す
+            if gh release view "$tag" >/dev/null 2>&1; then gh release delete "$tag" --yes; fi
+            gh release create "$tag" "$dir"*.json --title "$tag" --notes "スナップショットの部品（docs/adr/0011）" --target "${GITHUB_SHA}" --latest=false
           done
       - name: Commit
         run: |
