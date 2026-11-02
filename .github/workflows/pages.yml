@@ -41,15 +41,16 @@ jobs:
             fi
           done
           echo "url=${url}" >> "$GITHUB_OUTPUT"
+      # 配信の基準パスは、リポジトリ名が <owner>.github.io なら / 、それ以外は /<リポジトリ名>/ になる
+      - id: pages
+        uses: actions/configure-pages@v5
       - run: npm -w @nostr-rating/web run build
         env:
-          VITE_BASE: /${{ github.event.repository.name }}/
+          VITE_BASE: ${{ steps.pages.outputs.base_path }}/
           VITE_REPO_URL: https://github.com/${{ github.repository }}
           VITE_RECOVERY_URL: ${{ steps.recovery.outputs.url }}
       # 最新のスナップショットから、アプリが読むスナップショット（snapshots/、docs/adr/0011）、
       # 選手ページ（p/）、公開 API（api/v1/、docs/api.md）を書き出す。部品はリリースから取る
-      - id: pages
-        uses: actions/configure-pages@v5
       # 紐づけの確認の結果は、前回の配信のものを使い回す（GitHub の API の回数の上限に当たらないように）
       - run: npm run site -- --out apps/web/dist --app-url "${{ steps.pages.outputs.base_url }}/" --claims-cache "${{ steps.pages.outputs.base_url }}/api/v1/claims.json"
         env:

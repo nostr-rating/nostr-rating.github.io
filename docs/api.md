@@ -7,8 +7,10 @@
 アプリと同じ場所の `api/v1/` の下にあります。レートはゲームごとに別なので、ゲームの id（`configs/games.json` にある `smash_sp`、`chess` など）ごとに分けて置いています。
 
 ```
-https://<アカウント名>.github.io/<リポジトリ名>/api/v1/
+https://nostr-rating.github.io/api/v1/
 ```
+
+fork して動かしているアプリでは、そのアプリの URL の下の `api/v1/` にあります。
 
 GitHub Pages は `Access-Control-Allow-Origin: *` を返すので、ブラウザからもサーバーからも直接読めます。
 
@@ -51,7 +53,7 @@ GitHub Pages は `Access-Control-Allow-Origin: *` を返すので、ブラウザ
 利用者がすでに X か GitHub でログインしているサイトなら、そのユーザー名で `by/` を引けば、Nostr を扱わずにレートを表示できます。
 
 ```js
-const res = await fetch(`https://<アカウント名>.github.io/<リポジトリ名>/api/v1/smash_sp/by/x/${name.toLowerCase()}.json`);
+const res = await fetch(`https://nostr-rating.github.io/api/v1/smash_sp/by/x/${name.toLowerCase()}.json`);
 if (res.ok) {
   const { players } = await res.json();
   console.log(players[0].rating);
