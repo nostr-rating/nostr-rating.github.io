@@ -327,7 +327,7 @@ export function Onboarding() {
         <div className="card">
           <h2>X か GitHub の紐づけ</h2>
           <p>
-            次の文をそのまま X に投稿するか、GitHub の公開の Gist に貼り、その URL を入力してください。1人で何個もアカウントを作れないようにするためのもので、英語のまま投稿してください。投稿や Gist は、紐づけのあとも消さないでください。
+            次の文をそのまま X に投稿するか、GitHub の公開の Gist に貼り、その URL を入力してください。紐づけのないアカウントはレート戦に参加できません。同じ X や GitHub を紐づけたアカウントは、同じ人のものとして表示します。文は英語のまま投稿してください。投稿や Gist は、紐づけのあとも消さないでください。
           </p>
           <p className="code-box" data-testid="verification-text">{verificationText(app.pubkey)}</p>
           <CopyButton text={verificationText(app.pubkey)}>文をコピー</CopyButton>
