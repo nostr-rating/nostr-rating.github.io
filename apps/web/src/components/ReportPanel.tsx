@@ -1,4 +1,4 @@
-import { matchDeadline, settleMatch, type GameDefinition, type MatchRecord, type Pubkey, type ReportResult, type ResultReport } from '@nostr-rating/core';
+import { countedReports, matchDeadline, settleMatch, type GameDefinition, type MatchRecord, type Pubkey, type ReportResult, type ResultReport } from '@nostr-rating/core';
 
 export const RESULT_LABEL: Record<ReportResult, string> = { win: '勝ち', lose: '負け', draw: '引き分け', cancel: '中止' };
 
@@ -16,7 +16,7 @@ export function reportStatus(def: GameDefinition, match: MatchRecord, reports: R
     case 'no_report':
       return '報告がそろわないまま締め切られました';
     case 'pending': {
-      const latest = latestReports(match, reports);
+      const latest = latestReports(def, match, reports, now);
       if (!latest.has(me)) return '結果を報告してください';
       if (latest.size === 2) return '報告が食い違っています。確認して送り直してください。';
       return '相手の報告を待っています';
@@ -24,12 +24,16 @@ export function reportStatus(def: GameDefinition, match: MatchRecord, reports: R
   }
 }
 
-export function latestReports(match: MatchRecord, reports: ResultReport[]): Map<Pubkey, ReportResult> {
+/** 各当事者の、数えられる報告のうち最新のもの（結果を報告した人の中止は数えない。docs/adr/0015） */
+export function latestReports(def: GameDefinition, match: MatchRecord, reports: ResultReport[], now: number): Map<Pubkey, ReportResult> {
   const latest = new Map<Pubkey, ReportResult>();
-  for (const r of [...reports].sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))) {
-    if (r.reporter === match.p1 || r.reporter === match.p2) latest.set(r.reporter, r.result);
-  }
+  for (const r of countedReports(match, reports, now, matchDeadline(def, match.createdAt), def.results.draw)) latest.set(r.reporter, r.result);
   return latest;
+}
+
+/** me が勝ち・負け・引き分けを報告したか。報告していれば、中止を送っても数えない */
+export function resultSent(def: GameDefinition, match: MatchRecord, reports: ResultReport[], me: Pubkey, now: number): boolean {
+  return countedReports(match, reports, now, matchDeadline(def, match.createdAt), def.results.draw).some((r) => r.reporter === me && r.result !== 'cancel');
 }
 
 export function ReportPanel(props: {

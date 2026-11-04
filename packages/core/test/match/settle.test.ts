@@ -133,6 +133,21 @@ describe('settleMatch', () => {
       expect(settleMatch(match, r, T0 + 8, END)).toEqual({ status: 'cancelled', settledAt: T0 + 7 });
     });
 
+    test('in a game with draws, a draw voids the cancel too', () => {
+      const r = [rep(A, 'draw', T0 + 3), rep(A, 'cancel', T0 + 5), rep(B, 'cancel', T0 + 7)];
+      expect(settleMatch(match, r, T0 + DL, END, true)).toEqual({ status: 'mismatch', settledAt: T0 + DL });
+    });
+
+    test('a result from someone outside the match does not void a cancel', () => {
+      const r = [rep(C, 'win', T0 + 3), rep(A, 'cancel', T0 + 5), rep(B, 'cancel', T0 + 7)];
+      expect(settleMatch(match, r, T0 + 8, END)).toEqual({ status: 'cancelled', settledAt: T0 + 7 });
+    });
+
+    test('when the other side is absent, a result sent after their cancel is used', () => {
+      const r = [rep(A, 'cancel', T0 + 5), rep(A, 'win', T0 + 9)];
+      expect(settleAgreeing(match, r, B, END)).toEqual({ status: 'confirmed', winner: A, loser: B, settledAt: T0 + 9 });
+    });
+
     test('when the other side is absent, their cancel after a result is not used either', () => {
       const r = [rep(A, 'win', T0 + 5), rep(A, 'cancel', T0 + 9)];
       expect(settleAgreeing(match, r, B, END)).toEqual({ status: 'confirmed', winner: A, loser: B, settledAt: T0 + 5 });

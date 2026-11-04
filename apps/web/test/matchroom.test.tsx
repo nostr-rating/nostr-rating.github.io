@@ -199,6 +199,14 @@ describe('MatchRoom', () => {
       expect(guest.queryByText('ステージ', { exact: false })).toBeNull();
     });
 
+    test('after sending a draw, cancel can no longer be chosen (docs/adr/0015)', async () => {
+      const user = userEvent.setup();
+      const { host } = await chessSetup();
+      await user.click(await host.findByRole('button', { name: '引き分け' }));
+      await waitFor(() => expect(host.getByTestId('report-status').textContent).toBe('相手の報告を待っています'), { timeout: 5000 });
+      expect(['勝ち', '負け', '引き分け', '中止'].map((n) => (host.getByRole('button', { name: n }) as HTMLButtonElement).disabled)).toEqual([false, false, false, true]);
+    });
+
     test('both reporting a draw settles the match as a draw', async () => {
       const user = userEvent.setup();
       const { host, guest } = await chessSetup();

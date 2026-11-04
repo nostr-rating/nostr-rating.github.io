@@ -24,7 +24,7 @@ export interface MannersCount {
  * 締め切り（matchDeadline）までにそろわなければ、最新報告から食い違い／未報告とする。
  */
 export function settleMatch(match: MatchRecord, reports: ResultReport[], now: number, deadline: number, allowDraw = false): Settlement {
-  const valid = validReports(match, reports, now, deadline, allowDraw);
+  const valid = countedReports(match, reports, now, deadline, allowDraw);
 
   const latest = new Map<Pubkey, ReportResult>();
   const sent = { [match.p1]: new Set<ReportResult>(), [match.p2]: new Set<ReportResult>() };
@@ -52,7 +52,7 @@ export function settleMatch(match: MatchRecord, reports: ResultReport[], now: nu
  */
 export function settleAgreeing(match: MatchRecord, reports: ResultReport[], absent: Pubkey, deadline: number, allowDraw = false): Settlement {
   const other = absent === match.p1 ? match.p2 : match.p1;
-  const last = validReports(match, reports, deadline, deadline, allowDraw)
+  const last = countedReports(match, reports, deadline, deadline, allowDraw)
     .filter((r) => r.reporter === other)
     .at(-1);
   if (!last) return { status: 'no_report', settledAt: deadline, missing: [match.p1, match.p2] };
@@ -68,8 +68,11 @@ export function settleAgreeing(match: MatchRecord, reports: ResultReport[], abse
   }
 }
 
-/** 締め切りまでに当事者が出した、その対戦の報告（時刻順） */
-function validReports(match: MatchRecord, reports: ResultReport[], now: number, deadline: number, allowDraw: boolean): ResultReport[] {
+/**
+ * 確定に使う報告（時刻順）。締め切りまでに当事者が出した、その対戦の報告から、結果を報告した人の中止を除く。
+ * 画面で「あなたの報告」などを出すときも、これで数えられる報告だけを使う
+ */
+export function countedReports(match: MatchRecord, reports: ResultReport[], now: number, deadline: number, allowDraw: boolean): ResultReport[] {
   const valid = reports
     .filter(
       (r) =>
