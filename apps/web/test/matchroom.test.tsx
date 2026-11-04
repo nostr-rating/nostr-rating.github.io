@@ -146,6 +146,24 @@ describe('MatchRoom', () => {
     await waitFor(() => expect(A.getByTestId('report-status').textContent).toBe('報告が食い違っています。確認して送り直してください。'), { timeout: 5000 });
   });
 
+  test('after sending a result, cancel can no longer be chosen (docs/adr/0015)', async () => {
+    const user = userEvent.setup();
+    const { A, B } = await setup();
+    await user.click(await A.findByRole('button', { name: '勝ち' }));
+    await user.click(await B.findByRole('button', { name: '勝ち' }));
+    await waitFor(() => expect(A.getByTestId('report-status').textContent).toBe('報告が食い違っています。確認して送り直してください。'), { timeout: 5000 });
+    expect(['勝ち', '負け', '中止'].map((n) => (A.getByRole('button', { name: n }) as HTMLButtonElement).disabled)).toEqual([false, false, true]);
+  });
+
+  test('cancel stays available until a result is sent', async () => {
+    const user = userEvent.setup();
+    const { A, B } = await setup();
+    await user.click(await A.findByRole('button', { name: '中止' }));
+    await waitFor(() => expect(A.getByTestId('report-status').textContent).toBe('相手の報告を待っています'), { timeout: 5000 });
+    expect((A.getByRole('button', { name: '中止' }) as HTMLButtonElement).disabled).toBe(false);
+    expect((B.getByRole('button', { name: '中止' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   describe('chess (invite link, draw)', () => {
     async function chessSetup() {
       const relay = new MemoryRelay(realNow);

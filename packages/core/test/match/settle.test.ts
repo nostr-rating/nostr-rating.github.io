@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { MatchRecord, ReportResult, ResultReport } from '../../src/events/codec.js';
-import { mannersDelta, settleMatch } from '../../src/match/settle.js';
+import { mannersDelta, settleAgreeing, settleMatch } from '../../src/match/settle.js';
 
 const A = 'a'.repeat(64);
 const B = 'b'.repeat(64);
@@ -107,6 +107,35 @@ describe('settleMatch', () => {
     expect(settleMatch(match, [rep(A, 'win', T0 + 5), rep(B, 'cancel', T0 + 7)], T0 + DL, END)).toEqual({
       status: 'mismatch',
       settledAt: T0 + DL,
+    });
+  });
+
+  describe('a cancel from someone who reported a result does not count (docs/adr/0015)', () => {
+    test('a backdated cancel cannot undo an agreed result', () => {
+      // A は中止を押し間違えたあと勝ちを送り、B は負けを認めた。B が日時を遡らせて中止を出しても、B の中止は数えない
+      const r = [rep(A, 'cancel', T0 + 5), rep(A, 'win', T0 + 10), rep(B, 'lose', T0 + 20), rep(B, 'cancel', T0 + 1)];
+      expect(settleMatch(match, r, T0 + DL, END)).toEqual({ status: 'confirmed', winner: A, loser: B, settledAt: T0 + 20 });
+    });
+
+    test('a cancel sent after a result does not make a cancel pair', () => {
+      const r = [rep(A, 'win', T0 + 5), rep(B, 'cancel', T0 + 7), rep(A, 'cancel', T0 + 9)];
+      expect(settleMatch(match, r, T0 + DL, END)).toEqual({ status: 'mismatch', settledAt: T0 + DL });
+    });
+
+    test('a result sent after a cancel pair turns it into a mismatch', () => {
+      const r = [rep(A, 'cancel', T0 + 5), rep(B, 'cancel', T0 + 7)];
+      expect(settleMatch(match, r, T0 + 8, END)).toEqual({ status: 'cancelled', settledAt: T0 + 7 });
+      expect(settleMatch(match, [...r, rep(A, 'win', T0 + 9)], T0 + DL, END)).toEqual({ status: 'mismatch', settledAt: T0 + DL });
+    });
+
+    test('a draw in a game without draws does not void the cancel', () => {
+      const r = [rep(A, 'draw', T0 + 3), rep(A, 'cancel', T0 + 5), rep(B, 'cancel', T0 + 7)];
+      expect(settleMatch(match, r, T0 + 8, END)).toEqual({ status: 'cancelled', settledAt: T0 + 7 });
+    });
+
+    test('when the other side is absent, their cancel after a result is not used either', () => {
+      const r = [rep(A, 'win', T0 + 5), rep(A, 'cancel', T0 + 9)];
+      expect(settleAgreeing(match, r, B, END)).toEqual({ status: 'confirmed', winner: A, loser: B, settledAt: T0 + 5 });
     });
   });
 

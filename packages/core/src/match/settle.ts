@@ -20,6 +20,7 @@ export interface MannersCount {
  * docs/spec.md「結果の確定」。報告を時刻順に走査し、噛み合う報告の組（勝ち+負け、中止+中止）が
  * 初めてそろった瞬間に確定する。「最新の報告どうし」ではなく「これまでに出した報告」で
  * 判定するので、日時を遡らせた報告を後から足しても確定は覆らない。
+ * 勝ち・負け・引き分けを報告した人の中止は数えない（docs/adr/0015）。
  * 締め切り（matchDeadline）までにそろわなければ、最新報告から食い違い／未報告とする。
  */
 export function settleMatch(match: MatchRecord, reports: ResultReport[], now: number, deadline: number, allowDraw = false): Settlement {
@@ -69,7 +70,7 @@ export function settleAgreeing(match: MatchRecord, reports: ResultReport[], abse
 
 /** 締め切りまでに当事者が出した、その対戦の報告（時刻順） */
 function validReports(match: MatchRecord, reports: ResultReport[], now: number, deadline: number, allowDraw: boolean): ResultReport[] {
-  return reports
+  const valid = reports
     .filter(
       (r) =>
         r.matchId === match.id &&
@@ -81,6 +82,9 @@ function validReports(match: MatchRecord, reports: ResultReport[], now: number, 
         (allowDraw || r.result !== 'draw'),
     )
     .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  // 中止を日時を遡らせて出し、そろった結果を取り消せないように、結果を報告した人の中止は時刻を問わず使わない
+  const decided = new Set(valid.filter((r) => r.result !== 'cancel').map((r) => r.reporter));
+  return valid.filter((r) => r.result !== 'cancel' || !decided.has(r.reporter));
 }
 
 const zero = (): MannersCount => ({ noReport: 0, cancel: 0, mismatch: 0 });
