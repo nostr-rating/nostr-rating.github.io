@@ -3,7 +3,7 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import type { GameDefinition } from '../game/definition.js';
 import { parseClaim } from '../identity/claims.js';
 import type { KelRecords } from '../kel/book.js';
-import type { AccountSummary, RatingState } from '../rating/pipeline.js';
+import type { AccountSummary, EvaluatedMatch, RatingState, RatingStep } from '../rating/pipeline.js';
 import type { Pubkey } from '../types.js';
 
 export interface SnapshotPlayer {
@@ -34,6 +34,35 @@ export interface SnapshotAccount {
   claims: { platform: string; identity: string; proof: string }[];
   event_id: string;
   created_at: number;
+}
+
+export interface SnapshotRating {
+  rating: number;
+  rd: number;
+  volatility: number;
+}
+
+/** 対戦ごとの記録の、1人分の更新（RatingStep） */
+export interface SnapshotRatingStep {
+  before: SnapshotRating;
+  periods: number;
+  after: SnapshotRating;
+}
+
+/** 対戦ごとの記録（EvaluatedMatch。docs/adr/0014） */
+export interface SnapshotMatch {
+  id: string;
+  created_at: number;
+  p1: Pubkey;
+  p2: Pubkey;
+  result: EvaluatedMatch['result'];
+  missing: Pubkey[];
+  rating: { weight: number; p1: SnapshotRatingStep; p2: SnapshotRatingStep } | null;
+}
+
+/** この回に評価した対戦の記録。評価した順（マッチの (created_at, id) の昇順） */
+export interface MatchesPart {
+  matches: SnapshotMatch[];
 }
 
 /** リリースに置いた部品（docs/adr/0011）。リリースの中の名前は `<sha256>.json` */
@@ -76,6 +105,8 @@ export interface SnapshotToc {
     ids: PartRef;
     /** シーズン id → SeasonPart。終わったシーズンの部品は、それ以後変わらない */
     seasons: Record<string, PartRef>;
+    /** MatchesPart。この部品を作る前の目次には無い */
+    matches?: PartRef;
   };
   /** KelIndexPart */
   kel_index: DerivedRef;
@@ -237,6 +268,8 @@ export function buildSnapshot(
     /** この回の部品を置くリリースのタグ */
     release: string;
     prevToc?: SnapshotToc | null;
+    /** この回に評価した対戦（advanceRatings の matches） */
+    matches?: EvaluatedMatch[];
   },
 ): { toc: SnapshotToc; texts: Map<string, string> } {
   const texts = new Map<string, string>();
@@ -289,21 +322,58 @@ export function buildSnapshot(
       kels: putShards(state.kels, prev?.kels),
       ids: put(serializePart(ids), prev?.ids),
       seasons,
+      matches: put(serializePart(matchesPart(meta.matches ?? [])), prev?.matches),
     },
     kel_index: kel.index,
   };
   return { toc, texts };
 }
 
+const toRating = (p: { rating: number; rd: number; volatility: number }): SnapshotRating => ({ rating: p.rating, rd: p.rd, volatility: p.volatility });
+const toStep = (s: RatingStep): SnapshotRatingStep => ({ before: toRating(s.before), periods: s.periods, after: toRating(s.after) });
+const fromStep = (s: SnapshotRatingStep): RatingStep => ({ before: toRating(s.before), periods: s.periods, after: toRating(s.after) });
+
+export function matchesPart(matches: EvaluatedMatch[]): MatchesPart {
+  return {
+    matches: matches.map((m) => ({
+      id: m.id,
+      created_at: m.createdAt,
+      p1: m.p1,
+      p2: m.p2,
+      result: m.result,
+      missing: m.missing,
+      rating: m.rating && { weight: m.rating.weight, p1: toStep(m.rating.p1), p2: toStep(m.rating.p2) },
+    })),
+  };
+}
+
+/** 部品の記録を、recomputeRating に渡せる形にする */
+export function fromSnapshotMatch(m: SnapshotMatch): EvaluatedMatch {
+  return {
+    id: m.id,
+    createdAt: m.created_at,
+    p1: m.p1,
+    p2: m.p2,
+    result: m.result,
+    missing: m.missing,
+    rating: m.rating && { weight: m.rating.weight, p1: fromStep(m.rating.p1), p2: fromStep(m.rating.p2) },
+  };
+}
+
 /**
- * 配信（GitHub Pages）に置く部品（パス → 本文）。クライアントが読む players、シーズン、KEL の索引、KEL ごとの部品。
+ * 配信（GitHub Pages）に置く部品（パス → 本文）。クライアントが読む players、シーズン、KEL の索引、KEL ごとの部品と、
+ * 誰でも1つの対戦を確かめられるように置く対戦ごとの記録。
  * KEL の索引は kels の部品から作り直し、目次と同じになることを確かめる
  */
-export function publishedFiles(toc: SnapshotToc, bulk: { players: string; seasons: Record<string, string>; kels: KelRecords }): Map<string, string> {
+export function publishedFiles(
+  toc: SnapshotToc,
+  bulk: { players: string; seasons: Record<string, string>; kels: KelRecords; matches?: string },
+): Map<string, string> {
   const kel = kelParts(bulk.kels);
   if (kel.index.sha256 !== toc.kel_index.sha256) throw new Error('the KELs do not match kel_index in the table of contents');
   const out = new Map<string, string>();
-  for (const text of [bulk.players, ...Object.values(bulk.seasons), ...kel.texts.values()]) out.set(partPath(sha256Hex(text)), text);
+  const texts = [bulk.players, ...Object.values(bulk.seasons), ...kel.texts.values(), ...(bulk.matches === undefined ? [] : [bulk.matches])];
+  for (const text of texts) out.set(partPath(sha256Hex(text)), text);
   return out;
 }
 

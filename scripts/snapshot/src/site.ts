@@ -191,7 +191,7 @@ function publishSnapshot(out: string, g: LoadedGame): void {
   const { pointer, toc, tocText, texts } = g.loaded;
   write(join(out, latestOf(g.id)), `${JSON.stringify(pointer, null, 2)}\n`);
   write(join(out, pointer.path), tocText);
-  const files = publishedFiles(toc, { players: texts.players, seasons: texts.seasons, kels: texts.kels });
+  const files = publishedFiles(toc, texts);
   for (const [path, text] of files) write(join(out, path), text);
 }
 

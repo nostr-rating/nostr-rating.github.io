@@ -14,6 +14,7 @@ import { attributor, buildKelBook, type Attributor, type KelRecords } from '../k
 import { parseKelEvent } from '../kel/event.js';
 import { matchDeadline, seasonById, type GameDefinition } from '../game/definition.js';
 import type { LocalView } from '../match/conditions.js';
+import { seedCommit } from '../match/seat.js';
 import { mannersDelta, settleAgreeing, settleMatch, type MannersCount, type Settlement } from '../match/settle.js';
 import { dedupeById } from '../relay/client.js';
 import type { Pubkey } from '../types.js';
@@ -60,6 +61,34 @@ export interface RatingState {
   kels: KelRecords;
   /** aid → 最新のアカウントの公開情報（表示名と紐づけ）。選手ページと公開 API に使う */
   accounts: Record<Pubkey, AccountSummary>;
+}
+
+/** レートに入れた対戦での、1人分の更新（docs/spec.md「対戦ごとの記録」） */
+export interface RatingStep {
+  /** 対戦の前の値（休んでいた分の RD を広げる前） */
+  before: PlayerRating;
+  /** 休んでいた期間の数（RD を広げた回数） */
+  periods: number;
+  /** 連戦の重みをかけたあとの値 */
+  after: PlayerRating;
+}
+
+/**
+ * 評価した1つの対戦の記録（docs/adr/0014）。レートに入れた対戦は、この記録とゲームの定義だけで更新を計算し直せる
+ * （recomputeRating）。選手ごとに並べると、前の対戦の after が次の対戦の before につながる
+ */
+export interface EvaluatedMatch {
+  /** マッチ成立のイベントの id */
+  id: string;
+  createdAt: number;
+  p1: Pubkey;
+  p2: Pubkey;
+  /** p1・p2 はその側の勝ち */
+  result: 'p1' | 'p2' | 'draw' | 'cancel' | 'mismatch' | 'no_report';
+  /** result が no_report のとき、報告しなかった側（それ以外は空） */
+  missing: Pubkey[];
+  /** レートに入れた対戦だけ。中止・食い違い・未報告は null */
+  rating: { weight: number; p1: RatingStep; p2: RatingStep } | null;
 }
 
 export interface AccountSummary {
@@ -111,6 +140,7 @@ const byId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
  * マッチが、p2 が署名して p1 の募集を指した申し込みに、成立待ちの時間内に応えたものか。
+ * マッチで明かした乱数が、申し込みに写した募集の乱数のハッシュと合うことも確かめる（先後を後から選べないように。docs/adr/0013）。
  * レート計算と画面の両方で、第三者が勝手に作った対戦を除くのに使う。
  */
 export function isLinkedMatch(def: GameDefinition, m: MatchRecord, app: Application | null | undefined): app is Application {
@@ -121,6 +151,7 @@ export function isLinkedMatch(def: GameDefinition, m: MatchRecord, app: Applicat
     app.recruiter === m.p1 &&
     app.firstFighter === m.p2Fighter &&
     app.settingsId === m.p2SettingsId &&
+    seedCommit(m.seed) === app.seedHash &&
     gap >= 0 &&
     gap <= def.matching.applicationTimeoutSec
   );
@@ -237,6 +268,8 @@ class Applier {
   readonly players: Record<Pubkey, PlayerState>;
   recentPairs: RecentPair[];
   readonly used = new Set<string>();
+  /** 評価した対戦の記録（評価した順）。used に入れた対戦と同じものだけを残す */
+  readonly evaluated: EvaluatedMatch[] = [];
   /** 2人の組 → 確定した時刻の並び（連戦の数を、全件を探さずに数える） */
   readonly #pairTimes = new Map<string, number[]>();
 
@@ -276,6 +309,9 @@ class Applier {
       for (const r of reports) if (r.createdAt <= deadline) this.used.add(r.id);
     };
 
+    const record = (result: EvaluatedMatch['result'], rating: EvaluatedMatch['rating'], missing: Pubkey[] = []) =>
+      this.evaluated.push({ id: m.id, createdAt: m.createdAt, p1: m.p1, p2: m.p2, result, missing: [...missing].sort(), rating });
+
     if (s.status !== 'confirmed' && s.status !== 'drawn') {
       if (!mannersToo) return;
       for (const [pk, d] of Object.entries(mannersDelta(m, s))) {
@@ -283,6 +319,7 @@ class Applier {
         p.manners = { noReport: p.manners.noReport + d.noReport, cancel: p.manners.cancel + d.cancel, mismatch: p.manners.mismatch + d.mismatch };
       }
       markUsed();
+      record(s.status === 'cancelled' ? 'cancel' : s.status, null, s.status === 'no_report' ? s.missing : []);
       return;
     }
 
@@ -315,10 +352,19 @@ class Applier {
       p.peakRating = Math.max(p.peakRating, p.rating);
       p.lastMatchAt = t;
     };
+    const step = (p: PlayerState, before: PlayerRating, after: PlayerRating): RatingStep => ({
+      before: { rating: p.rating, rd: p.rd, volatility: p.volatility },
+      periods: idle(p),
+      after: applyWeight(before, after, weight),
+    });
+    const ws = step(w, w0, w1);
+    const ls = step(l, l0, l1);
     update(w, w0, w1, true);
     update(l, l0, l1, false);
     this.#addPair({ a, b, settledAt: t });
     markUsed();
+    const winnerIsP1 = winnerPk === m.p1;
+    record(drawn ? 'draw' : winnerIsP1 ? 'p1' : 'p2', { weight, p1: winnerIsP1 ? ws : ls, p2: winnerIsP1 ? ls : ws });
   }
 }
 
@@ -344,7 +390,7 @@ export function advanceRatings(
   events: NostrEvent[],
   cutoff: number,
   opts: AdvanceOptions = {},
-): { state: RatingState; usedEventIds: string[] } {
+): { state: RatingState; usedEventIds: string[]; matches: EvaluatedMatch[] } {
   const exclude = opts.exclude ?? new Set<string>();
   const excludeKel = opts.excludeKel ?? new Set<string>();
   const kelEvents = excludeKel.size === 0 ? events : events.filter((e) => e.kind !== KIND.kel || !excludeKel.has(parseKelEvent(e)?.aid ?? ''));
@@ -379,7 +425,24 @@ export function advanceRatings(
       accounts,
     },
     usedEventIds: [...ap.used, ...book.usedEventIds].sort(byId),
+    matches: ap.evaluated,
   };
+}
+
+/**
+ * 対戦の記録から、レートの更新を計算し直す（docs/spec.md「対戦ごとの記録」）。レートに入れなかった対戦は null。
+ * 結果が記録の after と同じなら、その対戦の更新は定義どおりに計算されている。
+ * 連戦の重みと before は、それまでの対戦の記録（同じ2人の直近の対戦と、その選手の前の対戦の after）と照らして確かめる
+ */
+export function recomputeRating(def: GameDefinition, rec: EvaluatedMatch): { p1: PlayerRating; p2: PlayerRating } | null {
+  if (!rec.rating) return null;
+  const { weight, p1, p2 } = rec.rating;
+  const score = rec.result === 'p1' ? 1 : rec.result === 'p2' ? 0 : 0.5;
+  const a0 = inflateRd(p1.before, p1.periods, def.rating.initialRd);
+  const b0 = inflateRd(p2.before, p2.periods, def.rating.initialRd);
+  const a1 = glicko2Update(a0, [{ opponent: b0, score }], def.rating.tau);
+  const b1 = glicko2Update(b0, [{ opponent: a0, score: (1 - score) as 0 | 0.5 | 1 }], def.rating.tau);
+  return { p1: applyWeight(a0, a1, weight), p2: applyWeight(b0, b1, weight) };
 }
 
 /**

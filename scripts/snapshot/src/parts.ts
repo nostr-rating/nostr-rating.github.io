@@ -64,8 +64,8 @@ export interface LoadedSnapshot {
   toc: SnapshotToc;
   /** 目次の本文（リポジトリのものそのまま） */
   tocText: string;
-  /** 部品の本文（配信でそのまま使う）。KEL は部品をまとめたもの */
-  texts: { players: string; seasons: Record<string, string>; kels: KelRecords };
+  /** 部品の本文（配信でそのまま使う）。KEL は部品をまとめたもの。matches はその部品を作る前の目次では無い */
+  texts: { players: string; seasons: Record<string, string>; kels: KelRecords; matches?: string };
   /** すべての部品から作った状態 */
   state: RatingState;
 }
@@ -82,11 +82,12 @@ export async function loadSnapshot(root: string, game: string, store: PartStore)
   const seasonIds = Object.keys(toc.parts.seasons);
   const shards = async <T,>(refs: Record<string, PartRef>): Promise<Record<string, T>> =>
     Object.assign({}, ...(await Promise.all(Object.values(refs).map(async (r) => JSON.parse(await store.get(r)) as Record<string, T>))));
-  const [players, accounts, kels, seasonTexts] = await Promise.all([
+  const [players, accounts, kels, seasonTexts, matches] = await Promise.all([
     store.get(toc.parts.players),
     shards<SnapshotAccount>(toc.parts.accounts),
     shards<KelRecords[string]>(toc.parts.kels),
     Promise.all(seasonIds.map((s) => store.get(toc.parts.seasons[s]!))),
+    toc.parts.matches ? store.get(toc.parts.matches) : Promise.resolve(undefined),
   ]);
   const seasons = Object.fromEntries(seasonIds.map((s, i) => [s, seasonTexts[i]!]));
   const state = stateFromParts(toc, {
@@ -95,5 +96,5 @@ export async function loadSnapshot(root: string, game: string, store: PartStore)
     accounts,
     kels,
   });
-  return { pointer, toc, tocText, texts: { players, seasons, kels }, state };
+  return { pointer, toc, tocText, texts: { players, seasons, kels, ...(matches === undefined ? {} : { matches }) }, state };
 }

@@ -5,7 +5,7 @@
   "game": "smash_sp",
   "inputs": {
     "event_count": 9,
-    "event_ids_sha256": "7176f69df4f7b35cb0792d5af4f66fbca7fb820e0d048a6b68d6427bc8ab8b25"
+    "event_ids_sha256": "7eba7e2a2cfc9a1e3e8a1c64f12228aa16fa05a169a7e61f5c3e1bafe233616a"
   },
   "kel_index": {
     "sha256": "2730c1531be363e80f49aa163e9f2481434edfcfbf5e1d49db02dd5436d85dc1",
@@ -27,7 +27,7 @@
     },
     "ids": {
       "release": "snapshot-smash_sp-season_1-2026-10-02",
-      "sha256": "e935dfbc0fb5074d7e25fcf8bcf1d175eb555caa4f443186d9620077cd7b98f6",
+      "sha256": "960d42749fe6d944fc6b4d719b11e945e198dfb68c8a711da66e34bac4b4311f",
       "size": 605
     },
     "kels": {
@@ -41,6 +41,11 @@
         "sha256": "4e3ac56ddc9ab6d7d21a0e211124d0dc92bc14e528a89ed8bd210da4aa8b7fdc",
         "size": 765
       }
+    },
+    "matches": {
+      "release": "snapshot-smash_sp-season_1-2026-10-02",
+      "sha256": "0b586c77b8b952f76cdfbfc6b2b1186ec13fea511d0a8863a25c7de611f86ad2",
+      "size": 577
     },
     "players": {
       "release": "snapshot-smash_sp-season_1-2026-10-02",

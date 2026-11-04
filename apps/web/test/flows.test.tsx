@@ -6,7 +6,7 @@ import { App } from '../src/App.js';
 import { Lobby } from '../src/pages/Lobby.js';
 import { MatchRoom } from '../src/pages/MatchRoom.js';
 import { useApp } from '../src/state/AppContext.js';
-import { makeDeps, matchBetween, newPlayer, renderWithApp, type Player } from './helpers.js';
+import { makeDeps, matchBetween, newPlayer, P1_SEED, P2_SEED, renderWithApp, type Player } from './helpers.js';
 
 const realNow = () => Math.floor(Date.now() / 1000);
 
@@ -72,8 +72,8 @@ describe('match room', () => {
     const b = await player(relay, 'bob', 'bbb1');
     const m = await matchBetween(relay, a, b);
     const failing: RelayClient = { ...relay, query: relay.query.bind(relay), subscribe: relay.subscribe.bind(relay), close: () => undefined, publish: async () => { throw new Error('offline'); } };
-    // 部屋を立てる側（マッチの id で決まる）として開く
-    const host = sideOf(m.id, 'p1') === 0 ? a : b;
+    // 部屋を立てる側（双方の乱数で決まる）として開く
+    const host = sideOf(m.seed, P2_SEED, 'p1') === 0 ? a : b;
     renderWithApp(<MatchRoom matchId={m.id} />, { deps: { ...makeDeps({ relay, now: realNow }), relay: failing }, account: host.account });
     await user.type(await screen.findByLabelText('部屋 ID'), 'AB12C');
     await user.click(screen.getByRole('button', { name: '部屋 ID とパスワードを送る' }));
@@ -170,6 +170,7 @@ async function forgedMatch(relay: MemoryRelay, attacker: Player, victim: Player)
         p2SettingsId: '2'.repeat(64),
         applicationId: 'a'.repeat(64),
         sessions: [await attacker.signer.getPublicKey(), await victim.signer.getPublicKey()],
+        seed: P1_SEED,
       },
       realNow() - 30,
     ),

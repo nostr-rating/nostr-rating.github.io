@@ -17,6 +17,7 @@ import { signAs, type SessionIdentity } from '../kel/book.js';
 import type { RelayClient } from '../relay/client.js';
 import type { FighterId, Pubkey } from '../types.js';
 import { canMatch, type LocalView, type SeekerView } from './conditions.js';
+import { newSeed, seedCommit } from './seat.js';
 
 export interface MatchmakerDeps {
   relay: RelayClient;
@@ -79,6 +80,9 @@ export class Matchmaker {
     const me = identity.aid;
     const mySession = await identity.signer.getPublicKey();
     const waitingSince = now();
+    // 先後を決める自分の乱数。募集にはハッシュだけを載せ、マッチ成立で明かす。明かしたら search は終わるので、使い回さない
+    const seed = newSeed();
+    const seedHash = seedCommit(seed);
     if (!acceptsNewMatches(def, waitingSince).ok) throw new Error('new matches are not accepted until the next season starts');
 
     const self = (): SeekerView => ({
@@ -129,7 +133,7 @@ export class Matchmaker {
       const t = now();
       const tmpl = buildRecruitment(
         game,
-        { firstFighter: p.firstFighter, rating: self().rating, rangeChoice: p.rangeChoice, rematchHours: p.rematchHours, settingsId: p.settingsId, waitingSince, status },
+        { firstFighter: p.firstFighter, rating: self().rating, rangeChoice: p.rangeChoice, rematchHours: p.rematchHours, settingsId: p.settingsId, waitingSince, status, seedHash },
         t,
         def.matching.recruitmentTtlSec,
       );
@@ -144,7 +148,7 @@ export class Matchmaker {
         if (signal.aborted) throw abortError();
 
         if (recruiting) {
-          const m = await this.#acceptApplication(p, self(), applications, recent);
+          const m = await this.#acceptApplication(p, self(), applications, recent, seed);
           if (m) {
             await publishRecruitment('closed');
             return m;
@@ -215,6 +219,7 @@ export class Matchmaker {
     self: SeekerView,
     applications: Application[],
     recent: Map<Pubkey, number>,
+    seed: string,
   ): Promise<MatchRecord | null> {
     const { relay, identity, def, now } = this.#d;
     const t = now();
@@ -222,6 +227,8 @@ export class Matchmaker {
     const fresh = applications
       .filter((a) => a.createdAt <= t + CLOCK_SKEW_SEC && t - a.createdAt < def.matching.applicationTimeoutSec - 2)
       .filter((a) => a.waitingSince <= a.createdAt && a.createdAt - a.waitingSince <= MAX_WAITING_SEC)
+      // 自分の今の募集を見て出した申し込みだけ（明かす乱数がハッシュと合わなければ、有効な対戦にならない）
+      .filter((a) => a.seedHash === seedCommit(seed))
       .sort((a, b) => a.createdAt - b.createdAt || (a.eventId < b.eventId ? -1 : 1));
     applications.length = 0;
     for (const a of fresh) {
@@ -240,6 +247,7 @@ export class Matchmaker {
             p1SettingsId: p.settingsId,
             p2SettingsId: a.settingsId,
             applicationId: a.eventId,
+            seed,
           },
           Math.max(t, a.createdAt),
         ),
@@ -263,7 +271,17 @@ export class Matchmaker {
       identity,
       buildApplication(
         def.id,
-        { recruiter: r.pubkey, recruiterSession: r.session, firstFighter: p.firstFighter, settingsId: p.settingsId, rangeChoice: p.rangeChoice, rematchHours: p.rematchHours, waitingSince },
+        {
+          recruiter: r.pubkey,
+          recruiterSession: r.session,
+          firstFighter: p.firstFighter,
+          settingsId: p.settingsId,
+          rangeChoice: p.rangeChoice,
+          rematchHours: p.rematchHours,
+          waitingSince,
+          seedHash: r.seedHash,
+          seed: newSeed(),
+        },
         now(),
       ),
     );
@@ -289,6 +307,7 @@ export class Matchmaker {
       m.applicationId === app.eventId &&
       m.p2Fighter === app.firstFighter &&
       m.p2SettingsId === app.settingsId &&
+      seedCommit(m.seed) === app.seedHash &&
       gap >= 0 &&
       gap <= this.#d.def.matching.applicationTimeoutSec
     );

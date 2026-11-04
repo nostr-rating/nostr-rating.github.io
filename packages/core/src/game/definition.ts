@@ -18,7 +18,7 @@ export interface GameDefinition {
   format: { bestOf: number; notes: string[] };
   /** 報告できる結果。win・lose・cancel は必ずあり、draw はゲームによる（docs/adr/0010） */
   results: { draw: boolean };
-  /** 先後の名前。対戦ごとにマッチの id で決め、1つ目の側が対戦の場所を用意する */
+  /** 先後の名前。対戦ごとに双方の乱数で決め（match/seat.ts）、1つ目の側が対戦の場所を用意する */
   sides: [string, string];
   /** キャラを選ぶゲームだけ。拒否ステージを共有するキャラの組も持つ */
   characters: { list: Character[]; sharedBanGroups: FighterId[][] } | null;
@@ -222,15 +222,6 @@ export function parseGameDefinition(json: unknown): GameDefinition {
     report: numObj(root.report, 'report', ['deadlineSec'] as const),
     seasons: parseSeasons(root.seasons),
   };
-}
-
-/**
- * 対戦の先後（docs/adr/0010）。マッチの id の最後の16進数が偶数なら p1 が1つ目の側。
- * どちらのクライアントも同じ結果を出せ、募集した側が選ぶこともできない
- */
-export function sideOf(matchId: string, role: 'p1' | 'p2'): 0 | 1 {
-  const p1First = parseInt(matchId.slice(-1), 16) % 2 === 0;
-  return (role === 'p1') === p1First ? 0 : 1;
 }
 
 function parseSeasons(v: unknown): GameDefinition['seasons'] {

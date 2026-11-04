@@ -15,6 +15,7 @@ import {
   validRoomId,
   validRoomPassword,
   wrapRoomMessage,
+  type Application,
   type GameDefinition,
   type MatchRecord,
   type ReportResult,
@@ -89,6 +90,8 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   const [busy, setBusy] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [linked, setLinked] = useState<boolean | null>(null);
+  /** 対戦が結び付いた申し込み。先後を決める申し込んだ側の乱数を持つ */
+  const [application, setApplication] = useState<Application | null>(null);
   const [, setTick] = useState(0);
   // 対戦のゲームに切り替わってから作る（開いた時点では別のゲームのことがある）
   useEffect(() => setPassword(roomPassword(def, matchId)), [def, matchId]);
@@ -134,9 +137,9 @@ export function MatchRoom({ matchId }: { matchId: string }) {
     };
   }, [app.sessionSigners, match]);
   const opponentSession = match && mySessionPk ? (match.sessions.find((s) => s !== mySessionPk) ?? null) : null;
-  // 先後はマッチの id で決まり、1つ目の側が対戦の場所を用意する（docs/adr/0010）
-  const mySide = match && side ? sideOf(match.id, side) : null;
-  const hostSession = match ? (mySide === 0 ? mySessionPk : opponentSession) : null;
+  // 先後は双方の乱数で決まり、1つ目の側が対戦の場所を用意する（docs/adr/0013）。申し込みを確かめるまでは決めない
+  const mySide = match && side && application ? sideOf(match.seed, application.seed, side) : null;
+  const hostSession = mySide === null ? null : mySide === 0 ? mySessionPk : opponentSession;
 
   // 第三者が勝手に作った対戦でないか（申し込みに結び付いているか）を確かめる
   useEffect(() => {
@@ -146,7 +149,10 @@ export function MatchRoom({ matchId }: { matchId: string }) {
       .query([{ kinds: [KIND.application], ids: [match.applicationId] }])
       .then(async (evs) => {
         const a = (await parseEach(app, evs, (e, by) => parseApplication(def.id, e, by)))[0];
-        if (alive) setLinked(isLinkedMatch(def, match, a));
+        if (!alive) return;
+        const ok = isLinkedMatch(def, match, a);
+        setLinked(ok);
+        setApplication(ok ? a : null);
       })
       .catch(() => alive && setLinked(null));
     return () => {
@@ -278,7 +284,7 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   }
   if (!side || !opponent || !app.signer) return <p className="error">この対戦の参加者ではありません。</p>;
   const signer = app.signer;
-  if (!mySessionPk || !opponentSession) return <p className="loading">対戦を読み込み中…</p>;
+  if (!mySessionPk || !opponentSession || mySide === null) return <p className="loading">対戦を読み込み中…</p>;
   const sealSigner = sessionSignerFor(app.sessionSigners, mySessionPk);
 
   const guarded = async (f: () => Promise<void>) => {
@@ -354,7 +360,7 @@ export function MatchRoom({ matchId }: { matchId: string }) {
       <div className="card">
         <h3>{def.room.kind === 'code' ? '専用部屋' : '対局の場所'}</h3>
         <p className="side" data-testid="my-side">
-          あなたは「{def.sides[mySide!]}」です（相手は「{def.sides[mySide === 0 ? 1 : 0]}」）。
+          あなたは「{def.sides[mySide]}」です（相手は「{def.sides[mySide === 0 ? 1 : 0]}」）。
         </p>
         {format}
         {def.room.notes.length > 0 && (

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { banGroupKey, currentSeason, matchDeadline, parseGameDefinition, seasonById, sideOf } from '../../src/game/definition.js';
+import { banGroupKey, currentSeason, matchDeadline, parseGameDefinition, seasonById } from '../../src/game/definition.js';
 
 const rawJson = JSON.parse(readFileSync(resolve(__dirname, '../../../../configs/smash_sp.json'), 'utf8'));
 const def = parseGameDefinition(rawJson);
@@ -101,14 +101,6 @@ describe('chess and the list of games', () => {
     const bad = structuredClone(chessJson);
     bad.id = '../x';
     expect(() => parseGameDefinition(bad)).toThrow(new Error('invalid game definition: id must be lowercase letters, digits and _'));
-  });
-});
-
-describe('sideOf', () => {
-  test('the last hex digit of the match id decides who takes the first side', () => {
-    expect([sideOf('a'.repeat(63) + '0', 'p1'), sideOf('a'.repeat(63) + '0', 'p2')]).toEqual([0, 1]);
-    expect([sideOf('a'.repeat(63) + 'f', 'p1'), sideOf('a'.repeat(63) + 'f', 'p2')]).toEqual([1, 0]);
-    expect(sideOf('a'.repeat(63) + 'e', 'p1')).toBe(0);
   });
 });
 

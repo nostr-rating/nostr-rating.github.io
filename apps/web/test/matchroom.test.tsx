@@ -3,7 +3,7 @@ import { cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { MatchRoom } from '../src/pages/MatchRoom.js';
-import { makeDeps, matchBetween, newPlayer, renderWithApp } from './helpers.js';
+import { makeDeps, matchBetween, newPlayer, P2_SEED, renderWithApp } from './helpers.js';
 
 const realNow = () => Math.floor(Date.now() / 1000);
 
@@ -23,8 +23,8 @@ async function setup() {
   const roomA = renderWithApp(<MatchRoom matchId={match.id} />, { deps: makeDeps({ relay, now: realNow }), account: a.account });
   const roomB = renderWithApp(<MatchRoom matchId={match.id} />, { deps: makeDeps({ relay, now: realNow }), account: b.account });
   const [A, B] = [within(roomA.container), within(roomB.container)];
-  // 部屋を立てるのは、マッチの id で決まった1つ目の側（P1）
-  const p1First = sideOf(match.id, 'p1') === 0;
+  // 部屋を立てるのは、双方の乱数で決まった1つ目の側
+  const p1First = sideOf(match.seed, P2_SEED, 'p1') === 0;
   return { relay, match, A, B, host: p1First ? A : B, guest: p1First ? B : A, hostAccount: (p1First ? a : b).account };
 }
 
@@ -137,7 +137,7 @@ describe('MatchRoom', () => {
       const roomA = renderWithApp(<MatchRoom matchId={match.id} />, { deps: makeDeps({ relay, now: realNow }), account: a.account });
       const roomB = renderWithApp(<MatchRoom matchId={match.id} />, { deps: makeDeps({ relay, now: realNow }), account: b.account });
       const [A, B] = [within(roomA.container), within(roomB.container)];
-      const p1First = sideOf(match.id, 'p1') === 0;
+      const p1First = sideOf(match.seed, P2_SEED, 'p1') === 0;
       return { relay, match, host: p1First ? A : B, guest: p1First ? B : A };
     }
 

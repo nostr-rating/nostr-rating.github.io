@@ -1,5 +1,6 @@
 import type { EventTemplate, NostrEvent } from 'nostr-tools/pure';
 import { parseClaim, type IdentityClaim } from '../identity/claims.js';
+import { isSeed } from '../match/seat.js';
 import type { StageBans } from '../match/stages.js';
 import type { FighterId, Pubkey, StageId } from '../types.js';
 import { APP_TAG, appTags, isAppEvent, isValidEvent, KIND, recruitmentAddr, settingsD, tagValue, tagValues } from './kinds.js';
@@ -33,6 +34,8 @@ export interface Recruitment {
   waitingSince: number;
   status: 'open' | 'closed';
   expiresAt: number;
+  /** 先後を決める募集した側の乱数のハッシュ（match/seat.ts の seedCommit）。乱数はマッチ成立で明かす */
+  seedHash: string;
 }
 
 export interface Application {
@@ -50,6 +53,10 @@ export interface Application {
   rangeChoice: number | null;
   rematchHours: number;
   waitingSince: number;
+  /** 申し込んだ募集の seedHash の写し。マッチ成立で明かす乱数がこれと合わなければ、有効な対戦にならない */
+  seedHash: string;
+  /** 先後を決める申し込んだ側の乱数 */
+  seed: string;
 }
 
 export interface MatchRecord {
@@ -64,6 +71,8 @@ export interface MatchRecord {
   applicationId: string;
   /** p タグの使い捨ての鍵（購読と DM の宛先） */
   sessions: Pubkey[];
+  /** 募集した側が明かす、先後を決める乱数 */
+  seed: string;
 }
 
 export type ReportResult = 'win' | 'lose' | 'draw' | 'cancel';
@@ -141,7 +150,7 @@ export function parseSettings(game: string, ev: NostrEvent, author: Pubkey | nul
 
 export function buildRecruitment(
   game: string,
-  r: Pick<Recruitment, 'firstFighter' | 'rating' | 'rangeChoice' | 'rematchHours' | 'settingsId' | 'waitingSince' | 'status'>,
+  r: Pick<Recruitment, 'firstFighter' | 'rating' | 'rangeChoice' | 'rematchHours' | 'settingsId' | 'waitingSince' | 'status' | 'seedHash'>,
   now: number,
   ttlSec: number,
 ): EventTemplate {
@@ -157,6 +166,7 @@ export function buildRecruitment(
       settingsId: r.settingsId,
       waitingSince: r.waitingSince,
       status: r.status,
+      seedHash: r.seedHash,
     }),
   };
 }
@@ -167,7 +177,7 @@ export function parseRecruitment(game: string, ev: NostrEvent, author: Pubkey | 
   const expiresAt = Number(tagValue(ev, 'expiration'));
   if (!c || !Number.isFinite(expiresAt)) return null;
   if (!isFighter(c.firstFighter) || !isNum(c.rating) || !isRange(c.rangeChoice) || !isNum(c.rematchHours)) return null;
-  if (!isHex(c.settingsId) || !isNum(c.waitingSince) || (c.status !== 'open' && c.status !== 'closed')) return null;
+  if (!isHex(c.settingsId) || !isNum(c.waitingSince) || (c.status !== 'open' && c.status !== 'closed') || !isSeed(c.seedHash)) return null;
   return {
     pubkey: author,
     session: ev.pubkey,
@@ -181,6 +191,7 @@ export function parseRecruitment(game: string, ev: NostrEvent, author: Pubkey | 
     waitingSince: c.waitingSince,
     status: c.status,
     expiresAt,
+    seedHash: c.seedHash,
   };
 }
 
@@ -188,7 +199,7 @@ export function parseRecruitment(game: string, ev: NostrEvent, author: Pubkey | 
 
 export function buildApplication(
   game: string,
-  a: Pick<Application, 'recruiter' | 'recruiterSession' | 'firstFighter' | 'settingsId' | 'rangeChoice' | 'rematchHours' | 'waitingSince'>,
+  a: Pick<Application, 'recruiter' | 'recruiterSession' | 'firstFighter' | 'settingsId' | 'rangeChoice' | 'rematchHours' | 'waitingSince' | 'seedHash' | 'seed'>,
   now: number,
 ): EventTemplate {
   return {
@@ -202,6 +213,8 @@ export function buildApplication(
       rangeChoice: a.rangeChoice,
       rematchHours: a.rematchHours,
       waitingSince: a.waitingSince,
+      seedHash: a.seedHash,
+      seed: a.seed,
     }),
   };
 }
@@ -213,7 +226,7 @@ export function parseApplication(game: string, ev: NostrEvent, author: Pubkey | 
   const c = json(ev);
   if (!isHex(recruiterSession) || addr !== recruitmentAddr(recruiterSession, game)) return null;
   if (!c || !isHex(c.recruiter) || c.recruiter === author || !isFighter(c.firstFighter) || !isHex(c.settingsId)) return null;
-  if (!isRange(c.rangeChoice) || !isNum(c.rematchHours) || !isNum(c.waitingSince)) return null;
+  if (!isRange(c.rangeChoice) || !isNum(c.rematchHours) || !isNum(c.waitingSince) || !isSeed(c.seedHash) || !isSeed(c.seed)) return null;
   return {
     eventId: ev.id,
     pubkey: author,
@@ -227,6 +240,8 @@ export function parseApplication(game: string, ev: NostrEvent, author: Pubkey | 
     rangeChoice: c.rangeChoice,
     rematchHours: c.rematchHours,
     waitingSince: c.waitingSince,
+    seedHash: c.seedHash,
+    seed: c.seed,
   };
 }
 
@@ -244,6 +259,7 @@ export function buildMatch(game: string, m: Omit<MatchRecord, 'id' | 'createdAt'
       p2Fighter: m.p2Fighter,
       p1SettingsId: m.p1SettingsId,
       p2SettingsId: m.p2SettingsId,
+      seed: m.seed,
     }),
   };
 }
@@ -256,7 +272,7 @@ export function parseMatch(game: string, ev: NostrEvent, author: Pubkey | null):
   // 相手が購読で気づけるよう、p タグに双方の使い捨ての鍵を入れる
   const sessions = tagValues(ev, 'p').filter(isHex);
   if (!sessions.includes(ev.pubkey) || sessions.length < 2) return null;
-  if (!isFighter(c.p1Fighter) || !isFighter(c.p2Fighter) || !isHex(c.p1SettingsId) || !isHex(c.p2SettingsId)) return null;
+  if (!isFighter(c.p1Fighter) || !isFighter(c.p2Fighter) || !isHex(c.p1SettingsId) || !isHex(c.p2SettingsId) || !isSeed(c.seed)) return null;
   return {
     id: ev.id,
     createdAt: ev.created_at,
@@ -268,6 +284,7 @@ export function parseMatch(game: string, ev: NostrEvent, author: Pubkey | null):
     p2SettingsId: c.p2SettingsId,
     applicationId,
     sessions,
+    seed: c.seed,
   };
 }
 

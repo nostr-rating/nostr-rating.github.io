@@ -7,6 +7,7 @@ import { digestOf, type KelEntry } from '../../src/kel/kel.js';
 import { advanceRatings, initialState, type RatingState } from '../../src/rating/pipeline.js';
 import { def } from '../helpers/def.js';
 import { icp, ixn, newDevice, newNextKey, signed } from '../helpers/kel.js';
+import { P1_SEED, P2_SEED, SEED_HASH } from '../helpers/seeds.js';
 
 const G = 'smash_sp';
 const DAY = 86400;
@@ -46,8 +47,8 @@ function account(at: number) {
 async function playedBy(p1: ReturnType<typeof account>, p2: ReturnType<typeof account>, at: number, from = at - 3600) {
   const claim = (a: typeof p1) => a.sign(a.d2, from, buildAccountInfo({ pubkey: a.aid, name: '', claims: [{ platform: 'github', identity: 'x', proof: 'a' }] }, at - 50));
   const recruiterSession = p1.sessionKey(p1.d1, from);
-  const app = await p2.sign(p2.d2, from, buildApplication(G, { recruiter: p1.aid, recruiterSession, firstFighter: 'fox', settingsId: '2'.repeat(64), rangeChoice: null, rematchHours: 0, waitingSince: at - 5 }, at - 1));
-  const m = await p1.sign(p1.d1, from, buildMatch(G, { p1: p1.aid, p2: p2.aid, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: app.id, sessions: [recruiterSession, app.pubkey] }, at));
+  const app = await p2.sign(p2.d2, from, buildApplication(G, { recruiter: p1.aid, recruiterSession, firstFighter: 'fox', settingsId: '2'.repeat(64), rangeChoice: null, rematchHours: 0, waitingSince: at - 5, seedHash: SEED_HASH, seed: P2_SEED }, at - 1));
+  const m = await p1.sign(p1.d1, from, buildMatch(G, { p1: p1.aid, p2: p2.aid, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: app.id, sessions: [recruiterSession, app.pubkey], seed: P1_SEED }, at));
   const r1 = await p1.sign(p1.d1, from, buildReport(G, { matchId: m.id, opponent: app.pubkey, result: 'win' }, at + 60));
   const r2 = await p2.sign(p2.d2, from, buildReport(G, { matchId: m.id, opponent: recruiterSession, result: 'lose' }, at + 61));
   return [await claim(p1), await claim(p2), app, m, r1, r2];

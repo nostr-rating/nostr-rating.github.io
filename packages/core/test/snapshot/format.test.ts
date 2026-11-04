@@ -2,11 +2,12 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type { KelRecords } from '../../src/kel/book.js';
-import type { RatingState } from '../../src/rating/pipeline.js';
+import type { EvaluatedMatch, RatingState } from '../../src/rating/pipeline.js';
 import { def } from '../helpers/def.js';
 import {
   buildSnapshot,
   eventIdsHash,
+  fromSnapshotMatch,
   kelPrefix,
   publishedFiles,
   ratingConfigHash,
@@ -15,6 +16,7 @@ import {
   stateFromParts,
   type KelIndexPart,
   type KelPrefixPart,
+  type MatchesPart,
   type PlayersPart,
   type SeasonPart,
 } from '../../src/snapshot/format.js';
@@ -74,6 +76,22 @@ const meta = {
   eventIds: ['2'.repeat(64), '1'.repeat(64)],
   configSha256: 'd'.repeat(64),
   release: 'snapshot-smash_sp-season_2-2026-10-28',
+  matches: [
+    {
+      id: '5'.repeat(64),
+      createdAt: 1790850000,
+      p1: A,
+      p2: B,
+      result: 'p1',
+      missing: [],
+      rating: {
+        weight: 0.5,
+        p1: { before: { rating: 1500, rd: 350, volatility: 0.06 }, periods: 0, after: { rating: 1581.155447, rd: 320.159482, volatility: 0.06 } },
+        p2: { before: { rating: 1500, rd: 300, volatility: 0.06 }, periods: 2, after: { rating: 1420.5, rd: 310.25, volatility: 0.06 } },
+      },
+    },
+    { id: '6'.repeat(64), createdAt: 1790851000, p1: B, p2: C, result: 'no_report', missing: [C], rating: null },
+  ] satisfies EvaluatedMatch[],
 };
 
 const FIXTURES = resolve(__dirname, '../fixtures');
@@ -89,6 +107,13 @@ function textOf(texts: Map<string, string>, sha256: string): string {
 describe('snapshot format', () => {
   test('the table of contents matches the golden file', () => {
     expect(serializeToc(buildSnapshot(fixtureState, meta).toc)).toBe(readFileSync(resolve(FIXTURES, 'snapshot-toc.json'), 'utf8'));
+  });
+
+  test('the matches part matches the golden file and reads back into the same records', () => {
+    const { toc, texts } = buildSnapshot(fixtureState, meta);
+    const text = textOf(texts, toc.parts.matches!.sha256);
+    expect(text).toBe(readFileSync(resolve(FIXTURES, 'snapshot-matches.json'), 'utf8'));
+    expect(parse<MatchesPart>(text).matches.map(fromSnapshotMatch)).toEqual(meta.matches);
   });
 
   test('the players part matches the golden file', () => {

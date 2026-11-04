@@ -47,6 +47,11 @@
         "size": 192
       }
     },
+    "matches": {
+      "release": "snapshot-smash_sp-season_2-2026-10-28",
+      "sha256": "81020a025e5aa9d4a43c085e0f33cbae3d8ed803af26c865ec4c6abd0ad84b23",
+      "size": 926
+    },
     "players": {
       "release": "snapshot-smash_sp-season_2-2026-10-28",
       "sha256": "bc0522d1b96f161d4f0df3a001c6eaa4ae52b8b64c022aea3edaab1c17293d34",

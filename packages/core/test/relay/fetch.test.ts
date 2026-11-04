@@ -8,6 +8,7 @@ import { MemoryRelay } from '../../src/relay/memory.js';
 import { def } from '../helpers/def.js';
 import { newUser, registeredKels } from '../helpers/keys.js';
 import { identity, p1Wins, played } from '../helpers/scenario.js';
+import { P1_SEED } from '../helpers/seeds.js';
 
 const T0 = 1_790_800_000;
 const now = () => T0 + 10_000;
@@ -65,6 +66,7 @@ const spamMatch = (spammer: ReturnType<typeof newUser>, p2: ReturnType<typeof ne
         p2SettingsId: '2'.repeat(64),
         applicationId: i.toString(16).padStart(64, '0'),
         sessions: [spammer.sessionAt(T0), p2.sessionAt(T0)],
+        seed: P1_SEED,
       },
       T0,
     ),

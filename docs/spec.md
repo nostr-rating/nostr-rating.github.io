@@ -197,14 +197,15 @@ A(\mathit{ev}) = \mathit{cert}.\mathrm{aid} \quad \text{if all of:}
 |---|---|---|---|
 | アカウントの公開情報 | 30756 | `["d", "<aid>"]` | `name`（表示名）、`claims`（下の「外部アカウントの紐づけ」） |
 | 対戦設定 | 30078 | `["d", "nostr-rating:<game>:settings"]` | `stageBans`、`rangeChoice`、`rematchHours` |
-| 募集 | 31751 | `["d", "<game>"]`、`["expiration", "<秒>"]`（NIP-40） | `firstFighter`、`rating`、`rangeChoice`、`rematchHours`、`settingsId`、`waitingSince`、`status`（`open` / `closed`） |
-| 申し込み | 3751 | `["a", "31751:<募集の使い捨ての鍵>:<game>"]`、`["p", "<募集の使い捨ての鍵>"]` | `recruiter`（募集者の aid）、`firstFighter`、`settingsId`、`rangeChoice`、`rematchHours`、`waitingSince` |
-| マッチ成立 | 3752 | `["e", "<申し込みの id>"]`、`["p", "<双方の使い捨ての鍵>"]` | `p1`、`p2`、`p1Fighter`、`p2Fighter`、`p1SettingsId`、`p2SettingsId` |
+| 募集 | 31751 | `["d", "<game>"]`、`["expiration", "<秒>"]`（NIP-40） | `firstFighter`、`rating`、`rangeChoice`、`rematchHours`、`settingsId`、`waitingSince`、`status`（`open` / `closed`）、`seedHash` |
+| 申し込み | 3751 | `["a", "31751:<募集の使い捨ての鍵>:<game>"]`、`["p", "<募集の使い捨ての鍵>"]` | `recruiter`（募集者の aid）、`firstFighter`、`settingsId`、`rangeChoice`、`rematchHours`、`waitingSince`、`seedHash`、`seed` |
+| マッチ成立 | 3752 | `["e", "<申し込みの id>"]`、`["p", "<双方の使い捨ての鍵>"]` | `p1`、`p2`、`p1Fighter`、`p2Fighter`、`p1SettingsId`、`p2SettingsId`、`seed` |
 | 結果報告 | 3754 | `["e", "<マッチの id>"]`、`["p", "<相手の使い捨ての鍵>"]` | `result`（`win` / `lose` / `draw` / `cancel`） |
 | 部屋 ID・連絡 | 1059（NIP-17） | `["p", "<宛先の使い捨ての鍵>"]` | 下の「対戦ルームの連絡」 |
 
 - マッチ成立は p1（募集した側）のアカウントが署名します。content の `p1` は署名したアカウントと同じで、`p` タグに署名した使い捨ての鍵を含めなければなりません。
 - アカウントの公開情報の `d` は署名したアカウントと同じでなければなりません。
+- `seedHash` と `seed` は先後を決める乱数です（下の「先後」）。`seed` は32バイトの乱数を小文字の16進数64文字で書いたもの、`seedHash` は `seed` の SHA-256 です。申し込みの `seedHash` は申し込んだ募集の `seedHash` の写しです。
 - `firstFighter`、`p1Fighter`、`p2Fighter` は、定義に `characters` があるゲームでだけ使います。ないゲームでは空の文字列にします。
 - 結果報告の `draw` は、定義の `results.draw` が `true` のゲームでだけ使えます。ほかのゲームでは `draw` の報告を無視します。
 - 結果報告は置き換えのない通常のイベントです。送り直すたびに新しいイベントを出し、前の報告も残ります。
@@ -236,7 +237,28 @@ rumor には `["p", "<相手の使い捨ての鍵>"]` と `["e", "<マッチの 
 
 ### 先後
 
-定義の `sides` は2つの側の名前です（スマブラSP は `P1`・`P2`、チェスは `白`・`黒`）。マッチ成立のイベントの id の最後の16進数が偶数なら p1 が1つ目の側、奇数なら p2 が1つ目の側です。1つ目の側の人が部屋を立てるか招待リンクを送ります。どちらのクライアントも同じ結果になり、募集した側が選ぶことはできません。
+定義の `sides` は2つの側の名前です（スマブラSP は `P1`・`P2`、チェスは `白`・`黒`）。1つ目の側の人が部屋を立てるか招待リンクを送ります。先後は双方の乱数で決めます（[ADR 0013](adr/0013-seat-draw.md)）。
+
+1. 募集した側は乱数を作り、そのハッシュを募集の `seedHash` に載せます。乱数そのものはまだ出しません。
+2. 申し込んだ側は募集の `seedHash` を申し込みに写し、自分の乱数を申し込みの `seed` に載せます。
+3. 募集した側はマッチ成立の `seed` で自分の乱数を明かします。
+
+どちらも相手の乱数を知る前に自分の乱数を決めるので、片方だけでは先後を選べません。明かした乱数のハッシュが申し込みの `seedHash` と合わない対戦は、有効な対戦になりません（下の「有効な対戦」）。
+
+```math
+h = \mathrm{SHA256}(m.\mathrm{seed} \,\|\, a.\mathrm{seed}), \qquad \text{p1 が1つ目の側} \iff \mathrm{last}(h) \bmod 2 = 0
+```
+
+| 記号 | 意味 |
+|---|---|
+| $`m.\mathrm{seed}`$ | マッチ成立の `seed`（募集した側の乱数） |
+| $`a.\mathrm{seed}`$ | マッチが指す申し込みの `seed`（申し込んだ側の乱数） |
+| $`x \,\|\, y`$ | 文字列 x と y をつないだもの |
+| $`\mathrm{SHA256}(x)`$ | 文字列 x（UTF-8）の SHA-256 を16進数の文字列にしたもの |
+| $`\mathrm{last}(h)`$ | h の最後の1文字を16進数として読んだ値 |
+| $`\bmod`$ | 割った余り |
+
+募集した側はマッチ成立を出す前に先後を知ります。都合が悪ければマッチ成立を出さずにやめることはできますが、その申し込みの相手を逃します（ADR 0013）。
 
 ## 有効な対戦
 
@@ -245,6 +267,7 @@ rumor には `["p", "<相手の使い捨ての鍵>"]` と `["e", "<マッチの 
 - 参照する申し込みが存在し、p2 のアカウントが署名している
 - 申し込みの `recruiter` が p1 である
 - 申し込みの `firstFighter` と `settingsId` がマッチの `p2Fighter` と `p2SettingsId` に一致する
+- マッチの `seed` の SHA-256 が申し込みの `seedHash` に一致する
 - マッチの `created_at` が申し込みの `created_at` 以上で、その差が `matching.applicationTimeoutSec` 以下である
 - マッチの `created_at` がそのシーズンの開始以上で、終わりより前である
 
@@ -254,6 +277,10 @@ rumor には `["p", "<相手の使い捨ての鍵>"]` と `["e", "<マッチの 
 
 ```math
 A(a) = m.\mathrm{p2} \;\land\; a.\mathrm{recruiter} = m.\mathrm{p1} = A(m) \;\land\; a.\mathrm{firstFighter} = m.\mathrm{p2Fighter} \;\land\; a.\mathrm{settingsId} = m.\mathrm{p2SettingsId}
+```
+
+```math
+\mathrm{SHA256}(m.\mathrm{seed}) = a.\mathrm{seedHash}
 ```
 
 ```math
@@ -267,7 +294,9 @@ A(a) = m.\mathrm{p2} \;\land\; a.\mathrm{recruiter} = m.\mathrm{p1} = A(m) \;\la
 | $`A(\cdot)`$ | イベントを書いたアカウント（「使い捨ての鍵と証明書」の式） |
 | $`m.\mathrm{p1}, m.\mathrm{p2}`$ | m の content の、募集した側と申し込んだ側の aid |
 | $`a.\mathrm{recruiter}, a.\mathrm{firstFighter}, a.\mathrm{settingsId}`$ | a の content の項目 |
-| $`m.\mathrm{p2Fighter}, m.\mathrm{p2SettingsId}`$ | m の content の項目 |
+| $`m.\mathrm{p2Fighter}, m.\mathrm{p2SettingsId}, m.\mathrm{seed}`$ | m の content の項目 |
+| $`a.\mathrm{seedHash}`$ | a の content の項目（申し込んだ募集の `seedHash` の写し） |
+| $`\mathrm{SHA256}(x)`$ | 文字列 x（UTF-8）の SHA-256 を16進数の文字列にしたもの |
 | $`t_m, t_a`$ | m と a の `created_at` |
 | $`T_{\mathrm{app}}`$ | `matching.applicationTimeoutSec` |
 | $`s_{\mathrm{start}}, s_{\mathrm{end}}`$ | そのシーズンの始まりと終わりの時刻 |
@@ -471,8 +500,9 @@ y \leftarrow \mathrm{round6}\big(y + w\,(y' - y)\big) \qquad (y \in \{r, \mathrm
   - `kels`: アカウントごとに採用した KEL（`sn` の順）。全員の「先に見た版」になり、シーズンをまたいで引き継ぎます。`accounts` と同じく aid の先頭1文字ごとに分けます
   - `ids`: 使ったイベントの id（昇順）。対象は評価した対戦、その申し込み、その対戦を指す締め切りまでの報告（当事者かどうかと、作成時刻の下限は問わない）、初めて紐づけありにしたアカウントの公開情報（アカウントごとに `(created_at, id)` が最小のもの）、この回に更新した最新の公開情報、新しく採用した KEL のイベントです
   - `seasons.<シーズン id>`: 終わったシーズンに対戦したアカウントの最終レート・最高レート・対戦数・勝敗・引き分けの数（`summaries`）と、その時点の公開情報（`accounts`）。以後のスナップショットにも同じ部品を引き継ぎます
+  - `matches`: この回に評価した対戦の記録（下の「対戦ごとの記録」）。この部品を作る前の目次には無い
 - KEL の索引と KEL ごとの部品は `kels` の部品から作ります。KEL ごとの部品は1アカウントの KEL です。索引は aid の先頭2文字ごとの部品（aid → KEL の部品の sha256）と、その一覧（先頭2文字 → 部品の `sha256` と `size`）です。
-- 配信には `snapshots/<game>/` の下に `latest.json` と目次を置き、部品は全ゲームで共通の `snapshots/parts/<sha256>.json` に置きます。名前が sha256 なので、同じ KEL を記録したゲームどうしでは1つにまとまります。部品は `players`、シーズンの部品、KEL の索引、KEL ごとの部品で、`accounts` と `ids` は置きません。読む側はどのファイルも sha256 を確かめてから使います。
+- 配信には `snapshots/<game>/` の下に `latest.json` と目次を置き、部品は全ゲームで共通の `snapshots/parts/<sha256>.json` に置きます。名前が sha256 なので、同じ KEL を記録したゲームどうしでは1つにまとまります。部品は `players`、シーズンの部品、KEL の索引、KEL ごとの部品、`matches` で、`accounts` と `ids` は置きません。`matches` はクライアントは読まず、誰でも1つの対戦を確かめられるように置きます。読む側はどのファイルも sha256 を確かめてから使います。
 - クライアントは新しいイベントに出てきたアカウントの KEL だけを読みます。そのアカウントが `players` の部品にあればその sha256 で、無ければ索引で引きます。`latest.json` が無いときは、今のシーズンの最初から計算します。
 - `cutoff` は生成する時刻以前でなければなりません。シーズンの途中で `config_sha256` が変わるスナップショットは作りません。
 - 前のスナップショットのシーズンが終わっていたら、まずそのシーズンの終わりまでを処理した最終スナップショット（`snapshots/<game>/season_<N>/final.json`、`kind` は `final`）だけを作ります。次のシーズンの最初のスナップショットは、その次の生成で作ります。レート計算に関わる設定は、この2つの間でだけ変えられます。
@@ -488,11 +518,44 @@ flowchart TB
   TOC -- "parts.kels[0..f]" --> KE["kels × 16"]
   TOC -- "parts.ids" --> ID["ids"]
   TOC -- "parts.seasons[N]" --> SE["シーズンの部品"]
+  TOC -- "parts.matches" --> MA["対戦ごとの記録"]
   TOC -- "kel_index" --> IX["KEL の索引（配信だけ）"]
   IX --> PX["先頭2文字の部品<br/>aid → KEL の sha256"]
   PX --> KF["KEL ごとの部品"]
   PL -. "選手は直接" .-> KF
 ```
+
+### 対戦ごとの記録
+
+`matches` の部品は `{"matches": [...]}` で、この回に評価した対戦を、評価した順（マッチの `(created_at, id)` の昇順）に並べます。対象は使ったイベントの id（`ids`）に入れた対戦と同じです。理由は [ADR 0014](adr/0014-match-records.md) にあります。
+
+| 項目 | 中身 |
+|---|---|
+| `id`、`created_at` | マッチ成立のイベントの id と `created_at` |
+| `p1`、`p2` | 募集した側と申し込んだ側の aid |
+| `result` | `p1`・`p2`（その側の勝ち）、`draw`、`cancel`、`mismatch`、`no_report` |
+| `missing` | `result` が `no_report` のとき、報告しなかった側の aid（昇順）。それ以外は空 |
+| `rating` | レートに入れた対戦だけ。`weight`（連戦の重み w）と、`p1`・`p2` それぞれの `before`（対戦の前の rating・RD・σ）、`periods`（手順1の q）、`after`（手順3のあとの値）。入れなかった対戦は `null` |
+
+レートに入れた対戦は記録と定義だけで更新を計算し直せます（core の `recomputeRating`）。
+
+```math
+y^{(0)}_i = \mathrm{Inflate}(\mathit{before}_i, \mathit{periods}_i), \qquad \mathit{after}_i = \mathrm{Weight}\big(y^{(0)}_i,\; \mathrm{Glicko2}(y^{(0)}_i, y^{(0)}_j, s_i),\; w\big)
+```
+
+| 記号 | 意味 |
+|---|---|
+| $`i, j`$ | 記録の p1 と p2（i が一方なら j は他方） |
+| $`\mathit{before}_i, \mathit{periods}_i, \mathit{after}_i`$ | 記録の `rating` の、i の側の項目 |
+| $`\mathrm{Inflate}`$ | 「レート計算の式」の手順1（q = periods） |
+| $`\mathrm{Glicko2}(y_i, y_j, s_i)`$ | 手順2。相手の値は手順1のあとのもの |
+| $`\mathrm{Weight}`$ | 手順3（w = 記録の `weight`） |
+| $`y^{(0)}_i`$ | 手順1のあとの i の値 |
+| $`s_i`$ | i のスコア。`result` が i の側なら 1、相手の側なら 0、`draw` なら 0.5 |
+| $`w`$ | 記録の `weight` |
+
+- 選手ごとに記録を並べると、前の対戦の `after` が次の対戦の `before` と同じになります。
+- `weight` と `periods` は同じ2人の直近の記録と、その選手の前の対戦の `created_at` と照らして確かめます。1件の記録だけでは確かめられません。
 
 リリースのタグと、使ったイベントの一覧のハッシュは次の式で決めます。
 
@@ -614,13 +677,13 @@ sequenceDiagram
   participant A as 募集する人（p1）
   participant R as リレー
   participant B as 申し込む人（p2）
-  A->>R: 募集 31751（heartbeatSec ごとに出し直す）
+  A->>R: 募集 31751（seedHash 付き。heartbeatSec ごとに出し直す）
   B->>R: 募集を読む
   B->>B: 条件の判定
-  B->>R: 申し込み 3751
+  B->>R: 申し込み 3751（seedHash の写しと、自分の seed）
   A->>A: 条件の判定
-  A->>R: マッチ成立 3752
-  Note over A,B: マッチの id の最後の 16 進数が偶数なら p1、奇数なら p2 が 1 つ目の側
+  A->>R: マッチ成立 3752（自分の seed を明かす）
+  Note over A,B: SHA256(マッチの seed ‖ 申し込みの seed) の最後の 16 進数が偶数なら p1、奇数なら p2 が 1 つ目の側
   Note over A,B: 1 つ目の側が NIP-17 の DM で部屋 ID とパスワード、または招待リンクを送る
   A->>R: 結果報告 3754
   B->>R: 結果報告 3754
@@ -630,7 +693,8 @@ sequenceDiagram
 ### マッチングの作り（この実装）
 
 - 募集は5秒ごとに読みます（`SCAN_INTERVAL_SEC`）。1回の確認で申し込むのは最大3件です。
-- 募集した側は、マッチを出す前に、申し込んだ相手について同じ条件を判定します。申し込みの `created_at` から `applicationTimeoutSec − 2` 秒未満の申し込みだけを受けます。
+- 募集した側は、マッチを出す前に、申し込んだ相手について同じ条件を判定します。申し込みの `created_at` から `applicationTimeoutSec − 2` 秒未満で、`seedHash` が自分の今の募集と同じ申し込みだけを受けます。
+- 先後の乱数は、1回の探索（`Matchmaker.search`）ごとに1つ作ります。明かすのはマッチ成立を出すときだけで、出すと探索が終わるので、明かした乱数を次の募集に使うことはありません。
 - 待っている人がそれぞれ全員の募集を読むので、リレーが返す量は待っている人数の2乗で増えます。リレーが1回に返す件数の上限を超えると、候補の一部が見えなくなります（README の「既知の限界」）。
 
 ## クライアントの同期（この実装）

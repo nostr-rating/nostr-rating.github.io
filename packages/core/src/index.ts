@@ -2,6 +2,7 @@ export * from './types.js';
 export * from './game/definition.js';
 export * from './match/stages.js';
 export * from './match/bo3.js';
+export * from './match/seat.js';
 export * from './rating/glicko2.js';
 export * from './identity/signer.js';
 export * from './identity/claims.js';
