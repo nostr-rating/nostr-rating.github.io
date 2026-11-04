@@ -182,13 +182,24 @@ describe('advanceRatings', () => {
     expect(state.players[alice.pk]!.matches).toBe(0);
   });
 
-  test('match whose deadline would fall after the season end is not counted', async () => {
+  test('the report deadline of a match near the season end is the season end', async () => {
     const end = seasonById(def, 1).endsAt;
-    const inside = await p1Wins(alice, bob, end - DAY - 10);
-    const straddling = await p1Wins(alice, carol, end - DAY + 10);
-    const { state } = advanceRatings(def, s0(), [...ids, ...inside, ...straddling], end + 2 * DAY);
+    // 締め切りに間に合った対戦は、シーズンの終わりの時点で確定する
+    const inTime = await played(alice, bob, end - 3600, ['win', 'lose'], 3600 - 1);
+    // 負けた側の報告がシーズンの終わりを過ぎた対戦は確定せず、その人の未報告になる
+    const late = await played(alice, carol, end - 3600, ['win', 'lose'], 3600);
+    const { state } = advanceRatings(def, s0(), [...ids, ...inTime, ...late], end);
     expect(state.players[alice.pk]!.matches).toBe(1);
-    expect(state.players[carol.pk]?.matches ?? 0).toBe(0);
+    expect(state.players[bob.pk]!.matches).toBe(1);
+    expect(state.players[carol.pk]!.matches).toBe(0);
+    expect(state.players[carol.pk]!.manners).toEqual({ noReport: 1, cancel: 0, mismatch: 0 });
+    expect(state.players[alice.pk]!.manners).toEqual({ noReport: 0, cancel: 0, mismatch: 0 });
+  });
+
+  test('match created after the season end is not counted in that season', async () => {
+    const end = seasonById(def, 1).endsAt;
+    const { state } = advanceRatings(def, s0(), [...ids, ...(await p1Wins(alice, bob, end))], end);
+    expect(state.players[alice.pk]!.matches).toBe(0);
   });
 
   test('player without identity claim is not rated', async () => {

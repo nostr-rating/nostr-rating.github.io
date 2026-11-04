@@ -12,7 +12,7 @@ import {
 import { isValidEvent, KIND } from '../events/kinds.js';
 import { attributor, buildKelBook, type Attributor, type KelRecords } from '../kel/book.js';
 import { parseKelEvent } from '../kel/event.js';
-import { seasonById, type GameDefinition } from '../game/definition.js';
+import { matchDeadline, seasonById, type GameDefinition } from '../game/definition.js';
 import type { LocalView } from '../match/conditions.js';
 import { mannersDelta, settleAgreeing, settleMatch, type MannersCount, type Settlement } from '../match/settle.js';
 import { dedupeById } from '../relay/client.js';
@@ -207,8 +207,8 @@ function collect(def: GameDefinition, season: number, events: NostrEvent[], auth
   const byApplication = new Map<string, Linked>();
   for (const m of matches) {
     const app = applications.get(m.applicationId);
-    // シーズンの境目をまたぐ対戦（締め切りが次のシーズンに入るもの）は、どちらのシーズンでも数えない
-    if (m.createdAt < startsAt || m.createdAt + def.report.deadlineSec > endsAt || !isLinkedMatch(def, m, app)) continue;
+    // 締め切りはシーズンの終わりで切るので、作成した時刻のシーズンだけで数える
+    if (m.createdAt < startsAt || m.createdAt >= endsAt || !isLinkedMatch(def, m, app)) continue;
     if (exclude.has(m.p1) && !reports.get(m.id)?.some((r) => r.reporter === m.p2)) continue;
     const cur = byApplication.get(app.eventId);
     const next = { match: m, application: app, reports: reports.get(m.id) ?? [] };
@@ -270,7 +270,7 @@ class Applier {
   }
 
   apply({ match: m, application, reports }: Linked, s: Exclude<Settlement, { status: 'pending' }>, mannersToo: boolean): void {
-    const deadline = m.createdAt + this.def.report.deadlineSec;
+    const deadline = matchDeadline(this.def, m.createdAt);
     const markUsed = () => {
       this.used.add(m.id).add(application.eventId);
       for (const r of reports) if (r.createdAt <= deadline) this.used.add(r.id);
@@ -333,7 +333,7 @@ export interface AdvanceOptions {
 }
 
 /**
- * docs/spec.md「レート計算」。締め切り（作成時刻 + deadlineSec）が (prev.cutoff, cutoff] に入る対戦を、
+ * docs/spec.md「レート計算」。締め切り（matchDeadline）が (prev.cutoff, cutoff] に入る対戦を、
  * (作成時刻, 対戦 ID) の昇順に1件ずつ、1回だけ評価する。締め切り後に評価するので、
  * 遅れて届いた報告も取りこぼさず、日時を遡った報告で処理の窓を逃れることもできない。
  * 入力の順番、重複、スナップショットの区切り方に結果は左右されない。
@@ -356,14 +356,14 @@ export function advanceRatings(
   for (const [aid, a] of Object.entries(accounts)) if (a !== prev.accounts[aid]) ap.used.add(a.eventId);
 
   for (const l of linked) {
-    const deadline = l.match.createdAt + def.report.deadlineSec;
+    const deadline = matchDeadline(def, l.match.createdAt);
     if (deadline <= prev.cutoff || deadline > cutoff) continue;
     const absent = [l.match.p1, l.match.p2].filter((p) => exclude.has(p));
     if (absent.length === 2) continue;
     const s =
       absent.length === 1
-        ? settleAgreeing(l.match, l.reports, absent[0]!, def.report.deadlineSec, def.results.draw)
-        : settleMatch(l.match, l.reports, deadline, def.report.deadlineSec, def.results.draw);
+        ? settleAgreeing(l.match, l.reports, absent[0]!, deadline, def.results.draw)
+        : settleMatch(l.match, l.reports, deadline, deadline, def.results.draw);
     if (s.status !== 'pending') ap.apply(l, s, true);
   }
 
@@ -393,8 +393,9 @@ export function provisionalRatings(def: GameDefinition, state: RatingState, even
   const ap = new Applier(def, state);
   ap.markIdentities(identities);
   for (const l of linked) {
-    if (l.match.createdAt + def.report.deadlineSec <= state.cutoff) continue;
-    const s = settleMatch(l.match, l.reports, now, def.report.deadlineSec, def.results.draw);
+    const deadline = matchDeadline(def, l.match.createdAt);
+    if (deadline <= state.cutoff) continue;
+    const s = settleMatch(l.match, l.reports, now, deadline, def.results.draw);
     if (s.status === 'confirmed' || s.status === 'drawn') ap.apply(l, s, false);
   }
   return { ...state, players: ap.players, recentPairs: ap.recentPairs, kels: book.records, accounts: mergeAccounts(state.accounts, latest) };

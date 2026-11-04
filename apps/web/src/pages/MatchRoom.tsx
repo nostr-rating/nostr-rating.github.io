@@ -7,6 +7,7 @@ import {
   parseMatch,
   parseReport,
   parseSettings,
+  matchDeadline,
   settleMatch,
   unwrapRoomMessage,
   sideOf,
@@ -39,11 +40,18 @@ const WRAP_LOOKBACK_SEC = 2 * 24 * 3600 + 600;
 const SEND_FAILED = '送れませんでした。電波のよい場所でもう一度押してください。';
 const bansKey = (matchId: string) => `nostr-rating:bans:${matchId}`;
 
+const pad = (n: number) => String(n).padStart(2, '0');
+
 function formatDeadline(deadline: number, now: number): string {
   const d = new Date(deadline * 1000);
-  const pad = (n: number) => String(n).padStart(2, '0');
   const left = Math.max(0, deadline - now);
   return `報告の締め切り: ${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}（あと ${Math.floor(left / 3600)}時間${Math.floor((left % 3600) / 60)}分）`;
+}
+
+/** シーズンの区切りは、ゲームの定義の時差で表す（ロビーのシーズンの表示と同じ） */
+function seasonDate(def: GameDefinition, t: number): string {
+  const d = new Date((t + def.seasons.utcOffsetMinutes * 60) * 1000);
+  return `${d.getUTCFullYear()}/${d.getUTCMonth() + 1}/${d.getUTCDate()} ${d.getUTCHours()}:${pad(d.getUTCMinutes())}`;
 }
 
 function cachedBans(matchId: string): { p1: StageBans; p2: StageBans } | null {
@@ -228,7 +236,7 @@ export function MatchRoom({ matchId }: { matchId: string }) {
     return () => clearInterval(t);
   }, []);
 
-  const settlement = match ? settleMatch(match, reports, app.now(), def.report.deadlineSec, def.results.draw) : null;
+  const settlement = match ? settleMatch(match, reports, app.now(), matchDeadline(def, match.createdAt), def.results.draw) : null;
   const confirmed = settlement?.status === 'confirmed';
   // 確定したらレートと順位を読み直す
   useEffect(() => {
@@ -316,8 +324,13 @@ export function MatchRoom({ matchId }: { matchId: string }) {
         <IdentityBadge claims={app.identities[opponent]} pubkey={opponent} fetchFn={app.fetchFn} />
         <p className="meta">
           <span>マナーの目安（合計）: {app.view.mannersTotalOf(opponent)}</span>
-          <span data-testid="deadline">{formatDeadline(match.createdAt + def.report.deadlineSec, app.now())}</span>
+          <span data-testid="deadline">{formatDeadline(matchDeadline(def, match.createdAt), app.now())}</span>
         </p>
+        {matchDeadline(def, match.createdAt) < match.createdAt + def.report.deadlineSec && (
+          <p className="notice" data-testid="season-end-deadline">
+            この対戦の報告の締め切りはシーズンの終わり（{seasonDate(def, matchDeadline(def, match.createdAt))}）です。それまでに双方の報告がそろわないと、結果は確定しません。
+          </p>
+        )}
       </div>
 
       <div className="card">

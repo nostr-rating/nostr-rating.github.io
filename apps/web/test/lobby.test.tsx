@@ -81,13 +81,21 @@ describe('matches to go back to', () => {
 });
 
 describe('Lobby near the season end', () => {
-  test('does not start matches whose report deadline would fall after the season end', async () => {
+  test('can search in the last hour of the season', async () => {
     const end = 1_798_729_200; // シーズン1の終わり（2027-01-01 JST）
     const now = () => end - 3600;
     const relay = new MemoryRelay(now);
     const account = await userWithIdentity(relay, now);
     renderWithApp(<Lobby />, { deps: makeDeps({ relay, now }), account });
-    expect(await screen.findByText('シーズン 1 は 1/1 0:00 に終わります。結果報告の締め切りがシーズン内に収まらないため、新しい対戦はシーズン 2 から受け付けます。')).toBeTruthy();
+    await waitFor(() => expect((screen.getByRole('button', { name: '対戦相手を探す' }) as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  test('before the first season, says when it starts', async () => {
+    const now = () => 1_790_780_400 - 3600; // シーズン1の始まりの1時間前
+    const relay = new MemoryRelay(now);
+    const account = await userWithIdentity(relay, now);
+    renderWithApp(<Lobby />, { deps: makeDeps({ relay, now }), account });
+    expect(await screen.findByText('シーズン 1 は 10/1 0:00 に始まります。')).toBeTruthy();
     expect((screen.getByRole('button', { name: '対戦相手を探す' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

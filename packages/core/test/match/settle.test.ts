@@ -7,6 +7,7 @@ const B = 'b'.repeat(64);
 const C = 'c'.repeat(64);
 const T0 = 1000;
 const DL = 86400;
+const END = T0 + DL;
 
 const match: MatchRecord = {
   id: 'f'.repeat(64),
@@ -29,7 +30,7 @@ function rep(reporter: string, result: ReportResult, at: number): ResultReport {
 
 describe('settleMatch', () => {
   test('win/lose confirms at the agreeing report time', () => {
-    expect(settleMatch(match, [rep(A, 'win', T0 + 10), rep(B, 'lose', T0 + 20)], T0 + 30, DL)).toEqual({
+    expect(settleMatch(match, [rep(A, 'win', T0 + 10), rep(B, 'lose', T0 + 20)], T0 + 30, END)).toEqual({
       status: 'confirmed',
       winner: A,
       loser: B,
@@ -38,7 +39,7 @@ describe('settleMatch', () => {
   });
 
   test('input order does not matter', () => {
-    expect(settleMatch(match, [rep(B, 'win', T0 + 20), rep(A, 'lose', T0 + 10)], T0 + 30, DL)).toEqual({
+    expect(settleMatch(match, [rep(B, 'win', T0 + 20), rep(A, 'lose', T0 + 10)], T0 + 30, END)).toEqual({
       status: 'confirmed',
       winner: B,
       loser: A,
@@ -48,42 +49,42 @@ describe('settleMatch', () => {
 
   test('agreement is final even if a later report contradicts it', () => {
     const r = [rep(A, 'win', T0 + 10), rep(B, 'lose', T0 + 20), rep(B, 'win', T0 + 30)];
-    expect(settleMatch(match, r, T0 + DL + 1, DL)).toEqual({ status: 'confirmed', winner: A, loser: B, settledAt: T0 + 20 });
+    expect(settleMatch(match, r, T0 + DL + 1, END)).toEqual({ status: 'confirmed', winner: A, loser: B, settledAt: T0 + 20 });
   });
 
   test('backdated contradicting report cannot undo an agreement', () => {
     const r = [rep(B, 'lose', T0 + 100), rep(A, 'win', T0 + 200), rep(B, 'win', T0 + 150)];
-    expect(settleMatch(match, r, T0 + DL, DL)).toEqual({ status: 'confirmed', winner: A, loser: B, settledAt: T0 + 200 });
+    expect(settleMatch(match, r, T0 + DL, END)).toEqual({ status: 'confirmed', winner: A, loser: B, settledAt: T0 + 200 });
   });
 
   test('future-dated reports are ignored until their time', () => {
     const r = [rep(A, 'win', T0 + 10), rep(B, 'lose', T0 + 500)];
-    expect(settleMatch(match, r, T0 + 499, DL)).toEqual({ status: 'pending' });
-    expect(settleMatch(match, r, T0 + 500, DL)).toEqual({ status: 'confirmed', winner: A, loser: B, settledAt: T0 + 500 });
+    expect(settleMatch(match, r, T0 + 499, END)).toEqual({ status: 'pending' });
+    expect(settleMatch(match, r, T0 + 500, END)).toEqual({ status: 'confirmed', winner: A, loser: B, settledAt: T0 + 500 });
   });
 
   test('mismatch then correction before deadline confirms', () => {
     const r = [rep(A, 'win', T0 + 10), rep(B, 'win', T0 + 20), rep(B, 'lose', T0 + 40)];
-    expect(settleMatch(match, r, T0 + 50, DL)).toEqual({ status: 'confirmed', winner: A, loser: B, settledAt: T0 + 40 });
+    expect(settleMatch(match, r, T0 + 50, END)).toEqual({ status: 'confirmed', winner: A, loser: B, settledAt: T0 + 40 });
   });
 
   test('report after deadline is ignored', () => {
     const r = [rep(A, 'win', T0 + 10), rep(B, 'lose', T0 + DL + 1)];
-    expect(settleMatch(match, r, T0 + DL + 5, DL)).toEqual({ status: 'no_report', settledAt: T0 + DL, missing: [B] });
+    expect(settleMatch(match, r, T0 + DL + 5, END)).toEqual({ status: 'no_report', settledAt: T0 + DL, missing: [B] });
   });
 
   test('report exactly at deadline counts', () => {
     const r = [rep(A, 'win', T0 + 10), rep(B, 'lose', T0 + DL)];
-    expect(settleMatch(match, r, T0 + DL, DL)).toEqual({ status: 'confirmed', winner: A, loser: B, settledAt: T0 + DL });
+    expect(settleMatch(match, r, T0 + DL, END)).toEqual({ status: 'confirmed', winner: A, loser: B, settledAt: T0 + DL });
   });
 
   test('report before match creation is ignored', () => {
     const r = [rep(A, 'win', T0 - 1), rep(B, 'lose', T0 + 10)];
-    expect(settleMatch(match, r, T0 + DL, DL)).toEqual({ status: 'no_report', settledAt: T0 + DL, missing: [A] });
+    expect(settleMatch(match, r, T0 + DL, END)).toEqual({ status: 'no_report', settledAt: T0 + DL, missing: [A] });
   });
 
   test('only one side reported → no_report with missing=[other]', () => {
-    expect(settleMatch(match, [rep(B, 'lose', T0 + 5)], T0 + DL, DL)).toEqual({
+    expect(settleMatch(match, [rep(B, 'lose', T0 + 5)], T0 + DL, END)).toEqual({
       status: 'no_report',
       settledAt: T0 + DL,
       missing: [A],
@@ -91,36 +92,36 @@ describe('settleMatch', () => {
   });
 
   test('nobody reported → no_report with both missing', () => {
-    expect(settleMatch(match, [], T0 + DL, DL)).toEqual({ status: 'no_report', settledAt: T0 + DL, missing: [A, B] });
+    expect(settleMatch(match, [], T0 + DL, END)).toEqual({ status: 'no_report', settledAt: T0 + DL, missing: [A, B] });
   });
 
   test('cancel/cancel → cancelled early', () => {
-    expect(settleMatch(match, [rep(A, 'cancel', T0 + 5), rep(B, 'cancel', T0 + 7)], T0 + 8, DL)).toEqual({
+    expect(settleMatch(match, [rep(A, 'cancel', T0 + 5), rep(B, 'cancel', T0 + 7)], T0 + 8, END)).toEqual({
       status: 'cancelled',
       settledAt: T0 + 7,
     });
   });
 
   test('both reported but disagree at deadline → mismatch', () => {
-    expect(settleMatch(match, [rep(A, 'win', T0 + 5), rep(B, 'cancel', T0 + 7)], T0 + DL, DL)).toEqual({
+    expect(settleMatch(match, [rep(A, 'win', T0 + 5), rep(B, 'cancel', T0 + 7)], T0 + DL, END)).toEqual({
       status: 'mismatch',
       settledAt: T0 + DL,
     });
   });
 
   test('pending before deadline without agreement', () => {
-    expect(settleMatch(match, [rep(A, 'win', T0 + 5), rep(B, 'win', T0 + 7)], T0 + DL - 1, DL)).toEqual({ status: 'pending' });
+    expect(settleMatch(match, [rep(A, 'win', T0 + 5), rep(B, 'win', T0 + 7)], T0 + DL - 1, END)).toEqual({ status: 'pending' });
   });
 
   test('reports from third parties and other matches are ignored', () => {
     const other = { ...rep(B, 'lose', T0 + 5), matchId: 'e'.repeat(64) };
-    expect(settleMatch(match, [rep(A, 'win', T0 + 3), rep(C, 'lose', T0 + 4), other], T0 + 6, DL)).toEqual({ status: 'pending' });
+    expect(settleMatch(match, [rep(A, 'win', T0 + 3), rep(C, 'lose', T0 + 4), other], T0 + 6, END)).toEqual({ status: 'pending' });
   });
 
   test('same-second reports are ordered by id', () => {
     const r1 = { ...rep(B, 'win', T0 + 5), id: '0'.repeat(63) + '1' };
     const r2 = { ...rep(B, 'lose', T0 + 5), id: '0'.repeat(63) + '2' };
-    expect(settleMatch(match, [r2, rep(A, 'win', T0 + 1), r1], T0 + 6, DL)).toEqual({
+    expect(settleMatch(match, [r2, rep(A, 'win', T0 + 1), r1], T0 + 6, END)).toEqual({
       status: 'confirmed',
       winner: A,
       loser: B,
@@ -162,15 +163,15 @@ describe('mannersDelta', () => {
 
 describe('draws', () => {
   test('both reporting a draw settles as drawn when the game allows draws', () => {
-    expect(settleMatch(match, [rep(A, 'draw', T0 + 5), rep(B, 'draw', T0 + 7)], T0 + 8, DL, true)).toEqual({ status: 'drawn', settledAt: T0 + 7 });
+    expect(settleMatch(match, [rep(A, 'draw', T0 + 5), rep(B, 'draw', T0 + 7)], T0 + 8, END, true)).toEqual({ status: 'drawn', settledAt: T0 + 7 });
   });
 
   test('a draw against a win is a mismatch at the deadline', () => {
-    expect(settleMatch(match, [rep(A, 'draw', T0 + 5), rep(B, 'win', T0 + 7)], T0 + DL, DL, true)).toEqual({ status: 'mismatch', settledAt: T0 + DL });
+    expect(settleMatch(match, [rep(A, 'draw', T0 + 5), rep(B, 'win', T0 + 7)], T0 + DL, END, true)).toEqual({ status: 'mismatch', settledAt: T0 + DL });
   });
 
   test('draw reports are ignored in games without draws', () => {
-    expect(settleMatch(match, [rep(A, 'draw', T0 + 5), rep(B, 'draw', T0 + 7)], T0 + DL, DL, false)).toEqual({
+    expect(settleMatch(match, [rep(A, 'draw', T0 + 5), rep(B, 'draw', T0 + 7)], T0 + DL, END, false)).toEqual({
       status: 'no_report',
       settledAt: T0 + DL,
       missing: [A, B],

@@ -1,5 +1,6 @@
 import {
   acceptsNewMatches,
+  matchDeadline,
   allowedRange,
   currentSeason,
   buildSettings,
@@ -72,7 +73,7 @@ function useOpenMatches(): MatchRecord[] {
       const reps = await app.relay.query([{ kinds: [KIND.report], '#e': matches.map((m) => m.id) }]);
       const reports: ResultReport[] = await parseEach(app, reps, (e, by) => parseReport(app.def.id, e, by));
       const pending = matches
-        .filter((m) => settleMatch(m, reports.filter((r) => r.matchId === m.id), t, app.def.report.deadlineSec, app.def.results.draw).status === 'pending')
+        .filter((m) => settleMatch(m, reports.filter((r) => r.matchId === m.id), t, matchDeadline(app.def, m.createdAt), app.def.results.draw).status === 'pending')
         .sort((a, b) => b.createdAt - a.createdAt);
       if (!alive) return;
       setOpen(pending);
@@ -215,9 +216,7 @@ export function Lobby() {
         </div>
         {!window_.ok && (
           <p className="notice">
-            {window_.season
-              ? `シーズン ${window_.season.id} は ${seasonTime(def, window_.season.endsAt)} に終わります。結果報告の締め切りがシーズン内に収まらないため、新しい対戦はシーズン ${window_.next.id} から受け付けます。`
-              : `シーズン ${window_.next.id} は ${seasonTime(def, window_.next.startsAt)} に始まります。`}
+            シーズン {window_.next.id} は {seasonTime(def, window_.next.startsAt)} に始まります。
           </p>
         )}
         {!linked && (

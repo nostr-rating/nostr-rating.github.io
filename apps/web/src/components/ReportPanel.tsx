@@ -1,9 +1,9 @@
-import { settleMatch, type GameDefinition, type MatchRecord, type Pubkey, type ReportResult, type ResultReport } from '@nostr-rating/core';
+import { matchDeadline, settleMatch, type GameDefinition, type MatchRecord, type Pubkey, type ReportResult, type ResultReport } from '@nostr-rating/core';
 
 export const RESULT_LABEL: Record<ReportResult, string> = { win: '勝ち', lose: '負け', draw: '引き分け', cancel: '中止' };
 
 export function reportStatus(def: GameDefinition, match: MatchRecord, reports: ResultReport[], me: Pubkey, now: number): string {
-  const s = settleMatch(match, reports, now, def.report.deadlineSec, def.results.draw);
+  const s = settleMatch(match, reports, now, matchDeadline(def, match.createdAt), def.results.draw);
   switch (s.status) {
     case 'confirmed':
       return `結果が確定しました（${s.winner === me ? 'あなた' : '相手'}の勝ち）`;

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { banGroupKey, currentSeason, parseGameDefinition, seasonById, sideOf } from '../../src/game/definition.js';
+import { banGroupKey, currentSeason, matchDeadline, parseGameDefinition, seasonById, sideOf } from '../../src/game/definition.js';
 
 const rawJson = JSON.parse(readFileSync(resolve(__dirname, '../../../../configs/smash_sp.json'), 'utf8'));
 const def = parseGameDefinition(rawJson);
@@ -138,6 +138,13 @@ describe('seasons', () => {
     expect(currentSeason(def, 1798729200)?.id).toBe(2);
     expect(currentSeason(def, 1790780399)).toBeNull();
     expect(currentSeason(def, 2_000_000_000)?.id).toBe(27); // 2033-05-18 JST
+  });
+
+  test('the report deadline is 24 hours after the match, or the season end if that comes first', () => {
+    expect(matchDeadline(def, 1798729200 - 86400)).toBe(1798729200);
+    expect(matchDeadline(def, 1798729200 - 3600)).toBe(1798729200);
+    expect(matchDeadline(def, 1798729200 - 86401)).toBe(1798729200 - 1);
+    expect(matchDeadline(def, 1798729200)).toBe(1798729200 + 86400); // 次のシーズンの対戦
   });
 
   test('rejects a season definition whose start day may not exist in every month', () => {

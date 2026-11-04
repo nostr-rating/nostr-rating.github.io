@@ -246,7 +246,7 @@ rumor には `["p", "<相手の使い捨ての鍵>"]` と `["e", "<マッチの 
 - 申し込みの `recruiter` が p1 である
 - 申し込みの `firstFighter` と `settingsId` がマッチの `p2Fighter` と `p2SettingsId` に一致する
 - マッチの `created_at` が申し込みの `created_at` 以上で、その差が `matching.applicationTimeoutSec` 以下である
-- マッチの `created_at` がそのシーズンの開始以上で、締め切り（下の「結果の確定」）がそのシーズンの終わり以下である
+- マッチの `created_at` がそのシーズンの開始以上で、終わりより前である
 
 1つの申し込みに有効なマッチが複数あるときは、1つだけを使います。p2 が報告したマッチがあればそれを使い、それでも複数あれば id が最小のものを使います。マッチを出すのは p1 だけなので、p1 が出し直したマッチで結果を差し替えることはできません。
 
@@ -257,7 +257,7 @@ A(a) = m.\mathrm{p2} \;\land\; a.\mathrm{recruiter} = m.\mathrm{p1} = A(m) \;\la
 ```
 
 ```math
-0 \le t_m - t_a \le T_{\mathrm{app}}, \qquad s_{\mathrm{start}} \le t_m, \qquad t_m + D \le s_{\mathrm{end}}
+0 \le t_m - t_a \le T_{\mathrm{app}}, \qquad s_{\mathrm{start}} \le t_m < s_{\mathrm{end}}
 ```
 
 | 記号 | 意味 |
@@ -271,13 +271,12 @@ A(a) = m.\mathrm{p2} \;\land\; a.\mathrm{recruiter} = m.\mathrm{p1} = A(m) \;\la
 | $`t_m, t_a`$ | m と a の `created_at` |
 | $`T_{\mathrm{app}}`$ | `matching.applicationTimeoutSec` |
 | $`s_{\mathrm{start}}, s_{\mathrm{end}}`$ | そのシーズンの始まりと終わりの時刻 |
-| $`D`$ | `report.deadlineSec` |
 
 「p2 が報告したマッチ」の報告は、時刻の範囲を問いません。
 
 ## 結果の確定
 
-対戦の締め切りはマッチの `created_at` + `report.deadlineSec` です。
+対戦の締め切りはマッチの `created_at` + `report.deadlineSec` と、マッチの `created_at` が入るシーズンの終わりの、早いほうです。
 
 1. 当事者（p1 と p2）の報告のうち、`created_at` がマッチの作成時刻から締め切りまでのものを使います。
 2. 報告を `(created_at, id)` の昇順に見て、噛み合う組が初めてそろった時点で確定します。噛み合う組とは「一方の `win` と他方の `lose`」、「双方の `draw`」（引き分けのあるゲームだけ）、または「双方の `cancel`」です。組はその時点の最新の報告どうしではなく、それまでに出したすべての報告で判定します。
@@ -286,13 +285,14 @@ A(a) = m.\mathrm{p2} \;\land\; a.\mathrm{recruiter} = m.\mathrm{p1} = A(m) \;\la
 締め切りと、確定に使う報告を式で書くと次のとおりです。
 
 ```math
-T_d = t_m + D, \qquad R_m = \{\, r \mid \mathrm{target}(r) = m,\; A(r) \in \{m.\mathrm{p1}, m.\mathrm{p2}\},\; t_m \le t_r \le T_d \,\}
+T_d = \min(t_m + D,\; s_{\mathrm{end}}), \qquad R_m = \{\, r \mid \mathrm{target}(r) = m,\; A(r) \in \{m.\mathrm{p1}, m.\mathrm{p2}\},\; t_m \le t_r \le T_d \,\}
 ```
 
 | 記号 | 意味 |
 |---|---|
 | $`m, t_m`$ | マッチ成立のイベントと、その `created_at` |
 | $`D`$ | `report.deadlineSec` |
+| $`s_{\mathrm{end}}`$ | $`t_m`$ が入るシーズンの終わりの時刻 |
 | $`T_d`$ | m の締め切りの時刻 |
 | $`r`$ | 結果報告のイベント（kind 3754） |
 | $`\mathrm{target}(r)`$ | r の `e` タグが指すマッチ |
@@ -446,7 +446,8 @@ y \leftarrow \mathrm{round6}\big(y + w\,(y' - y)\big) \qquad (y \in \{r, \mathrm
 
 シーズンは `seasons` の起点（`firstStartsAt`）から、`months` か月ごとに区切ります。月は `utcOffsetMinutes` の時差での暦の月で数え、id は 1 から順に振ります。一覧ではないので、誰も更新しなくてもシーズンは続きます。
 
-- 締め切りがシーズンの終わりを越える対戦は、どのシーズンでも数えません。クライアントは、シーズンの終わりまでの残りが `report.deadlineSec` より短いときは、新しい対戦を始めません。
+- 対戦は、マッチの `created_at` が入るシーズンで数えます。締め切りはシーズンの終わりで切るので（「結果の確定」）、シーズンの終わりまでに組がそろわなかった対戦は、ほかの対戦と同じく未報告か食い違いになります。
+- シーズンの終わりの直前でも、新しい対戦を始められます（[ADR 0012](adr/0012-season-end-deadline.md)）。クライアントは、締め切りがシーズンの終わりで切られる対戦では、そのことを対戦ルームに出します。
 - 新しいシーズンは全員が初期値から始まります。前のシーズンの成績は最終スナップショットのシーズンの部品に残ります。
 - クライアントは、手元のスナップショットが前のシーズンのものなら、今のシーズンを初期値から始め、シーズンの成績だけを引き継ぎます。
 

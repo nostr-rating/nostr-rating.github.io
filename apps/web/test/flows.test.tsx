@@ -102,6 +102,21 @@ describe('match room', () => {
     renderWithApp(<MatchRoom matchId={m.id} />, { deps: makeDeps({ relay, now: realNow }), account: b.account });
     await waitFor(() => expect(screen.getByTestId('excluded-stages').textContent).toBe('除外: 終点（相手の拒否）'));
     expect(screen.getByTestId('deadline').textContent).toMatch(/^報告の締め切り: \d{1,2}\/\d{1,2} \d{2}:\d{2}（あと 23時間\d+分）$/);
+    expect(screen.queryByTestId('season-end-deadline')).toBeNull();
+  });
+
+  test('near the season end, the deadline is the season end and the room warns about it', async () => {
+    const end = 1_798_729_200; // シーズン1の終わり（2027-01-01 JST）
+    const now = () => end - 3600;
+    const relay = new MemoryRelay(now);
+    const a = await newPlayer(relay, now, { name: 'alice', claims: [{ platform: 'github', identity: 'alice', proof: 'aaa1' }] });
+    const b = await newPlayer(relay, now, { name: 'bob', claims: [{ platform: 'github', identity: 'bob', proof: 'bbb1' }] });
+    const m = await matchBetween(relay, a, b, { at: end - 3600 - 30 });
+    renderWithApp(<MatchRoom matchId={m.id} />, { deps: makeDeps({ relay, now }), account: b.account });
+    expect((await screen.findByTestId('season-end-deadline')).textContent).toBe(
+      'この対戦の報告の締め切りはシーズンの終わり（2027/1/1 0:00）です。それまでに双方の報告がそろわないと、結果は確定しません。',
+    );
+    expect(screen.getByTestId('deadline').textContent).toMatch(/^報告の締め切り: \d{1,2}\/\d{1,2} \d{2}:\d{2}（あと 1時間0分）$/);
   });
 });
 

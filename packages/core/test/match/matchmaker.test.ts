@@ -239,8 +239,21 @@ describe('Matchmaker', () => {
     expect(await Promise.all([pa, pb])).toEqual(['AbortError', 'AbortError']);
   });
 
-  test('refuses to search when the report deadline would fall after the season end', async () => {
+  test('searches in the last hour of the season', async () => {
     vi.setSystemTime(new Date((1_798_729_200 - 3600) * 1000)); // シーズン1の終わりの1時間前
+    const relay = new MemoryRelay(now);
+    const a = maker(relay);
+    const ctrl = new AbortController();
+    const pa = a.mm.search(params('mario'), ctrl.signal).catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(relay.all().filter((e) => e.kind === KIND.recruitment)).toHaveLength(1);
+    ctrl.abort();
+    await vi.advanceTimersByTimeAsync(2000);
+    await pa;
+  });
+
+  test('refuses to search before the first season starts', async () => {
+    vi.setSystemTime(new Date((1_790_780_400 - 3600) * 1000)); // シーズン1の始まりの1時間前
     const relay = new MemoryRelay(now);
     const a = maker(relay);
     await expect(a.mm.search(params('mario'), new AbortController().signal)).rejects.toThrow(

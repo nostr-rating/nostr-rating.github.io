@@ -252,14 +252,19 @@ function boundary(def: GameDefinition, k: number): number {
   return t / 1000 - off;
 }
 
+/** 今、新しい対戦を始められるか（シーズンが始まっているか）。受け付けないときは最初のシーズンを返す */
+export function acceptsNewMatches(def: GameDefinition, now: number): { ok: true } | { ok: false; next: Season } {
+  return currentSeason(def, now) ? { ok: true } : { ok: false, next: seasonById(def, 1) };
+}
+
 /**
- * 今から始めた対戦の締め切りが、今のシーズンに収まるか（収まらない対戦はどのシーズンでも数えない）。
- * 受け付けないときは理由に使うシーズンを返す。
+ * 対戦の報告の締め切り（docs/spec.md「結果の確定」）。作成から deadlineSec 後か、
+ * 作成した時刻のシーズンの終わりの早いほう
  */
-export function acceptsNewMatches(def: GameDefinition, now: number): { ok: true } | { ok: false; season: Season | null; next: Season } {
-  const season = currentSeason(def, now);
-  if (season && now + def.report.deadlineSec <= season.endsAt) return { ok: true };
-  return { ok: false, season, next: seasonById(def, season ? season.id + 1 : 1) };
+export function matchDeadline(def: GameDefinition, createdAt: number): number {
+  const end = createdAt + def.report.deadlineSec;
+  const season = currentSeason(def, createdAt);
+  return season ? Math.min(end, season.endsAt) : end;
 }
 
 /** シーズン id は 1 から */
