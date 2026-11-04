@@ -2,6 +2,12 @@ import type { EventTemplate, NostrEvent, Pubkey } from '@nostr-rating/core';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { BunkerSigner, parseBunkerInput, type BunkerPointer } from 'nostr-tools/nip46';
 import { generateSecretKey } from 'nostr-tools/pure';
+import { messages, tr } from '../i18n.js';
+
+const M = messages({
+  ja: { noNip07: 'ブラウザ拡張（NIP-07）が見つかりません' },
+  en: { noNip07: 'No browser extension (NIP-07) was found' },
+});
 
 /**
  * 端末の鍵として使う署名アプリ（docs/adr/0008「鍵の役割」）。鍵はアプリの外にあり、
@@ -30,7 +36,7 @@ const bunkers = new Map<string, Promise<BunkerSigner>>();
 export async function externalSigner(ext: ExternalDevice): Promise<ExternalSigner> {
   if (ext.kind === 'nip07') {
     const n = typeof window !== 'undefined' ? window.nostr : undefined;
-    if (!n) throw new Error('ブラウザ拡張（NIP-07）が見つかりません');
+    if (!n) throw new Error(tr(M).noNip07);
     return { getPublicKey: () => n.getPublicKey(), signEvent: (t) => n.signEvent(t) };
   }
   let signer = bunkers.get(ext.clientSk);

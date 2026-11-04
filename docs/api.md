@@ -1,3 +1,5 @@
+[English](api.en.md)
+
 # 公開 API
 
 ほかのサイトやツールから、Nostr-Rating の確定レートを読むための API です。サーバーはなく、毎日のスナップショットから作った静的な JSON ファイルを GitHub Pages で配っています。
@@ -18,8 +20,8 @@ GitHub Pages は `Access-Control-Allow-Origin: *` を返すので、ブラウザ
 
 | パス | 中身 |
 |---|---|
-| `index.json` | ゲームの一覧。`{"games": [{id, name, season, players, snapshot}, …]}` |
-| `<ゲーム>/index.json` | そのゲームの `game`（`id` と `name`）、元にしたスナップショット（`snapshot`）、シーズン、選手の数 |
+| `index.json` | ゲームの一覧。`{"games": [{id, name, names, season, players, snapshot}, …]}` |
+| `<ゲーム>/index.json` | そのゲームの `game`（`id`、`name`、`names`）、元にしたスナップショット（`snapshot`）、シーズン、選手の数 |
 | `<ゲーム>/players/<aid>.json` | 選手1人分（下の「選手の項目」） |
 | `<ゲーム>/by/x/<ユーザー名>.json` | X のユーザー名から引く。`{"players": [選手, …]}` |
 | `<ゲーム>/by/github/<ユーザー名>.json` | GitHub のユーザー名から引く。形は上と同じ |
@@ -31,12 +33,13 @@ GitHub Pages は `Access-Control-Allow-Origin: *` を返すので、ブラウザ
 - `by/` には、投稿や Gist を確かめられた紐づけだけが載ります。確かめた結果は7日間使い回すので、投稿や Gist を消しても、しばらくは載ったままです。
 - 同じ外部アカウントを複数のアカウントに紐づけた人は、`players` に対戦数の多い順ですべて入ります。
 - 見つからないときは 404 が返ります。
+- `name` は前からある項目で、日本語の名前です。ほかの言語の名前は `names` を使ってください。
 
 ## 選手の項目
 
 | 項目 | 内容 |
 |---|---|
-| `game` | ゲームの `id` と `name` |
+| `game` | ゲームの `id`、`name`（日本語の名前）、`names`（言語ごとの名前。`{"ja": "…", "en": "…"}`） |
 | `aid` | アカウントの識別子 |
 | `name` | 表示名（本人が決めた値） |
 | `season` | シーズンの番号 |

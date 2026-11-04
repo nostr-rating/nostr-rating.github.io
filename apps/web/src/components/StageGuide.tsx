@@ -14,7 +14,51 @@ import {
   type StageId,
 } from '@nostr-rating/core';
 import { useEffect, useId, useState } from 'react';
+import { messages, useT, useText } from '../i18n.js';
 import { Dock } from './Dock.js';
+
+const M = messages({
+  ja: {
+    pickBoth: (n: number) => `${n}戦目: お互いが選び、ゲーム内の抽選に従います`,
+    pickMe: (n: number) => `${n}戦目: あなたが選びます（相手は「おまかせ」）`,
+    pickOpponent: (n: number) => `${n}戦目: 相手が選びます（あなたは「おまかせ」）`,
+    title: 'ステージ案内',
+    fighters: (me: string, other: string) => `あなた: ${me} ／ 相手: ${other}`,
+    excluded: '除外: ',
+    none: 'なし',
+    bannedBy: (stage: string, mine: boolean) => `${stage}（${mine ? 'あなた' : '相手'}の拒否）`,
+    sep: '・',
+    changeFighter: 'キャラを変える',
+    changeFromGame2: '2戦目からは、直前の敗者だけがキャラを変えられます。',
+    onlyLoser: '変えられるのは直前の敗者だけです。',
+    opponentFighter: '相手のキャラ',
+    opponentChanged: '相手がキャラを変えたら、ここで選び直してください。',
+    iWon: (n: number) => `${n}戦目: あなたの勝ち`,
+    theyWon: (n: number) => `${n}戦目: 相手の勝ち`,
+    setOver: (iWon: boolean) => `${iWon ? 'あなたが2本先取しました。' : '相手が2本先取しました。'}結果を報告してください。`,
+    undo: '1つ前に戻す',
+  },
+  en: {
+    pickBoth: (n: number) => `Game ${n}: both players pick, and the in-game random draw decides`,
+    pickMe: (n: number) => `Game ${n}: you pick (your opponent chooses "Random")`,
+    pickOpponent: (n: number) => `Game ${n}: your opponent picks (you choose "Random")`,
+    title: 'Stage guide',
+    fighters: (me: string, other: string) => `You: ${me} / Opponent: ${other}`,
+    excluded: 'Excluded: ',
+    none: 'None',
+    bannedBy: (stage: string, mine: boolean) => `${stage} (${mine ? 'your' : "opponent's"} ban)`,
+    sep: ', ',
+    changeFighter: 'Change fighter',
+    changeFromGame2: 'From game 2, only the loser of the previous game can change fighters.',
+    onlyLoser: 'Only the loser of the previous game can change fighters.',
+    opponentFighter: "Opponent's fighter",
+    opponentChanged: 'If your opponent changes fighters, select the new one here.',
+    iWon: (n: number) => `Game ${n}: you won`,
+    theyWon: (n: number) => `Game ${n}: opponent won`,
+    setOver: (iWon: boolean) => `${iWon ? 'You won 2 games.' : 'Your opponent won 2 games.'} Please report the result.`,
+    undo: 'Undo last game',
+  },
+});
 
 const key = (matchId: string) => `nostr-rating:set:${matchId}`;
 
@@ -56,6 +100,8 @@ export function StageGuide(props: {
   onSetChange?: (s: SetState) => void;
 }) {
   const { def, match, me, bans } = props;
+  const t = useT(M);
+  const text = useText();
   const id = useId();
   const [set, setSet] = useState<SetState>(() => loadSet(match));
   const [error, setError] = useState<string | null>(null);
@@ -77,18 +123,20 @@ export function StageGuide(props: {
   // ステージとキャラのあるゲームでだけ表示する（MatchRoom が確かめる）
   const stages = def.stages!;
   const characters = def.characters!;
-  const stageName = (s: string) => stages.all.find((x) => x.id === s)?.name ?? s;
-  const fighterName = (f: string) => characters.list.find((x) => x.id === f)?.name ?? f;
+  const stageName = (s: string) => {
+    const st = stages.all.find((x) => x.id === s);
+    return st ? text(st.name) : s;
+  };
+  const fighterName = (f: string) => {
+    const c = characters.list.find((x) => x.id === f);
+    return c ? text(c.name) : f;
+  };
   const lastLoser: Side | null = set.games.length > 0 ? (set.games.at(-1)!.winner === 'p1' ? 'p2' : 'p1') : null;
   const fighterOf = (side: Side) => (side === 'p1' ? set.p1Fighter : set.p2Fighter);
   const excluded = excludedStages(def, set, bans, me);
 
   const pickerText =
-    opts.picker === 'both'
-      ? `${gameNo}戦目: お互いが選び、ゲーム内の抽選に従います`
-      : opts.picker === me
-        ? `${gameNo}戦目: あなたが選びます（相手は「おまかせ」）`
-        : `${gameNo}戦目: 相手が選びます（あなたは「おまかせ」）`;
+    opts.picker === 'both' ? t.pickBoth(gameNo) : opts.picker === me ? t.pickMe(gameNo) : t.pickOpponent(gameNo);
 
   const apply = (f: () => SetState) => {
     try {
@@ -104,7 +152,7 @@ export function StageGuide(props: {
       <label htmlFor={`${id}-${side}`}>{label}</label>
       <select id={`${id}-${side}`} value={fighterOf(side)} disabled={disabled} onChange={(e) => apply(() => changeFighter(def, set, side, e.target.value))}>
         {characters.list.map((f) => (
-          <option key={f.id} value={f.id}>{f.name}</option>
+          <option key={f.id} value={f.id}>{text(f.name)}</option>
         ))}
       </select>
       <p className="hint">{hint}</p>
@@ -113,31 +161,30 @@ export function StageGuide(props: {
 
   return (
     <div className="card">
-      <h3>ステージ案内</h3>
-      <p className="muted">
-        あなた: {fighterName(fighterOf(me))} ／ 相手: {fighterName(fighterOf(other))}
-      </p>
+      <h3>{t.title}</h3>
+      <p className="muted">{t.fighters(fighterName(fighterOf(me)), fighterName(fighterOf(other)))}</p>
       {winner === null ? (
         <>
           <p data-testid="stage-picker">{pickerText}</p>
-          <p data-testid="stage-options">{opts.stages.map(stageName).join('・')}</p>
+          <p data-testid="stage-options">{opts.stages.map(stageName).join(t.sep)}</p>
           <p className="muted" data-testid="excluded-stages">
-            除外: {excluded.length === 0 ? 'なし' : excluded.map((e) => `${stageName(e.stage)}（${e.by === 'me' ? 'あなた' : '相手'}の拒否）`).join('・')}
+            {t.excluded}
+            {excluded.length === 0 ? t.none : excluded.map((e) => t.bannedBy(stageName(e.stage), e.by === 'me')).join(t.sep)}
           </p>
           {/* キャラの欄は1戦目から出しておき（1戦目は変えられない）、2戦目に入っても下の要素を動かさない */}
-          {lastLoser === null && fighterSelect(me, 'キャラを変える', '2戦目からは、直前の敗者だけがキャラを変えられます。', true)}
-          {lastLoser === me && fighterSelect(me, 'キャラを変える', '変えられるのは直前の敗者だけです。')}
-          {lastLoser === other && fighterSelect(other, '相手のキャラ', '相手がキャラを変えたら、ここで選び直してください。')}
+          {lastLoser === null && fighterSelect(me, t.changeFighter, t.changeFromGame2, true)}
+          {lastLoser === me && fighterSelect(me, t.changeFighter, t.onlyLoser)}
+          {lastLoser === other && fighterSelect(other, t.opponentFighter, t.opponentChanged)}
           <div className="choices game-result">
-            <button type="button" onClick={() => apply(() => recordGame(def, set, me))}>{gameNo}戦目: あなたの勝ち</button>
-            <button type="button" onClick={() => apply(() => recordGame(def, set, other))}>{gameNo}戦目: 相手の勝ち</button>
+            <button type="button" onClick={() => apply(() => recordGame(def, set, me))}>{t.iWon(gameNo)}</button>
+            <button type="button" onClick={() => apply(() => recordGame(def, set, other))}>{t.theyWon(gameNo)}</button>
           </div>
         </>
       ) : (
-        <p>{winner === me ? 'あなたが2本先取しました。' : '相手が2本先取しました。'}結果を報告してください。</p>
+        <p>{t.setOver(winner === me)}</p>
       )}
       <button type="button" className="text" disabled={set.games.length === 0} onClick={() => apply(() => undoGame(set))}>
-        1つ前に戻す
+        {t.undo}
       </button>
       {error && (
         <Dock>

@@ -23,6 +23,7 @@ import {
 } from '@nostr-rating/core';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Account, type KeyStore } from '../account/account.js';
+import { messages, tr } from '../i18n.js';
 import { AUTHORS_CHUNK, Resolver } from '../account/resolver.js';
 import { rememberedGame, rememberGame } from '../services/config.js';
 import { coalesce } from '../services/coalesce.js';
@@ -30,6 +31,18 @@ import { lobbySummary, loadLastView, saveLastView, type LobbySummary } from '../
 import { fetchLatest, type ClientSnapshot } from '../services/snapshot.js';
 import { syncRatings } from '../services/sync.js';
 import type { EventStore } from '../storage/types.js';
+
+/** 文言は表示に出した時点の言語で作る（言語を切り替えても、出ている知らせはそのまま） */
+const M = messages({
+  ja: {
+    deviceRevoked: 'この端末の登録は取り消されたか、期限が切れています。ほかの端末から登録し直すか、復活の言葉で復元してください。',
+    searchFailed: (reason: string) => `マッチングに失敗しました: ${reason}`,
+  },
+  en: {
+    deviceRevoked: 'This device registration was revoked or has expired. Register it again from another device, or restore your account with your recovery words.',
+    searchFailed: (reason: string) => `Matchmaking failed: ${reason}`,
+  },
+});
 
 export interface AppDeps {
   /** 選べるゲーム（一覧の順） */
@@ -174,7 +187,7 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     setUnknownDevices(a.unknownDevices);
     if (!a.active) {
       setSession(null);
-      setAccountError('この端末の登録は取り消されたか、期限が切れています。ほかの端末から登録し直すか、復活の言葉で復元してください。');
+      setAccountError(tr(M).deviceRevoked);
       return;
     }
     const s = await a.session();
@@ -385,7 +398,7 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
         const aborted = e instanceof Error && e.name === 'AbortError';
         // やめたあとに新しい検索が始まっていれば、その状態を上書きしない
         if (aborted && abortRef.current !== ctrl) return null;
-        setSearch({ waitingSince: null, busy: false, error: aborted ? null : `マッチングに失敗しました: ${e instanceof Error ? e.message : String(e)}` });
+        setSearch({ waitingSince: null, busy: false, error: aborted ? null : tr(M).searchFailed(e instanceof Error ? e.message : String(e)) });
         return null;
       } finally {
         if (abortRef.current === ctrl) abortRef.current = null;

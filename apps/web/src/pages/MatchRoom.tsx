@@ -26,30 +26,128 @@ import {
   type StageBans,
   type Signer,
 } from '@nostr-rating/core';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { ChatPanel, type ChatLine } from '../components/ChatPanel.js';
 import { CopyButton } from '../components/CopyButton.js';
 import { Dock } from '../components/Dock.js';
 import { IdentityBadge } from '../components/IdentityBadge.js';
 import { latestReports, ReportPanel, reportStatus, resultSent } from '../components/ReportPanel.js';
 import { StageGuide } from '../components/StageGuide.js';
+import { messages, tr, useT, useText } from '../i18n.js';
 import { defaultRoomPassword } from '../services/config.js';
 import { displayName, parseEach, useApp } from '../state/AppContext.js';
 
 /** NIP-17 は gift wrap の時刻を最大2日前までずらすので、その分さかのぼって購読する */
 const WRAP_LOOKBACK_SEC = 2 * 24 * 3600 + 600;
-const SEND_FAILED = '送れませんでした。電波のよい場所でもう一度押してください。';
 /** 申し込みを読み込めなかったときに読み直すまでの間 */
 const LINK_RETRY_MS = 5000;
-const PAST_DEADLINE = '報告の締め切りを過ぎたため、送れませんでした。';
 const bansKey = (matchId: string) => `nostr-rating:bans:${matchId}`;
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
+const M = messages({
+  ja: {
+    sendFailed: '送れませんでした。電波のよい場所でもう一度押してください。',
+    pastDeadline: '報告の締め切りを過ぎたため、送れませんでした。',
+    deadline: (date: string, h: number, m: number) => `報告の締め切り: ${date}（あと ${h}時間${m}分）`,
+    notFound: '対戦が見つかりませんでした。電波の状態を確かめてください。',
+    reload: 'もう一度読み込む',
+    backToLobby: 'ロビーに戻る',
+    loading: '対戦を読み込み中…',
+    notLinked: 'この対戦は有効ではありません。あなたの申し込みに応えた対戦であることを確かめられませんでした。',
+    notParticipant: 'この対戦の参加者ではありません。',
+    linkRetry: '申し込みを読み込めませんでした。読み込み直しています…',
+    single: '1本勝負',
+    firstTo: (n: number) => `${n}本先取`,
+    sep: ' ／ ',
+    noteSep: '・',
+    roomRules: (entry: string, players: number) => `入室制限「${entry}」 ／ 部屋の人数 ${players}人`,
+    title: '対戦ルーム',
+    opponent: '相手',
+    rating: (r: string) => `　レート ${r}`,
+    manners: (n: number) => `マナーの目安（合計）: ${n}`,
+    seasonEnd: (date: string) => `この対戦の報告の締め切りはシーズンの終わり（${date}）です。それまでに双方の報告がそろわないと、結果は確定しません。`,
+    roomTitle: '専用部屋',
+    linkTitle: '対局の場所',
+    mySide: (mine: string, theirs: string) => `あなたは「${mine}」です（相手は「${theirs}」）。`,
+    hostRoom: 'あなたが部屋を立てます。次のパスワードで専用部屋を作り、部屋 ID とパスワードを送ってください。',
+    password: 'パスワード',
+    passwordHint: (min: number, max: number) => `数字${min}〜${max}桁。ゲームで別のパスワードにしたときは書き換えてください。`,
+    roomId: '部屋 ID',
+    sendRoom: '部屋 ID とパスワードを送る',
+    roomSent: (id: string, pw: string) => `送信済み: 部屋 ID ${id}・パスワード ${pw}`,
+    roomArrived: '相手から部屋 ID とパスワードが届きました。',
+    waitingRoom: '相手が部屋を立てるのを待っています…',
+    copy: 'コピー',
+    hostLink: 'あなたが対局を用意します。双方の使えるオンラインの対局サービスで相手を招待するリンクを作り、送ってください。',
+    inviteLink: '招待リンク',
+    linkHint: 'https:// で始まるリンクだけを送れます。',
+    sendLink: '招待リンクを送る',
+    linkSent: (host: string) => `送信済み: ${host}`,
+    linkArrived: (host: ReactNode) => (
+      <>相手から招待リンクが届きました。リンク先は {host} です。知らないサービスなら開かず、チャットで確かめてください。</>
+    ),
+    openLink: '招待リンクを開く',
+    waitingLink: '相手が対局を用意するのを待っています…',
+    chatNoteRoom: '部屋 ID とパスワードは上の「専用部屋」の欄から送ってください。',
+    chatNoteLink: '招待リンクは上の「対局の場所」の欄から送ってください。チャットに貼ったリンクは、アプリがリンク先を確かめません。',
+    bansMissing: '拒否ステージを読み込めなかったため、拒否なしで案内しています。相手と確認してください。',
+  },
+  en: {
+    sendFailed: 'Could not send. Move to a place with a better connection and try again.',
+    pastDeadline: 'Could not send because the report deadline has passed.',
+    deadline: (date: string, h: number, m: number) => `Report deadline: ${date} (${h}h ${m}m left)`,
+    notFound: 'The match was not found. Check your connection.',
+    reload: 'Reload',
+    backToLobby: 'Back to Lobby',
+    loading: 'Loading the match…',
+    notLinked: 'This match is not valid. It could not be confirmed that it answers your join request.',
+    notParticipant: 'You are not a player in this match.',
+    linkRetry: 'Could not load the join request. Retrying…',
+    single: 'Single game',
+    firstTo: (n: number) => `First to ${n} wins`,
+    sep: ' / ',
+    noteSep: ', ',
+    roomRules: (entry: string, players: number) => `Entry: "${entry}" / Room size: ${players} players`,
+    title: 'Match room',
+    opponent: 'Opponent',
+    rating: (r: string) => ` Rating ${r}`,
+    manners: (n: number) => `Manners (total): ${n}`,
+    seasonEnd: (date: string) => `The report deadline for this match is the end of the season (${date}). If both reports are not in by then, the result will not become final.`,
+    roomTitle: 'Private room',
+    linkTitle: 'Where to play',
+    mySide: (mine: string, theirs: string) => `You are "${mine}" (your opponent is "${theirs}").`,
+    hostRoom: 'You host the room. Create a private room with the password below, then send the room ID and password.',
+    password: 'Password',
+    passwordHint: (min: number, max: number) => `${min}–${max} digits. If you set a different password in the game, change it here.`,
+    roomId: 'Room ID',
+    sendRoom: 'Send room ID and password',
+    roomSent: (id: string, pw: string) => `Sent: room ID ${id}, password ${pw}`,
+    roomArrived: 'Your opponent sent the room ID and password.',
+    waitingRoom: 'Waiting for your opponent to host the room…',
+    copy: 'Copy',
+    hostLink: 'You set up the game. Create an invite link for your opponent on an online service you can both use, and send it.',
+    inviteLink: 'Invite link',
+    linkHint: 'Only links that start with https:// can be sent.',
+    sendLink: 'Send invite link',
+    linkSent: (host: string) => `Sent: ${host}`,
+    linkArrived: (host: ReactNode) => (
+      <>Your opponent sent an invite link. It goes to {host}. If you do not know the site, do not open it; ask in the chat first.</>
+    ),
+    openLink: 'Open invite link',
+    waitingLink: 'Waiting for your opponent to set up the game…',
+    chatNoteRoom: 'Send the room ID and password from the "Private room" section above.',
+    chatNoteLink: 'Send the invite link from the "Where to play" section above. The app does not check links pasted into the chat.',
+    bansMissing: 'Could not load the stage bans, so the guide shows no bans. Check with your opponent.',
+  },
+});
+
+type SendError = 'sendFailed' | 'pastDeadline';
+
 function formatDeadline(deadline: number, now: number): string {
   const d = new Date(deadline * 1000);
   const left = Math.max(0, deadline - now);
-  return `報告の締め切り: ${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}（あと ${Math.floor(left / 3600)}時間${Math.floor((left % 3600) / 60)}分）`;
+  return tr(M).deadline(`${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`, Math.floor(left / 3600), Math.floor((left % 3600) / 60));
 }
 
 /** シーズンの区切りは、ゲームの定義の時差で表す（ロビーのシーズンの表示と同じ） */
@@ -76,6 +174,8 @@ async function sessionSignerFor(signers: Signer[], pk: string): Promise<Signer |
 export function MatchRoom({ matchId }: { matchId: string }) {
   const app = useApp();
   const { def } = app;
+  const t = useT(M);
+  const text = useText();
   const id = useId();
   const [match, setMatch] = useState<MatchRecord | null>(app.activeMatch?.id === matchId ? app.activeMatch : null);
   const [bans, setBans] = useState<{ p1: StageBans; p2: StageBans } | null>(() => cachedBans(matchId));
@@ -88,7 +188,7 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   const [reports, setReports] = useState<ResultReport[]>([]);
   const [set, setSet] = useState<SetState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [sendError, setSendError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<SendError | null>(null);
   const [busy, setBusy] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [linked, setLinked] = useState<boolean | null>(null);
@@ -273,29 +373,29 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   if (notFound) {
     return (
       <div className="card">
-        <p className="error">対戦が見つかりませんでした。電波の状態を確かめてください。</p>
+        <p className="error">{t.notFound}</p>
         <div className="actions">
-          <button type="button" className="primary" onClick={() => setNotFound(false)}>もう一度読み込む</button>
-          <a className="button" href="#/lobby">ロビーに戻る</a>
+          <button type="button" className="primary" onClick={() => setNotFound(false)}>{t.reload}</button>
+          <a className="button" href="#/lobby">{t.backToLobby}</a>
         </div>
       </div>
     );
   }
-  if (!match || !me) return <p className="loading">対戦を読み込み中…</p>;
+  if (!match || !me) return <p className="loading">{t.loading}</p>;
   if (linked === false) {
     return (
       <div className="card">
-        <p className="error">この対戦は有効ではありません。あなたの申し込みに応えた対戦であることを確かめられませんでした。</p>
-        <a className="button" href="#/lobby">ロビーに戻る</a>
+        <p className="error">{t.notLinked}</p>
+        <a className="button" href="#/lobby">{t.backToLobby}</a>
       </div>
     );
   }
-  if (!side || !opponent || !app.signer) return <p className="error">この対戦の参加者ではありません。</p>;
+  if (!side || !opponent || !app.signer) return <p className="error">{t.notParticipant}</p>;
   const signer = app.signer;
   if (!mySessionPk || !opponentSession || mySide === null) {
     return (
       <p className="loading" role="status">
-        {linkFailures > 0 && linked === null ? '申し込みを読み込めませんでした。読み込み直しています…' : '対戦を読み込み中…'}
+        {linkFailures > 0 && linked === null ? t.linkRetry : t.loading}
       </p>
     );
   }
@@ -307,7 +407,7 @@ export function MatchRoom({ matchId }: { matchId: string }) {
     try {
       await f();
     } catch {
-      setSendError(SEND_FAILED);
+      setSendError('sendFailed');
     } finally {
       setBusy(false);
     }
@@ -315,17 +415,17 @@ export function MatchRoom({ matchId }: { matchId: string }) {
 
   const send = (msg: RoomMessage) =>
     guarded(async () => {
-      const t = app.now();
+      const at = app.now();
       const s = await sealSigner;
       if (!s) throw new Error('no session key for this match');
-      await app.relay.publish(await wrapRoomMessage(s, opponentSession, match.id, msg, t));
-      await app.relay.publish(await wrapRoomMessage(s, mySessionPk, match.id, msg, t, opponentSession));
+      await app.relay.publish(await wrapRoomMessage(s, opponentSession, match.id, msg, at));
+      await app.relay.publish(await wrapRoomMessage(s, mySessionPk, match.id, msg, at, opponentSession));
     });
 
   const report = async (result: ReportResult) => {
     // 確認のダイアログを開いたまま締め切りをまたぐと、送っても数えられない
     if (app.now() > matchDeadline(def, match.createdAt)) {
-      setSendError(PAST_DEADLINE);
+      setSendError('pastDeadline');
       setTick((n) => n + 1);
       return;
     }
@@ -342,54 +442,54 @@ export function MatchRoom({ matchId }: { matchId: string }) {
 
   const format = (
     <p className="muted" data-testid="room-format">
-      {def.format.bestOf === 1 ? '1本勝負' : `${Math.ceil(def.format.bestOf / 2)}本先取`}
-      {def.format.notes.length > 0 ? ` ／ ${def.format.notes.join('・')}` : ''}
-      {def.room.kind === 'code' ? ` ／ 入室制限「${def.room.entryRestriction}」 ／ 部屋の人数 ${def.room.maxPlayers}人` : ''}
+      {def.format.bestOf === 1 ? t.single : t.firstTo(Math.ceil(def.format.bestOf / 2))}
+      {def.format.notes.length > 0 ? `${t.sep}${def.format.notes.map(text).join(t.noteSep)}` : ''}
+      {def.room.kind === 'code' ? `${t.sep}${t.roomRules(text(def.room.entryRestriction), def.room.maxPlayers)}` : ''}
     </p>
   );
 
   return (
     <section>
       <div className="card">
-        <h2>対戦ルーム</h2>
+        <h2>{t.title}</h2>
         <div className="opponent">
-          <span className="muted">相手</span>
+          <span className="muted">{t.opponent}</span>
           <p>
             <strong className="opponent-name">{displayName(app, opponent)}</strong>
-            <span className="muted">　レート {app.view.ratingOf(opponent).toFixed(0)}</span>
+            <span className="muted">{t.rating(app.view.ratingOf(opponent).toFixed(0))}</span>
           </p>
         </div>
         <IdentityBadge claims={app.identities[opponent]} pubkey={opponent} fetchFn={app.fetchFn} />
         <p className="meta">
-          <span>マナーの目安（合計）: {app.view.mannersTotalOf(opponent)}</span>
+          <span>{t.manners(app.view.mannersTotalOf(opponent))}</span>
           <span data-testid="deadline">{formatDeadline(matchDeadline(def, match.createdAt), app.now())}</span>
         </p>
         {matchDeadline(def, match.createdAt) < match.createdAt + def.report.deadlineSec && (
           <p className="notice" data-testid="season-end-deadline">
-            この対戦の報告の締め切りはシーズンの終わり（{seasonDate(def, matchDeadline(def, match.createdAt))}）です。それまでに双方の報告がそろわないと、結果は確定しません。
+            {t.seasonEnd(seasonDate(def, matchDeadline(def, match.createdAt)))}
           </p>
         )}
       </div>
 
       <div className="card">
-        <h3>{def.room.kind === 'code' ? '専用部屋' : '対局の場所'}</h3>
+        <h3>{def.room.kind === 'code' ? t.roomTitle : t.linkTitle}</h3>
         <p className="side" data-testid="my-side">
-          あなたは「{def.sides[mySide]}」です（相手は「{def.sides[mySide === 0 ? 1 : 0]}」）。
+          {t.mySide(text(def.sides[mySide]), text(def.sides[mySide === 0 ? 1 : 0]))}
         </p>
         {format}
         {def.room.notes.length > 0 && (
           <ul className="muted">
             {def.room.notes.map((n) => (
-              <li key={n}>{n}</li>
+              <li key={n.ja}>{text(n)}</li>
             ))}
           </ul>
         )}
         {def.room.kind === 'code' ? (
           mySide === 0 ? (
             <>
-              <p>あなたが部屋を立てます。次のパスワードで専用部屋を作り、部屋 ID とパスワードを送ってください。</p>
+              <p>{t.hostRoom}</p>
               <div className="field">
-                <label htmlFor={`${id}-password`}>パスワード</label>
+                <label htmlFor={`${id}-password`}>{t.password}</label>
                 <input
                   id={`${id}-password`}
                   className="big"
@@ -403,12 +503,10 @@ export function MatchRoom({ matchId }: { matchId: string }) {
                     savePassword(matchId, v);
                   }}
                 />
-                <p className="hint">
-                  数字{def.room.password.minDigits}〜{def.room.password.maxDigits}桁。ゲームで別のパスワードにしたときは書き換えてください。
-                </p>
+                <p className="hint">{t.passwordHint(def.room.password.minDigits, def.room.password.maxDigits)}</p>
               </div>
               <div className="field">
-                <label htmlFor={`${id}-room`}>部屋 ID</label>
+                <label htmlFor={`${id}-room`}>{t.roomId}</label>
                 <input
                   id={`${id}-room`}
                   className="big"
@@ -425,37 +523,37 @@ export function MatchRoom({ matchId }: { matchId: string }) {
                 disabled={busy || !validRoomId(def, roomInput) || !validRoomPassword(def, password)}
                 onClick={() => void send({ type: 'room', roomId: roomInput, password })}
               >
-                部屋 ID とパスワードを送る
+                {t.sendRoom}
               </button>
-              <p className="slot muted" role="status">{room ? `送信済み: 部屋 ID ${room.roomId}・パスワード ${room.password}` : ''}</p>
+              <p className="slot muted" role="status">{room ? t.roomSent(room.roomId, room.password) : ''}</p>
             </>
           ) : (
             <>
               {/* 届く前から同じ枠を出しておき、届いたら中身だけを入れ替える */}
-              <p className="slot" role="status">{room ? '相手から部屋 ID とパスワードが届きました。' : '相手が部屋を立てるのを待っています…'}</p>
+              <p className="slot" role="status">{room ? t.roomArrived : t.waitingRoom}</p>
               <div className="value-row">
                 <div>
-                  <span className="label">部屋 ID</span>
+                  <span className="label">{t.roomId}</span>
                   <p className="big" data-testid={room ? 'room-id' : undefined}>{room ? room.roomId : '—'}</p>
                 </div>
-                <CopyButton text={room ? room.roomId : null}>コピー</CopyButton>
+                <CopyButton text={room ? room.roomId : null}>{t.copy}</CopyButton>
               </div>
               <div className="value-row">
                 <div>
-                  <span className="label">パスワード</span>
+                  <span className="label">{t.password}</span>
                   <p className="big" data-testid={room ? 'room-password' : undefined}>{room ? room.password : '—'}</p>
                 </div>
-                <CopyButton text={room ? room.password : null}>コピー</CopyButton>
+                <CopyButton text={room ? room.password : null}>{t.copy}</CopyButton>
               </div>
             </>
           )
         ) : mySide === 0 ? (
           <>
-            <p>あなたが対局を用意します。双方の使えるオンラインの対局サービスで相手を招待するリンクを作り、送ってください。</p>
+            <p>{t.hostLink}</p>
             <div className="field">
-              <label htmlFor={`${id}-link`}>招待リンク</label>
+              <label htmlFor={`${id}-link`}>{t.inviteLink}</label>
               <input id={`${id}-link`} inputMode="url" placeholder="https://…" value={roomInput} onChange={(e) => setRoomInput(e.target.value.trim())} />
-              <p className="hint">https:// で始まるリンクだけを送れます。</p>
+              <p className="hint">{t.linkHint}</p>
             </div>
             <button
               type="button"
@@ -463,23 +561,21 @@ export function MatchRoom({ matchId }: { matchId: string }) {
               disabled={busy || !validInviteLink(roomInput)}
               onClick={() => void send({ type: 'link', url: roomInput })}
             >
-              招待リンクを送る
+              {t.sendLink}
             </button>
-            <p className="slot muted" role="status">{link ? `送信済み: ${link.hostname}` : ''}</p>
+            <p className="slot muted" role="status">{link ? t.linkSent(link.hostname) : ''}</p>
           </>
         ) : (
           <div className="invite">
             {link ? (
               <>
-                <p>
-                  相手から招待リンクが届きました。リンク先は <strong data-testid="invite-host">{link.hostname}</strong> です。知らないサービスなら開かず、チャットで確かめてください。
-                </p>
+                <p>{t.linkArrived(<strong data-testid="invite-host">{link.hostname}</strong>)}</p>
                 <a className="button primary wide" href={link.href} target="_blank" rel="noopener noreferrer">
-                  招待リンクを開く
+                  {t.openLink}
                 </a>
               </>
             ) : (
-              <p role="status">相手が対局を用意するのを待っています…</p>
+              <p role="status">{t.waitingLink}</p>
             )}
           </div>
         )}
@@ -491,8 +587,8 @@ export function MatchRoom({ matchId }: { matchId: string }) {
         onSend={(text) => send({ type: 'chat', text })}
         note={
           def.room.kind === 'code'
-            ? '部屋 ID とパスワードは上の「専用部屋」の欄から送ってください。'
-            : '招待リンクは上の「対局の場所」の欄から送ってください。チャットに貼ったリンクは、アプリがリンク先を確かめません。'
+            ? t.chatNoteRoom
+            : t.chatNoteLink
         }
       />
       <ReportPanel
@@ -507,8 +603,8 @@ export function MatchRoom({ matchId }: { matchId: string }) {
       />
       {(bansMissing || sendError) && (
         <Dock>
-          {bansMissing && <p className="notice" role="alert">拒否ステージを読み込めなかったため、拒否なしで案内しています。相手と確認してください。</p>}
-          {sendError && <p className="notice bad" role="alert">{sendError}</p>}
+          {bansMissing && <p className="notice" role="alert">{t.bansMissing}</p>}
+          {sendError && <p className="notice bad" role="alert">{t[sendError]}</p>}
         </Dock>
       )}
     </section>

@@ -59,14 +59,14 @@ describe('validateStageBans', () => {
         daisy: ['battlefield'],
       }),
     ).toEqual([
-      'mario: 拒否ステージは2つまでです',
-      'fox: 不明なステージ moon',
-      'nobody: 不明なファイター',
-      'daisy: peach として設定してください',
+      { code: 'too_many', fighter: 'mario', max: 2 },
+      { code: 'unknown_stage', fighter: 'fox', stage: 'moon' },
+      { code: 'unknown_fighter', fighter: 'nobody' },
+      { code: 'use_group_key', fighter: 'daisy', key: 'peach' },
     ]);
   });
 
   test('rejects duplicate stage', () => {
-    expect(validateStageBans(def, { mario: ['battlefield', 'battlefield'] })).toEqual(['mario: 同じステージが重複しています']);
+    expect(validateStageBans(def, { mario: ['battlefield', 'battlefield'] })).toEqual([{ code: 'duplicate_stage', fighter: 'mario' }]);
   });
 });

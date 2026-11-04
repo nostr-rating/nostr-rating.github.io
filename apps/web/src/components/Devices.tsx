@@ -2,13 +2,49 @@ import { deviceValidAt } from '@nostr-rating/core';
 import { decodeDeviceRequest, deviceRequestCheck } from '../account/account.js';
 import { QrScanner } from './QrScanner.js';
 import { useState } from 'react';
+import { messages, useLocale, useT, type Locale } from '../i18n.js';
 import { useApp } from '../state/AppContext.js';
 
-const date = (t: number) => new Date(t * 1000).toLocaleDateString('ja-JP');
+const date = (t: number, l: Locale) => new Date(t * 1000).toLocaleDateString(l === 'ja' ? 'ja-JP' : l);
+
+const M = messages({
+  ja: {
+    thisDevice: '（この端末）',
+    expires: (d: string) => `期限 ${d}`,
+    confirmRevoke: (label: string) => `「${label}」を取り消しますか？その端末ではもう対戦できなくなります。`,
+    revoked: '取り消しました',
+    revoke: '取り消す',
+    add: '端末を追加',
+    addHint: '新しい端末で「すでにアカウントを持っている」を選ぶと表示される QR コードを読み取るか、「端末の申請」の文字列を貼ってください。',
+    scan: 'QR を読み取る',
+    request: '端末の申請',
+    requestCheck: (label: string, check: string) => `追加する端末: ${label}（確認の番号 ${check}）`,
+    checkHint: '新しい端末の画面に出ている確認の番号と同じかを確かめてから追加してください。',
+    added: 'この端末を追加しました',
+    addThis: 'この端末を追加',
+  },
+  en: {
+    thisDevice: ' (this device)',
+    expires: (d: string) => `Expires ${d}`,
+    confirmRevoke: (label: string) => `Revoke "${label}"? That device will no longer be able to play matches.`,
+    revoked: 'Revoked',
+    revoke: 'Revoke',
+    add: 'Add a device',
+    addHint: 'On the new device, choose "I already have an account" and scan the QR code it shows, or paste its device request text.',
+    scan: 'Scan QR code',
+    request: 'Device request',
+    requestCheck: (label: string, check: string) => `Device to add: ${label} (check number ${check})`,
+    checkHint: 'Before adding it, make sure the check number matches the one shown on the new device.',
+    added: 'Added this device',
+    addThis: 'Add this device',
+  },
+});
 
 /** 端末の一覧・取り消し・追加（ヘルプ「2台目を登録する」「困ったとき」） */
 export function Devices() {
   const app = useApp();
+  const tx = useT(M);
+  const l = useLocale();
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -41,28 +77,28 @@ export function Devices() {
             <span>
               <span className="device-name">
                 {d.record.label}
-                {d.record.id === app.account!.deviceId ? '（この端末）' : ''}
+                {d.record.id === app.account!.deviceId ? tx.thisDevice : ''}
               </span>
-              <span className="muted">期限 {date(d.record.expiresAt)}</span>
+              <span className="muted">{tx.expires(date(d.record.expiresAt, l))}</span>
             </span>
             {d.record.id !== app.account!.deviceId && (
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => {
-                  if (window.confirm(`「${d.record.label}」を取り消しますか？その端末ではもう対戦できなくなります。`)) {
-                    void run(() => app.account!.revoke(d.record.id), '取り消しました');
+                  if (window.confirm(tx.confirmRevoke(d.record.label))) {
+                    void run(() => app.account!.revoke(d.record.id), tx.revoked);
                   }
                 }}
               >
-                取り消す
+                {tx.revoke}
               </button>
             )}
           </li>
         ))}
       </ul>
-      <h3>端末を追加</h3>
-      <p className="hint">新しい端末で「すでにアカウントを持っている」を選ぶと表示される QR コードを読み取るか、「端末の申請」の文字列を貼ってください。</p>
+      <h3>{tx.add}</h3>
+      <p className="hint">{tx.addHint}</p>
       {scanning ? (
         <QrScanner
           accept={(t) => decodeDeviceRequest(t) !== null}
@@ -74,17 +110,17 @@ export function Devices() {
         />
       ) : (
         <button type="button" onClick={() => setScanning(true)}>
-          QR を読み取る
+          {tx.scan}
         </button>
       )}
       <div className="field">
-        <label htmlFor="device-request-input">端末の申請</label>
+        <label htmlFor="device-request-input">{tx.request}</label>
         <textarea id="device-request-input" rows={3} autoComplete="off" value={code} onChange={(e) => setCode(e.target.value)} />
-        <p className="slot" data-testid="device-check">{request ? `追加する端末: ${request.label}（確認の番号 ${deviceRequestCheck(request)}）` : ''}</p>
+        <p className="slot" data-testid="device-check">{request ? tx.requestCheck(request.label, String(deviceRequestCheck(request))) : ''}</p>
       </div>
-      <p className="hint">新しい端末の画面に出ている確認の番号と同じかを確かめてから追加してください。</p>
-      <button type="button" className="wide" disabled={busy || !request} onClick={() => void run(async () => void (await app.account!.addDevice(code)), 'この端末を追加しました')}>
-        この端末を追加
+      <p className="hint">{tx.checkHint}</p>
+      <button type="button" className="wide" disabled={busy || !request} onClick={() => void run(async () => void (await app.account!.addDevice(code)), tx.added)}>
+        {tx.addThis}
       </button>
       <p className="slot" role="status">{message ?? ''}</p>
     </div>

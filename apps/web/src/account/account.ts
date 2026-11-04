@@ -39,6 +39,20 @@ import {
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { externalSigner, type ExternalDevice } from './external.js';
+import { messages, tr } from '../i18n.js';
+
+const M = messages({
+  ja: {
+    noDeviceKey: 'この端末の鍵がありません',
+    deviceExpired: 'この端末は登録が切れています',
+    badRequest: '端末の申請の形が正しくありません',
+  },
+  en: {
+    noDeviceKey: 'This device has no key',
+    deviceExpired: 'This device is no longer registered',
+    badRequest: 'The device request is not in a valid format',
+  },
+});
 
 /** 端末の中にしまう値。秘密鍵は WebCrypto の取り出せない鍵（docs/adr/0008） */
 export interface KeyStore {
@@ -109,7 +123,7 @@ async function deviceSig(d: StoredDevice, digest: string): Promise<KelSig> {
     const ev = await (await externalSigner(d.external)).signEvent(attestationTemplate(digest, Math.floor(Date.now() / 1000)));
     return { signer: d.id, created_at: ev.created_at, sig: ev.sig };
   }
-  if (!d.privateKey) throw new Error('この端末の鍵がありません');
+  if (!d.privateKey) throw new Error(tr(M).noDeviceKey);
   const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, d.privateKey, hexToBytes(digest));
   return { signer: d.id, p256: bytesToHex(new Uint8Array(sig)) };
 }
@@ -236,7 +250,7 @@ export class Account {
   async #publishIxn(change: Partial<Pick<IxnBody, 'add' | 'revoke' | 'renew'>>, notify: Pubkey[] = []): Promise<void> {
     await this.refreshKel();
     const state = this.#state;
-    if (!state || !this.active) throw new Error('この端末は登録が切れています');
+    if (!state || !this.active) throw new Error(tr(M).deviceExpired);
     const at = Math.max(this.now(), state.at);
     const body: IxnBody = { v: 1, t: 'ixn', aid: this.aid, sn: state.sn + 1, prior: state.tip, add: change.add ?? [], revoke: change.revoke ?? [], renew: change.renew ?? [] };
     const entry: KelEntry = { body, sigs: await signDigest(this.#data.device, digestOf(body)) };
@@ -249,7 +263,7 @@ export class Account {
   /** 端末の申請を受けて、その端末を足す */
   async addDevice(code: string): Promise<DeviceRecord> {
     const req = decodeDeviceRequest(code);
-    if (!req) throw new Error('端末の申請の形が正しくありません');
+    if (!req) throw new Error(tr(M).badRequest);
     const at = this.now();
     const record: DeviceRecord = { id: deviceId(req.key), key: req.key, publisher: req.publisher, label: req.label, expiresAt: at + DEVICE_LIFETIME_SEC };
     await this.#publishIxn({ add: [record] }, [req.publisher]);
@@ -281,7 +295,7 @@ export class Account {
 
   /** 今日の使い捨ての鍵。なければ作り、証明書を出して知らせる */
   async session(): Promise<{ identity: SessionIdentity; signer: Signer; sessionSigners: Signer[] }> {
-    if (!this.active) throw new Error('この端末は登録が切れています');
+    if (!this.active) throw new Error(tr(M).deviceExpired);
     const t = this.now();
     const day = Math.floor(t / SESSION_LIFETIME_SEC) * SESSION_LIFETIME_SEC;
     // 証明書は端末が有効な時点から始める（その日に登録した端末は、日付の境目ではまだ有効でない）

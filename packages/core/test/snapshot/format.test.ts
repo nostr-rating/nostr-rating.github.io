@@ -226,7 +226,7 @@ describe('snapshot format', () => {
 
   test('ratingConfigHash covers rating-relevant settings only', () => {
     const changedTau = { ...def, rating: { ...def.rating, tau: 0.6 } };
-    const changedName = { ...def, name: '別の名前' };
+    const changedName = { ...def, name: { ja: '別の名前', en: 'Another name' } };
     expect(ratingConfigHash(changedTau)).not.toBe(ratingConfigHash(def));
     expect(ratingConfigHash(changedName)).toBe(ratingConfigHash(def));
   });

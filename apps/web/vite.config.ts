@@ -3,9 +3,10 @@ import { hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import react from '@vitejs/plugin-react';
+import type { Locale } from '@nostr-rating/core';
 import { defineConfig, type Plugin } from 'vite';
 import { formatNotices, thirdPartyPackages } from '../../tools/third-party-notices.mjs';
-import { recoveryUrl, withRecoveryLink } from './src/recoveryLink.js';
+import { HELP_PAGES, recoveryUrl, withRecoveryLink } from './src/recoveryLink.js';
 import { repoDataFile } from './src/repoData.js';
 
 const REPO = resolve(import.meta.dirname, '../..');
@@ -104,7 +105,6 @@ function thirdPartyNotices(): Plugin {
 
 /** ヘルプに復活の道具の入手先を書き込む。public/ のファイルは変換されないので、開発時は配るときに、ビルドでは書き出したあとに置き換える */
 const RECOVERY_URL = recoveryUrl(process.env);
-const HELP = 'help/account.html';
 
 function helpRecoveryLink(): Plugin {
   let base = '/';
@@ -114,13 +114,16 @@ function helpRecoveryLink(): Plugin {
     configResolved: (c) => void ((base = c.base), (outDir = resolve(c.root, c.build.outDir))),
     configureServer: (s) =>
       void s.middlewares.use((req, res, next) => {
-        if ((req.url ?? '').split('?')[0] !== `${base}${HELP}`) return next();
+        const page = Object.entries(HELP_PAGES).find(([, p]) => (req.url ?? '').split('?')[0] === `${base}${p}`);
+        if (!page) return next();
         res.setHeader('Content-Type', 'text/html');
-        res.end(withRecoveryLink(readFileSync(resolve(import.meta.dirname, 'public', HELP), 'utf8'), RECOVERY_URL));
+        res.end(withRecoveryLink(readFileSync(resolve(import.meta.dirname, 'public', page[1]), 'utf8'), RECOVERY_URL, page[0] as Locale));
       }),
     writeBundle() {
-      const file = join(outDir, HELP);
-      writeFileSync(file, withRecoveryLink(readFileSync(file, 'utf8'), RECOVERY_URL));
+      for (const [l, p] of Object.entries(HELP_PAGES)) {
+        const file = join(outDir, p);
+        writeFileSync(file, withRecoveryLink(readFileSync(file, 'utf8'), RECOVERY_URL, l as Locale));
+      }
     },
   };
 }

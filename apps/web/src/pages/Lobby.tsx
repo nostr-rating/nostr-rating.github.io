@@ -17,10 +17,62 @@ import {
 } from '@nostr-rating/core';
 import { useEffect, useId, useState } from 'react';
 import { Dock } from '../components/Dock.js';
+import { messages, tr, useT, useText } from '../i18n.js';
 import { navigate } from '../router.js';
 import { lobbySummary } from '../services/lastView.js';
 import { displayName, parseEach, useApp } from '../state/AppContext.js';
 import { rangeLabel } from './Settings.js';
+
+const M = messages({
+  ja: {
+    matched: '対戦相手が見つかりました',
+    season: (id: number, end: string) => `シーズン ${id}（${end} まで）`,
+    rating: 'レート',
+    rank: (n: number) => `${n}位`,
+    record: (w: number, l: number, d: number) => `${w}勝 ${l}敗${d > 0 ? ` ${d}分` : ''}`,
+    manners: (noReport: number, cancel: number, mismatch: number) => `マナーの目安: 未報告 ${noReport} ／ 中止 ${cancel} ／ 食い違い ${mismatch}`,
+    fewMatches: '対戦数が少ないうちは、レートが大きく動きます。',
+    findOpponent: '対戦相手を探す',
+    firstFighter: '1戦目に使うキャラ',
+    range: 'マッチングするレート差',
+    seasonStarts: (id: number, at: string) => `シーズン ${id} は ${at} に始まります。`,
+    needLink: '対戦するには X か GitHub の紐づけが必要です。',
+    goLink: '紐づけに進む',
+    preparing: '準備中…',
+    waiting: (sec: number) => `待機中… ${sec}秒`,
+    rangeUpTo: (n: number) => `レート差 ±${n} まで`,
+    stop: 'やめる',
+    keepsSearching: '探している間は、ほかの画面に移っても探し続けます。アプリを閉じるとやめます。',
+    unreported: '結果を報告していない対戦があります。',
+    backToRoom: (name: string) => `対戦ルームへ戻る（${name} さん）`,
+    syncFailed: 'ランキングの最新データを読み込めませんでした。表示が古い可能性があります。',
+    settingsFailed: '対戦設定を読み込めませんでした。電波のよい場所で再読み込みしてください。',
+  },
+  en: {
+    matched: 'Opponent found',
+    season: (id: number, end: string) => `Season ${id} (until ${end})`,
+    rating: 'Rating',
+    rank: (n: number) => `#${n}`,
+    record: (w: number, l: number, d: number) => `${w}W ${l}L${d > 0 ? ` ${d}D` : ''}`,
+    manners: (noReport: number, cancel: number, mismatch: number) => `Manners: no report ${noReport} / canceled ${cancel} / mismatched ${mismatch}`,
+    fewMatches: 'Your rating moves a lot while you have played only a few matches.',
+    findOpponent: 'Find an opponent',
+    firstFighter: 'Fighter for game 1',
+    range: 'Rating gap to match within',
+    seasonStarts: (id: number, at: string) => `Season ${id} starts at ${at}.`,
+    needLink: 'To play, link an X or GitHub account.',
+    goLink: 'Link an account',
+    preparing: 'Preparing…',
+    waiting: (sec: number) => `Waiting… ${sec}s`,
+    rangeUpTo: (n: number) => `rating gap up to ±${n}`,
+    stop: 'Stop',
+    keepsSearching: 'The search continues while you move to other screens. It stops when you close the app.',
+    unreported: 'You have a match without a reported result.',
+    backToRoom: (name: string) => `Back to the match room (vs. ${name})`,
+    syncFailed: 'Could not load the latest ranking data. What you see may be out of date.',
+    settingsFailed: 'Could not load your match settings. Reload in a place with a better connection.',
+  },
+});
 
 const FIGHTER_KEY = 'nostr-rating:firstFighter';
 
@@ -40,7 +92,7 @@ function rememberedFighter(): string {
 
 function notifyMatched(): void {
   try {
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification('対戦相手が見つかりました');
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification(tr(M).matched);
     navigator.vibrate?.(200);
   } catch {
     // Android Chrome などでは new Notification が使えない。通知は補助なので無視する
@@ -90,6 +142,8 @@ function useOpenMatches(): MatchRecord[] {
 
 export function Lobby() {
   const app = useApp();
+  const t = useT(M);
+  const text = useText();
   const { def } = app;
   const id = useId();
   const [fighter, setFighter] = useState(rememberedFighter() || def.characters?.list[0]!.id || '');
@@ -168,38 +222,34 @@ export function Lobby() {
       <div className="card">
         <p className="meta">
           <span>{me ? displayName(app, me) : ''}</span>
-          {seasonNow && <span>シーズン {seasonNow.id}（{seasonTime(def, seasonNow.endsAt)} まで）</span>}
+          {seasonNow && <span>{t.season(seasonNow.id, seasonTime(def, seasonNow.endsAt))}</span>}
         </p>
         <div>
-          <span className="muted">レート</span>
+          <span className="muted">{t.rating}</span>
           <p className="rating" data-testid="my-rating">{(mine?.rating ?? def.rating.initialRating).toFixed(0)}</p>
         </div>
         <p className="meta">
-          {rank > 0 && <span>{rank}位</span>}
-          <span>
-            {mine?.wins ?? 0}勝 {mine?.losses ?? 0}敗{(mine?.draws ?? 0) > 0 ? ` ${mine!.draws}分` : ''}
-          </span>
-          <span>
-            マナーの目安: 未報告 {mine?.manners.noReport ?? 0} ／ 中止 {mine?.manners.cancel ?? 0} ／ 食い違い {mine?.manners.mismatch ?? 0}
-          </span>
+          {rank > 0 && <span>{t.rank(rank)}</span>}
+          <span>{t.record(mine?.wins ?? 0, mine?.losses ?? 0, mine?.draws ?? 0)}</span>
+          <span>{t.manners(mine?.manners.noReport ?? 0, mine?.manners.cancel ?? 0, mine?.manners.mismatch ?? 0)}</span>
         </p>
-        {(mine?.matches ?? 0) < 10 && <p className="hint">対戦数が少ないうちは、レートが大きく動きます。</p>}
+        {(mine?.matches ?? 0) < 10 && <p className="hint">{t.fewMatches}</p>}
       </div>
 
       <div className="card">
-        <h2>対戦相手を探す</h2>
+        <h2>{t.findOpponent}</h2>
         {def.characters && (
           <div className="field">
-            <label htmlFor={`${id}-fighter`}>1戦目に使うキャラ</label>
+            <label htmlFor={`${id}-fighter`}>{t.firstFighter}</label>
             <select id={`${id}-fighter`} value={chosenFighter} disabled={app.search.busy} onChange={(e) => setFighter(e.target.value)}>
               {def.characters.list.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
+                <option key={f.id} value={f.id}>{text(f.name)}</option>
               ))}
             </select>
           </div>
         )}
         <div className="field">
-          <label htmlFor={`${id}-range`}>マッチングするレート差</label>
+          <label htmlFor={`${id}-range`}>{t.range}</label>
           <select
             id={`${id}-range`}
             value={range === null ? '' : String(range)}
@@ -212,14 +262,12 @@ export function Lobby() {
           </select>
         </div>
         {!window_.ok && (
-          <p className="notice">
-            シーズン {window_.next.id} は {seasonTime(def, window_.next.startsAt)} に始まります。
-          </p>
+          <p className="notice">{t.seasonStarts(window_.next.id, seasonTime(def, window_.next.startsAt))}</p>
         )}
         {!linked && (
           <p className="notice bad">
             <span>
-              対戦するには X か GitHub の紐づけが必要です。<a href="#/onboarding">紐づけに進む</a>
+              {t.needLink}<a href="#/onboarding">{t.goLink}</a>
             </span>
           </p>
         )}
@@ -227,35 +275,35 @@ export function Lobby() {
         <div className="search-area" role="status" aria-live="polite">
           {!app.search.busy ? (
             <button type="button" className="primary wide" disabled={!linked || !app.signer || !settingsReady || !app.loaded || !window_.ok} onClick={() => void search()}>
-              対戦相手を探す
+              {t.findOpponent}
             </button>
           ) : (
             <div className="waiting">
               <p>
-                {waitingSince === null ? '準備中…' : `待機中… ${app.now() - waitingSince}秒`}
-                {waitingRange !== null && <span className="muted">レート差 ±{waitingRange} まで</span>}
+                {waitingSince === null ? t.preparing : t.waiting(app.now() - waitingSince)}
+                {waitingRange !== null && <span className="muted">{t.rangeUpTo(waitingRange)}</span>}
               </p>
-              <button type="button" onClick={() => app.cancelSearch()}>やめる</button>
+              <button type="button" onClick={() => app.cancelSearch()}>{t.stop}</button>
             </div>
           )}
         </div>
-        <p className="hint">探している間は、ほかの画面に移っても探し続けます。アプリを閉じるとやめます。</p>
+        <p className="hint">{t.keepsSearching}</p>
       </div>
 
       {open.map((m) => {
         const opp = m.p1 === me ? m.p2 : m.p1;
         return (
           <div key={m.id} className="notice">
-            <p>結果を報告していない対戦があります。</p>
-            <a href={`#/match/${m.id}`}>対戦ルームへ戻る（{displayName(app, opp)} さん）</a>
+            <p>{t.unreported}</p>
+            <a href={`#/match/${m.id}`}>{t.backToRoom(displayName(app, opp))}</a>
           </div>
         );
       })}
 
       {(app.syncError || app.settingsStatus === 'failed' || app.search.error) && (
         <Dock>
-          {app.syncError && <p className="notice">ランキングの最新データを読み込めませんでした。表示が古い可能性があります。</p>}
-          {app.settingsStatus === 'failed' && <p className="notice bad" role="alert">対戦設定を読み込めませんでした。電波のよい場所で再読み込みしてください。</p>}
+          {app.syncError && <p className="notice">{t.syncFailed}</p>}
+          {app.settingsStatus === 'failed' && <p className="notice bad" role="alert">{t.settingsFailed}</p>}
           {app.search.error && <p className="notice bad" role="alert">{app.search.error}</p>}
         </Dock>
       )}

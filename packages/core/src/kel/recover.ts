@@ -101,6 +101,17 @@ export async function findAccountsByNextKeys(relay: RelayClient, pubs: Pubkey[])
  * rot は chain の最後の icp か rot の次に置き、そのあとの ixn をすべて上書きする。
  * 盗まれた端末で同じ番号の ixn を出されていても、どちらを先に見た人にも同じ rot が通る
  */
+/**
+ * 復活の言葉での入れ替えに失敗した理由。画面の言語によらない code で返し、文言は表示する側が決める。
+ * unverifiable_account: アカウントの記録を確かめられない。words_not_usable: もう使えない言葉か、別のアカウントの言葉
+ */
+export class RecoverError extends Error {
+  constructor(readonly code: 'unverifiable_account' | 'words_not_usable') {
+    super(code);
+    this.name = 'RecoverError';
+  }
+}
+
 export function recoveryRotation(
   aid: string,
   chain: KelInput[],
@@ -113,10 +124,10 @@ export function recoveryRotation(
   let last = chain.length - 1;
   while (last >= 0 && chain[last]!.entry.body.t === 'ixn') last--;
   const state = evaluateKel(aid, chain.slice(0, last + 1));
-  if (!state) throw new Error('アカウントの記録を確かめられませんでした');
+  if (!state) throw new RecoverError('unverifiable_account');
   const pubs = signers.map((sk) => getPublicKey(sk));
   if (pubs.filter((p) => state.next.keys.includes(p)).length < state.next.threshold) {
-    throw new Error('この復活の言葉では入れ替えられません（もう使えない言葉か、別のアカウントの言葉です）');
+    throw new RecoverError('words_not_usable');
   }
   const body: RotBody = { v: 1, t: 'rot', aid: state.aid, sn: state.sn + 1, prior: state.tip, devices, next };
   const digest = digestOf(body);

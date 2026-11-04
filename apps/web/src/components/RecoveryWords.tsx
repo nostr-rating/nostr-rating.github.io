@@ -1,5 +1,45 @@
 import { useMemo, useState } from 'react';
+import { messages, useT } from '../i18n.js';
 import { Dock } from './Dock.js';
+
+const M = messages({
+  ja: {
+    splitDone: (n: number) => `復活の言葉を${n}枚に分けました。1枚ずつ別の紙に書き写し、別々の場所にしまってください。${n}枚のうち2枚あれば復元できます。`,
+    intro: '端末を全部失くしたときに、アカウントを復元するための12個の単語です。紙に書き写してしまっておいてください。写真やスマホのメモ、クラウドには保存しないでください。',
+    cardNumber: (card: number, n: number) => `${card}枚目／${n}枚`,
+    copiedCard: (card: number) => `${card}枚目を書き写した`,
+    copied: '書き写した',
+    split: '3枚に分けて保管する',
+    splitHint: '分散させて保管したい場合に有効です。3枚のうち2枚があれば復元できる状態となります。',
+    skip: '書き写さずに始める',
+    skipHint: '書き写さずに始めると、端末を全部失くしたときにアカウントを復元できません。',
+    check: '書き写せたかを確かめます。次の単語を入力してください。',
+    wordOnCard: (card: number, pos: number) => `${card}枚目の${pos}番目`,
+    word: (pos: number) => `${pos}番目`,
+    wrong: '違う単語があります。紙を見直してください。',
+    creating: '作成中…',
+    confirm: '確かめる',
+    showAgain: '単語をもう一度見る',
+  },
+  en: {
+    splitDone: (n: number) => `Your recovery words are split into ${n} cards. Copy each card onto a separate sheet of paper and keep them in different places. Any 2 of the ${n} cards can restore your account.`,
+    intro: 'These 12 words restore your account if you lose all your devices. Write them down on paper and keep it safe. Do not save them in photos, phone notes, or cloud storage.',
+    cardNumber: (card: number, n: number) => `Card ${card} of ${n}`,
+    copiedCard: (card: number) => `I wrote down card ${card}`,
+    copied: 'I wrote them down',
+    split: 'Split into 3 cards',
+    splitHint: 'Useful if you want to keep them in separate places. Any 2 of the 3 cards can restore your account.',
+    skip: 'Start without writing them down',
+    skipHint: 'If you start without writing them down, you cannot restore your account when you lose all your devices.',
+    check: "Let's check that you wrote them down. Enter the following words.",
+    wordOnCard: (card: number, pos: number) => `Card ${card}, word ${pos}`,
+    word: (pos: number) => `Word ${pos}`,
+    wrong: 'Some words are wrong. Check your paper again.',
+    creating: 'Creating…',
+    confirm: 'Check',
+    showAgain: 'Show the words again',
+  },
+});
 
 function shuffled(n: number): number[] {
   const all = Array.from({ length: n }, (_, i) => i);
@@ -32,6 +72,7 @@ export function RecoveryWords({
   onSplit?(): void;
   onSkip?(): Promise<void>;
 }) {
+  const t = useT(M);
   const cards = words.split('\n').map((c) => c.split(' '));
   const [card, setCard] = useState(0);
   const [checking, setChecking] = useState(false);
@@ -69,15 +110,13 @@ export function RecoveryWords({
     return (
       <div className="stack">
         {many ? (
-          <p>
-            復活の言葉を{cards.length}枚に分けました。1枚ずつ別の紙に書き写し、別々の場所にしまってください。{cards.length}枚のうち2枚あれば復元できます。
-          </p>
+          <p>{t.splitDone(cards.length)}</p>
         ) : (
-          <p>端末を全部失くしたときに、アカウントを復元するための12個の単語です。紙に書き写してしまっておいてください。写真やスマホのメモ、クラウドには保存しないでください。</p>
+          <p>{t.intro}</p>
         )}
         {many && (
           <p className="muted" data-testid="card-number">
-            {card + 1}枚目／{cards.length}枚
+            {t.cardNumber(card + 1, cards.length)}
           </p>
         )}
         <ol className="words" data-testid="recovery-words">
@@ -86,23 +125,23 @@ export function RecoveryWords({
           ))}
         </ol>
         <button type="button" className="primary wide" onClick={() => (card + 1 < cards.length ? setCard(card + 1) : setChecking(true))}>
-          {card + 1 < cards.length ? `${card + 1}枚目を書き写した` : '書き写した'}
+          {card + 1 < cards.length ? t.copiedCard(card + 1) : t.copied}
         </button>
         {!many && onSplit && (
           <div className="field">
             <button type="button" className="wide" onClick={split}>
-              3枚に分けて保管する
+              {t.split}
             </button>
-            <p className="hint">分散させて保管したい場合に有効です。3枚のうち2枚があれば復元できる状態となります。</p>
+            <p className="hint">{t.splitHint}</p>
           </div>
         )}
         {!many && onSkip && (
           <div className="field">
             <button type="button" className="wide" disabled={busy} onClick={() => void run(onSkip)}>
-              書き写さずに始める
+              {t.skip}
             </button>
             <p className="notice" data-testid="skip-hint">
-              <span>書き写さずに始めると、端末を全部失くしたときにアカウントを復元できません。</span>
+              <span>{t.skipHint}</span>
             </p>
           </div>
         )}
@@ -116,10 +155,10 @@ export function RecoveryWords({
   }
   return (
     <div className="stack">
-      <p>書き写せたかを確かめます。次の単語を入力してください。</p>
+      <p>{t.check}</p>
       {checks.map((c, i) => (
         <label key={`${c.card}:${c.pos}`} className="inline">
-          {many ? `${c.card + 1}枚目の${c.pos + 1}番目` : `${c.pos + 1}番目`}
+          {many ? t.wordOnCard(c.card + 1, c.pos + 1) : t.word(c.pos + 1)}
           <input
             autoComplete="off"
             autoCapitalize="none"
@@ -129,10 +168,10 @@ export function RecoveryWords({
         </label>
       ))}
       <p className="slot error" role="alert">
-        {wrong ? '違う単語があります。紙を見直してください。' : ''}
+        {wrong ? t.wrong : ''}
       </p>
       <button type="button" className="primary wide" disabled={busy} onClick={() => void submit()}>
-        {busy ? '作成中…' : '確かめる'}
+        {busy ? t.creating : t.confirm}
       </button>
       <button
         type="button"
@@ -143,7 +182,7 @@ export function RecoveryWords({
           setCard(0);
         }}
       >
-        単語をもう一度見る
+        {t.showAgain}
       </button>
       {error && (
         <Dock>

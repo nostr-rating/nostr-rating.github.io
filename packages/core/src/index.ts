@@ -1,5 +1,6 @@
 export * from './types.js';
 export * from './game/definition.js';
+export * from './game/text.js';
 export * from './match/stages.js';
 export * from './match/bo3.js';
 export * from './match/seat.js';

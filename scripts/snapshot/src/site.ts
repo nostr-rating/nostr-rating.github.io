@@ -2,12 +2,14 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
   claimKey,
+  parseGameDefinition,
   proofUrl,
   publishedFiles,
   verifyClaim,
   type AccountSummary,
   type IdentityClaim,
   type KelRecords,
+  type LocalizedText,
   type RatingState,
 } from '@nostr-rating/core';
 import { latestOf, loadSnapshot, type LoadedSnapshot, type PartStore } from './parts.js';
@@ -59,7 +61,8 @@ async function checkClaim(c: IdentityClaim, aid: string, fetchFn: typeof fetch):
 /** 公開 API の1人分（docs/api.md） */
 export interface PlayerDoc {
   /** どのゲームのレートか */
-  game: { id: string; name: string };
+  /** name は日本語の名前（互換のため）、names は言語ごとの名前 */
+  game: { id: string; name: string; names: LocalizedText };
   aid: string;
   name: string;
   season: number;
@@ -174,7 +177,7 @@ ${games}
 
 interface LoadedGame {
   id: string;
-  name: string;
+  names: LocalizedText;
   loaded: LoadedSnapshot;
   ref: PlayerDoc['snapshot'];
 }
@@ -182,9 +185,12 @@ interface LoadedGame {
 async function loadGame(root: string, id: string, parts: PartStore): Promise<LoadedGame | null> {
   const loaded = await loadSnapshot(root, id, parts);
   if (!loaded) return null;
-  const name = (JSON.parse(readFileSync(join(root, `configs/${id}.json`), 'utf8')) as { name: string }).name;
-  return { id, name, loaded, ref: { path: loaded.pointer.path, sha256: loaded.pointer.sha256, cutoff: loaded.toc.cutoff } };
+  const names = parseGameDefinition(JSON.parse(readFileSync(join(root, `configs/${id}.json`), 'utf8'))).name;
+  return { id, names, loaded, ref: { path: loaded.pointer.path, sha256: loaded.pointer.sha256, cutoff: loaded.toc.cutoff } };
 }
+
+/** 公開 API のゲーム。選手ページはまだ日本語だけなので、name も日本語にする */
+const gameRef = (g: LoadedGame) => ({ id: g.id, name: g.names.ja, names: g.names });
 
 /** アプリが読むスナップショット（latest.json、目次、クライアントが読む部品）を配信に置く（docs/adr/0011） */
 function publishSnapshot(out: string, g: LoadedGame): void {
@@ -241,7 +247,7 @@ export async function buildSite(opts: SiteOptions): Promise<{ players: number; g
   for (const [aid, list] of accountDocs) for (const a of list) if (a.verified) owners.set(claimKey(a), [...(owners.get(claimKey(a)) ?? []), aid]);
 
   const pages = new Map<string, PlayerDoc[]>();
-  const summary: { id: string; name: string; season: number; players: number; snapshot: PlayerDoc['snapshot'] }[] = [];
+  const summary: { id: string; name: string; names: LocalizedText; season: number; players: number; snapshot: PlayerDoc['snapshot'] }[] = [];
   for (const g of games) {
     const { state } = g.loaded;
     const pastOf = (aid: string) =>
@@ -268,7 +274,7 @@ export async function buildSite(opts: SiteOptions): Promise<{ players: number; g
         }
       }
       return {
-        game: { id: g.id, name: g.name },
+        game: gameRef(g),
         aid,
         name: accounts.get(aid)?.name ?? '',
         season: state.season,
@@ -302,8 +308,8 @@ export async function buildSite(opts: SiteOptions): Promise<{ players: number; g
       const players = [...list].sort((a, b) => b.matches - a.matches || (a.aid < b.aid ? -1 : 1));
       write(join(opts.out, `api/v1/${g.id}/by`, `${key}.json`), json({ players }));
     }
-    write(join(opts.out, `api/v1/${g.id}/index.json`), json({ game: { id: g.id, name: g.name }, snapshot: g.ref, season: state.season, players: docs.length }));
-    summary.push({ id: g.id, name: g.name, season: state.season, players: docs.length, snapshot: g.ref });
+    write(join(opts.out, `api/v1/${g.id}/index.json`), json({ game: gameRef(g), snapshot: g.ref, season: state.season, players: docs.length }));
+    summary.push({ ...gameRef(g), season: state.season, players: docs.length, snapshot: g.ref });
   }
   for (const [aid, docs] of pages) write(join(opts.out, 'p', `${aid}.html`), playerPage(docs, opts.appUrl));
   write(join(opts.out, 'api/v1/index.json'), json({ games: summary }));

@@ -1,3 +1,5 @@
+[English](self-hosting.en.md)
+
 # 自分でアプリを動かす
 
 Nostr-Rating のアプリは誰でも自分の GitHub アカウントで動かせます。公開リポジトリの GitHub Pages と GitHub Actions は無料で使えるので、費用はかかりません。
