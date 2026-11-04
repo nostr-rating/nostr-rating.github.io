@@ -69,6 +69,7 @@ content は `{"body": …, "sigs": […]}` です。タグは次のとおりで�
 
 - 本文の digest はキーを辞書順に並べた空白のない JSON の SHA-256 です。aid は `icp` の digest です。`prior` は直前の本文の digest です。
 - 端末の鍵は `{"type": "p256", "pub": <非圧縮の公開鍵>}`（WebCrypto の ECDSA P-256。署名は digest のバイト列への r‖s）か、`{"type": "schnorr", "pub": <公開鍵>}` です。schnorr の鍵はcontent に digest を入れた kind 23753 のイベント（タグなし）に署名し、その `created_at` と `sig` を本文の署名にします。次の鍵も同じ形で署名します。
+- schnorr の端末が本文に署名するときは、その端末の登録にある掲載用の鍵（`publisher`）も、同じ digest に同じ形で署名します。`signer` は掲載用の鍵です。掲載用の鍵の署名がない schnorr の端末の署名は数えません。`publisher` が端末の鍵と同じ登録は受け付けません。P-256 の端末には要りません。理由は [ADR 0016](adr/0016-publisher-cosign.md) にあります。
 - 端末の id は端末の鍵の digest の先頭 32 文字です。端末の登録には `expiresAt` があり、1回の登録・延長で `created_at` から 90 日を超えられません。
 - 次の鍵は復活の言葉（BIP-39 の12語）から NIP-06 で作る鍵です。
 
@@ -141,7 +142,7 @@ c_{n-1} - D < t_{\mathrm{ev}} \le c_n
 アプリのイベント（募集・申し込み・マッチ成立・結果報告・対戦設定・アカウントの公開情報）は、使い捨ての鍵が署名し、次のタグを持ちます。
 
 - `["aid", "<aid>"]`
-- `["cert", "<証明書の JSON>"]`。証明書は `{"cert": {v, aid, device, publisher, session, tip, from, until}, "sig": <本文の署名>}` で、端末の鍵が `cert` の digest に署名します。
+- `["cert", "<証明書の JSON>"]`。証明書は `{"cert": {v, aid, device, publisher, session, tip, from, until}, "sig": <本文の署名>, "publisherSig": <掲載用の鍵の署名>}` で、端末の鍵が `cert` の digest に署名します。`publisherSig` は schnorr の端末だけが付けます。
 
 イベントがそのアカウントのものと認められるのは、次をすべて満たすときだけです。
 
@@ -150,6 +151,7 @@ c_{n-1} - D < t_{\mathrm{ev}} \le c_n
 - イベントの署名者が `session` で、`created_at` が `from` 以上 `until` 以下
 - `until` が `from` より後で、`until − from` が 86400 秒以下
 - 証明書の署名の `signer` が `device` で、その端末の鍵で `cert` の digest への署名が正しい
+- その端末の鍵が schnorr なら、`publisherSig` の `signer` が KEL に記録したその端末の掲載用の鍵で、その鍵で `cert` の digest への署名が正しい（証明書の `publisher` は使わない）
 - `device` の端末が KEL の上で `from` の時点に有効（取り消しより前に始まった証明書は、取り消したあとも `until` まで有効）
 
 認められないイベントはだれのものでもないとして無視します。端末の掲載用の鍵はその日の証明書を kind 3755（content は証明書の JSON、タグは `t` と `aid`）でも知らせます。
@@ -172,6 +174,10 @@ A(\mathit{ev}) = \mathit{cert}.\mathrm{aid} \quad \text{if all of:}
 \mathit{sig}.\mathrm{signer} = \mathit{cert}.\mathrm{device} \;\land\; \mathrm{Verify}(\mathit{key}_{\mathrm{dev}}, \mathrm{digest}(\mathit{cert}), \mathit{sig}) \;\land\; \mathrm{Valid}(\mathit{cert}.\mathrm{device}, \mathit{cert}.\mathrm{from})
 ```
 
+```math
+\mathit{key}_{\mathrm{dev}} \text{ is P-256} \;\lor\; \bigl(\mathit{psig}.\mathrm{signer} = \mathit{pub}_{\mathrm{dev}} \;\land\; \mathrm{Verify}(\mathit{pub}_{\mathrm{dev}}, \mathrm{digest}(\mathit{cert}), \mathit{psig})\bigr)
+```
+
 満たさなければ $`A(\mathit{ev}) = \bot`$（だれのものでもない）です。
 
 | 記号 | 意味 |
@@ -185,6 +191,8 @@ A(\mathit{ev}) = \mathit{cert}.\mathrm{aid} \quad \text{if all of:}
 | $`\mathit{ev}.\mathrm{pubkey}, \mathit{ev}.\mathrm{created\_at}`$ | ev に署名した公開鍵と、ev の作成時刻 |
 | $`\mathit{sig}`$ | 証明書の署名（`sig`）。`signer` は署名した端末の id |
 | $`\mathit{key}_{\mathrm{dev}}`$ | cert.device の端末の鍵。cert.aid の KEL から引く |
+| $`\mathit{psig}`$ | 証明書の掲載用の鍵の署名（`publisherSig`） |
+| $`\mathit{pub}_{\mathrm{dev}}`$ | cert.device の端末の掲載用の鍵。cert.aid の KEL から引く |
 | $`\mathrm{Verify}(K, x, y)`$ | 鍵 K で、値 x への署名 y が正しいか |
 | $`\mathrm{Valid}(i, u)`$ | 端末 i が、KEL の上で時刻 u に有効か（有効な区間のどれかに u が入る） |
 | $`\land`$ | かつ |

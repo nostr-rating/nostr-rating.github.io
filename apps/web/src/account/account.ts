@@ -92,7 +92,18 @@ export async function createDevice(label: string, external?: ExternalDevice): Pr
   return { id: deviceId(key), key, privateKey: kp.privateKey, publisherSk: bytesToHex(generateSecretKey()), label };
 }
 
-async function signDigest(d: StoredDevice, digest: string): Promise<KelSig> {
+/** 端末の鍵の署名。署名アプリを使う端末では、掲載用の鍵の署名も添える（docs/adr/0016） */
+async function signDigest(d: StoredDevice, digest: string): Promise<KelSig[]> {
+  const sig = await deviceSig(d, digest);
+  return d.external ? [sig, publisherSig(d, digest)] : [sig];
+}
+
+function publisherSig(d: StoredDevice, digest: string): KelSig {
+  const ev = finalizeEvent(attestationTemplate(digest, Math.floor(Date.now() / 1000)), hexToBytes(d.publisherSk));
+  return { signer: ev.pubkey, created_at: ev.created_at, sig: ev.sig };
+}
+
+async function deviceSig(d: StoredDevice, digest: string): Promise<KelSig> {
   if (d.external) {
     // 署名アプリは任意のバイト列に署名できないので、digest を入れたイベントに署名してもらう
     const ev = await (await externalSigner(d.external)).signEvent(attestationTemplate(digest, Math.floor(Date.now() / 1000)));
@@ -176,7 +187,7 @@ export class Account {
     const next = { keys: recovery.cards.map((w) => recoveryKey(w).pub), threshold: recovery.threshold };
     const body: IcpBody = { v: 1, t: 'icp', sn: 0, devices: [recordOf(device, at)], next, nonce: bytesToHex(generateSecretKey()).slice(0, 16) };
     const aid = digestOf(body);
-    const entry: KelEntry = { body, sigs: [await signDigest(device, aid)] };
+    const entry: KelEntry = { body, sigs: await signDigest(device, aid) };
     await relay.publish(finalizeEvent(kelEventTemplate(entry, at), hexToBytes(device.publisherSk)));
     const data: StoredAccount = { aid, device, kel: [{ entry, at }], knownDevices: [device.id], sessions: [] };
     await store.set(ACCOUNT, data);
@@ -228,7 +239,7 @@ export class Account {
     if (!state || !this.active) throw new Error('この端末は登録が切れています');
     const at = Math.max(this.now(), state.at);
     const body: IxnBody = { v: 1, t: 'ixn', aid: this.aid, sn: state.sn + 1, prior: state.tip, add: change.add ?? [], revoke: change.revoke ?? [], renew: change.renew ?? [] };
-    const entry: KelEntry = { body, sigs: [await signDigest(this.#data.device, digestOf(body))] };
+    const entry: KelEntry = { body, sigs: await signDigest(this.#data.device, digestOf(body)) };
     await this.relay.publish(finalizeEvent(kelEventTemplate(entry, at, notify), hexToBytes(this.#data.device.publisherSk)));
     this.#data.kel = [...this.#data.kel, { entry, at }];
     this.#state = evaluateKel(this.aid, this.#data.kel);
@@ -282,7 +293,8 @@ export class Account {
       const sk = generateSecretKey();
       const device = this.#data.device;
       const cert: SessionCert = { v: 1, aid: this.aid, device: device.id, publisher: publisherOf(device), session: getPublicKey(sk), tip: this.#state!.tip, from, until };
-      const signed: SignedCert = { cert, sig: await signDigest(device, digestOf(cert)) };
+      const [sig, pub] = await signDigest(device, digestOf(cert));
+      const signed: SignedCert = { cert, sig: sig!, ...(pub ? { publisherSig: pub } : {}) };
       s = { from, sk: bytesToHex(sk), cert: signed };
       await this.relay.publish(
         finalizeEvent({ kind: KIND.cert, created_at: from, tags: [['t', APP_TAG], ['aid', this.aid]], content: JSON.stringify(signed) }, hexToBytes(device.publisherSk)),

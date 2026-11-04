@@ -36,6 +36,21 @@ export function newDevice(at: number, label = 'dev', lifetime = DEVICE_LIFETIME_
   return { record, sign, publisherSk };
 }
 
+/** 署名アプリ（NIP-07 / NIP-46）に鍵を任せた端末。device は署名アプリの署名、publisher はアプリの中の掲載用の鍵の署名 */
+export function newSignerAppDevice(at: number, label = 'ext') {
+  const sk = generateSecretKey();
+  const publisherSk = generateSecretKey();
+  const key: KeyRef = { type: 'schnorr', pub: getPublicKey(sk) };
+  const record: DeviceRecord = { id: deviceId(key), key, publisher: getPublicKey(publisherSk), label, expiresAt: at + DEVICE_LIFETIME_SEC };
+  const attest = (secret: Uint8Array, signer: string) => ({
+    sign: (digest: string): KelSig => {
+      const ev = finalizeEvent(attestationTemplate(digest, at), secret);
+      return { signer, created_at: ev.created_at, sig: ev.sig };
+    },
+  });
+  return { record, sk, publisherSk, device: attest(sk, record.id), publisher: attest(publisherSk, record.publisher) };
+}
+
 /** 復活の言葉の鍵（secp256k1） */
 export function newNextKey() {
   const sk = generateSecretKey();
