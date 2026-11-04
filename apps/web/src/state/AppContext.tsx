@@ -26,7 +26,8 @@ import { Account, type KeyStore } from '../account/account.js';
 import { AUTHORS_CHUNK, Resolver } from '../account/resolver.js';
 import { rememberedGame, rememberGame } from '../services/config.js';
 import { coalesce } from '../services/coalesce.js';
-import type { ClientSnapshot } from '../services/snapshot.js';
+import { lobbySummary, loadLastView, saveLastView, type LobbySummary } from '../services/lastView.js';
+import { fetchLatest, type ClientSnapshot } from '../services/snapshot.js';
 import { syncRatings } from '../services/sync.js';
 import type { EventStore } from '../storage/types.js';
 
@@ -80,6 +81,8 @@ export interface AppValue extends AppDeps {
   syncing: boolean;
   /** 今のゲームの最初の同期が終わったか（失敗も含む）。それまでのレートと紐づけは初期値 */
   loaded: boolean;
+  /** 最初の同期が終わるまでの間に先に出せる、前回のロビーの値（新しいスナップショットが出ていないときだけ） */
+  lastView: LobbySummary | null;
   syncError: string | null;
   refresh(): Promise<void>;
   profiles: Record<Pubkey, string>;
@@ -145,6 +148,9 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
   const [ratings, setRatings] = useState<RatingState>(() => emptyState(def, deps.now()));
   const [syncing, setSyncing] = useState(false);
   const [loadedGame, setLoadedGame] = useState<string | null>(null);
+  const [lastView, setLastView] = useState<{ game: string; summary: LobbySummary } | null>(null);
+  /** 直前に成功した同期の、前回の値を残すのに要る分 */
+  const lastSync = useRef<{ game: string; sha256: string | null; pending: boolean } | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<Record<Pubkey, string>>({});
   const [identities, setIdentities] = useState<Record<Pubkey, IdentityClaim[]>>({});
@@ -234,8 +240,9 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
   const snapshotCache = useMemo(() => new Map<string, { sha256: string; snapshot: ClientSnapshot }>(), []);
   const syncNow = useCallback(async () => {
     setSyncing(true);
+    lastSync.current = null;
     try {
-      const { shown, loadKels, snapshotCutoff } = await syncRatings({
+      const { shown, loadKels, snapshotCutoff, snapshotSha, pending } = await syncRatings({
         def,
         relay: deps.relay,
         store: deps.store,
@@ -261,6 +268,7 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
         loadPeople(recorded, snapshotCutoff !== null ? snapshotCutoff - def.report.deadlineSec : undefined),
         loadPeople(rest),
       ]);
+      lastSync.current = { game: def.id, sha256: snapshotSha, pending: pubkey !== null && pending.has(pubkey) };
     } catch (e) {
       if (gameRef.current !== def.id) return;
       setSyncError(e instanceof Error ? e.message : String(e));
@@ -285,6 +293,35 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     slot.latest = syncNow;
   }, [slot, syncNow]);
   const refresh = slot.run;
+
+  // 開いたら latest.json だけを先に読み、前回の値を残したときから新しいスナップショットが出ていなければ、その値を先に出す。
+  // 同期はこれとは別に走り、終わったら正しい値に差し替わる
+  useEffect(() => {
+    if (!pubkey) return;
+    const saved = loadLastView(def.id, pubkey);
+    if (!saved) return;
+    let alive = true;
+    fetchLatest(deps.fetchFn, deps.snapshotBase, def.id).then(
+      (pointer) => {
+        if (alive && (pointer?.sha256 ?? null) === saved.sha256) setLastView({ game: def.id, summary: saved.summary });
+      },
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [pubkey, def.id, deps.fetchFn, deps.snapshotBase]);
+
+  // 同期が成功するたびに、次に開いたとき先に出す値を残す
+  useEffect(() => {
+    const s = lastSync.current;
+    if (!pubkey || syncing || !s || s.game !== def.id) return;
+    saveLastView(
+      def.id,
+      pubkey,
+      s.pending ? null : { sha256: s.sha256, summary: lobbySummary(ratings, def.rating.initialRating, pubkey, identities[pubkey]) },
+    );
+  }, [pubkey, def, syncing, ratings, identities]);
 
   useEffect(() => {
     if (!pubkey || mySessions.length === 0) return;
@@ -401,6 +438,7 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     view,
     syncing,
     loaded: loadedGame === def.id,
+    lastView: loadedGame !== def.id && lastView?.game === def.id ? lastView.summary : null,
     syncError,
     refresh,
     profiles,

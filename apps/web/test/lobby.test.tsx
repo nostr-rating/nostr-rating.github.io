@@ -3,6 +3,8 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, test } from 'vitest';
 import { App } from '../src/App.js';
+import { loadLastView, saveLastView, type LobbySummary } from '../src/services/lastView.js';
+import { fetchLatest } from '../src/services/snapshot.js';
 import { Lobby } from '../src/pages/Lobby.js';
 import { Ranking } from '../src/pages/Ranking.js';
 import { makeDeps, matchBetween, newPlayer, renderWithApp } from './helpers.js';
@@ -107,21 +109,37 @@ describe('Ranking', () => {
   });
 });
 
+/** リレーの返事を止めておき、同期が終わる前の画面を見る */
+function heldRelay(relay: MemoryRelay): { slow: MemoryRelay; release: () => void } {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const slow = Object.assign(Object.create(relay) as MemoryRelay, {
+    query: async (...args: Parameters<MemoryRelay['query']>) => {
+      await gate;
+      return relay.query(...args);
+    },
+  });
+  return { slow, release };
+}
+
+const savedSummary: LobbySummary = {
+  rating: 1662.3,
+  matches: 1,
+  wins: 1,
+  losses: 0,
+  draws: 0,
+  manners: { noReport: 0, cancel: 0, mismatch: 0 },
+  rank: 1,
+  linked: true,
+};
+
 describe('loading', () => {
   test('rating pages show loading instead of the initial values until the first sync ends', async () => {
     localStorage.clear();
     location.hash = '#/lobby';
     const relay = new MemoryRelay(realNow);
     const account = await userWithIdentity(relay);
-    // リレーの返事を止めておき、同期が終わる前の画面を見る
-    let release!: () => void;
-    const gate = new Promise<void>((r) => (release = r));
-    const slow = Object.assign(Object.create(relay) as MemoryRelay, {
-      query: async (...args: Parameters<MemoryRelay['query']>) => {
-        await gate;
-        return relay.query(...args);
-      },
-    });
+    const { slow, release } = heldRelay(relay);
     renderWithApp(<App />, { deps: { ...makeDeps({ relay, now: realNow }), relay: slow }, account });
     expect(await screen.findByText('読み込み中…')).toBeTruthy();
     expect(screen.queryByTestId('my-rating')).toBeNull();
@@ -130,6 +148,61 @@ describe('loading', () => {
     expect((await screen.findByTestId('my-rating')).textContent).toBe('1500');
     expect(screen.queryByText('読み込み中…')).toBeNull();
     expect(screen.queryByText('対戦するには X か GitHub の紐づけが必要です。紐づけに進む', { selector: 'span' })).toBeNull();
+  });
+
+  test('the lobby shows the last values at once when no new snapshot has come out, then the synced values', async () => {
+    localStorage.clear();
+    location.hash = '#/lobby';
+    const relay = new MemoryRelay(realNow);
+    const account = await userWithIdentity(relay);
+    const deps = makeDeps({ relay, now: realNow });
+    const sha256 = (await fetchLatest(deps.fetchFn, deps.snapshotBase, 'smash_sp'))!.sha256;
+    saveLastView('smash_sp', account.aid, { sha256, summary: savedSummary });
+    const { slow, release } = heldRelay(relay);
+    renderWithApp(<App />, { deps: { ...deps, relay: slow }, account });
+    expect((await screen.findByTestId('my-rating')).textContent).toBe('1662');
+    expect(screen.getByText('1位')).toBeTruthy();
+    expect(screen.queryByText('対戦するには X か GitHub の紐づけが必要です。紐づけに進む', { selector: 'span' })).toBeNull();
+    // レートが決まるまでは探せない
+    expect((screen.getByRole('button', { name: '対戦相手を探す' }) as HTMLButtonElement).disabled).toBe(true);
+    release();
+    await waitFor(() => expect(screen.getByTestId('my-rating').textContent).toBe('1500'));
+    // 同期のあとの値を、次に開いたとき用に残す
+    await waitFor(() =>
+      expect(loadLastView('smash_sp', account.aid)).toEqual({
+        sha256,
+        summary: { rating: 1500, matches: 0, wins: 0, losses: 0, draws: 0, manners: { noReport: 0, cancel: 0, mismatch: 0 }, rank: 0, linked: true },
+      }),
+    );
+  });
+
+  test('the last values are not used when a new snapshot has come out', async () => {
+    localStorage.clear();
+    location.hash = '#/lobby';
+    const relay = new MemoryRelay(realNow);
+    const account = await userWithIdentity(relay);
+    saveLastView('smash_sp', account.aid, { sha256: '0'.repeat(64), summary: savedSummary });
+    const { slow, release } = heldRelay(relay);
+    renderWithApp(<App />, { deps: { ...makeDeps({ relay, now: realNow }), relay: slow }, account });
+    expect(await screen.findByText('読み込み中…')).toBeTruthy();
+    // latest.json を読み終えるまで待っても、前回の値は出ない
+    await new Promise((r) => setTimeout(r, 200));
+    expect(screen.queryByTestId('my-rating')).toBeNull();
+    release();
+    expect((await screen.findByTestId('my-rating')).textContent).toBe('1500');
+  });
+
+  test('the last values are not kept while one of my matches has no result yet', async () => {
+    localStorage.clear();
+    location.hash = '#/lobby';
+    const relay = new MemoryRelay(realNow);
+    const a = await newPlayer(relay, realNow, { name: 'alice', claims: [{ platform: 'github', identity: 'alice', proof: 'aaa1' }] });
+    const b = await newPlayer(relay, realNow, { name: 'bob', claims: [{ platform: 'github', identity: 'bob', proof: 'bbb1' }] });
+    await matchBetween(relay, a, b);
+    saveLastView('smash_sp', a.aid, { sha256: null, summary: savedSummary });
+    renderWithApp(<App />, { deps: makeDeps({ relay, now: realNow }), account: a.account });
+    expect(await screen.findByTestId('my-rating')).toBeTruthy();
+    await waitFor(() => expect(loadLastView('smash_sp', a.aid)).toBeNull());
   });
 });
 

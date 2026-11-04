@@ -18,6 +18,7 @@ import {
 import { useEffect, useId, useState } from 'react';
 import { Dock } from '../components/Dock.js';
 import { navigate } from '../router.js';
+import { lobbySummary } from '../services/lastView.js';
 import { displayName, parseEach, useApp } from '../state/AppContext.js';
 import { rangeLabel } from './Settings.js';
 
@@ -113,14 +114,10 @@ export function Lobby() {
   }, [app.search.waitingSince]);
 
   const me = app.pubkey;
-  const mine = me ? app.ratings.players[me] : undefined;
-  const linked = me ? (app.identities[me]?.length ?? 0) > 0 : false;
-  const rank = me
-    ? Object.entries(app.ratings.players)
-        .filter(([, p]) => p.matches > 0)
-        .sort(([, a], [, b]) => b.rating - a.rating)
-        .findIndex(([pk]) => pk === me) + 1
-    : 0;
+  // 最初の同期が終わるまでは、前回の値（App が出せるときだけこの画面を出す）
+  const mine = me ? (!app.loaded && app.lastView ? app.lastView : lobbySummary(app.ratings, def.rating.initialRating, me, app.identities[me])) : null;
+  const linked = mine?.linked ?? false;
+  const rank = mine?.rank ?? 0;
 
   /** 保存済みの拒否ステージと連戦設定を残したまま、レート差だけを変える */
   const ensureSettings = async (): Promise<Settings> => {
@@ -229,7 +226,7 @@ export function Lobby() {
         {/* 探す前と探している間で、同じ高さの場所を入れ替える */}
         <div className="search-area" role="status" aria-live="polite">
           {!app.search.busy ? (
-            <button type="button" className="primary wide" disabled={!linked || !app.signer || !settingsReady || !window_.ok} onClick={() => void search()}>
+            <button type="button" className="primary wide" disabled={!linked || !app.signer || !settingsReady || !app.loaded || !window_.ok} onClick={() => void search()}>
               対戦相手を探す
             </button>
           ) : (

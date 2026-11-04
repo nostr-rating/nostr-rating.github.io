@@ -4,6 +4,7 @@ import {
   currentSeason,
   fetchRatingEvents,
   initialState,
+  playersWithPendingMatches,
   seasonById,
   KIND,
   provisionalRatings,
@@ -35,12 +36,20 @@ export interface SyncDeps {
  * スナップショットがまだ無ければ（latest.json が 404）、今のシーズンの最初から計算する。
  * KEL は、イベントに出てきたアカウントの分だけをスナップショットから読む（docs/adr/0011）。
  * state は締め切りを迎えた対戦までの確定値、shown はそれに締め切り前の確定済み対戦を
- * 上乗せした表示用の値。snapshotCutoff はスナップショットが無ければ null。
+ * 上乗せした表示用の値。snapshotCutoff と snapshotSha はスナップショットが無ければ null。
+ * pending は、締め切り前でまだ結果が決まっていない対戦に出ている選手。
  * loadKels は、ほかのアカウントの記録済みの KEL をあとから読むのに使う。
  */
 export async function syncRatings(
   deps: SyncDeps,
-): Promise<{ state: RatingState; shown: RatingState; snapshotCutoff: number | null; loadKels: (aids: Pubkey[]) => Promise<KelRecords> }> {
+): Promise<{
+  state: RatingState;
+  shown: RatingState;
+  snapshotCutoff: number | null;
+  snapshotSha: string | null;
+  pending: Set<Pubkey>;
+  loadKels: (aids: Pubkey[]) => Promise<KelRecords>;
+}> {
   const { def, relay, store, fetchFn, base, now } = deps;
   const pointer = await fetchLatest(fetchFn, base, def.id);
   let snapshot: ClientSnapshot | null = null;
@@ -103,6 +112,7 @@ export async function syncRatings(
   await warmKelSignatures(withKels.kels, aidsIn(cached), cached);
   const { state } = advanceRatings(def, withKels, cached, t);
   const shown = provisionalRatings(def, state, cached, t);
+  const pending = playersWithPendingMatches(def, state, cached, t);
 
   // 現在と直前のシーズンの生イベントだけを残す
   if (currentSeason(def, t)) {
@@ -110,7 +120,7 @@ export async function syncRatings(
     await store.purgeBefore(keepFrom, [KIND.match, KIND.report, KIND.application]);
   }
 
-  return { state, shown, snapshotCutoff: from?.cutoff ?? null, loadKels: snapshot ? snapshot.loadKels : noKels };
+  return { state, shown, snapshotCutoff: from?.cutoff ?? null, snapshotSha: pointer?.sha256 ?? null, pending, loadKels: snapshot ? snapshot.loadKels : noKels };
 }
 
 /** スナップショットが無いときの loadKels。Resolver が同じものかを見分けられるよう、毎回同じ関数を返す */

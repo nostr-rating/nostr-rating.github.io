@@ -2,7 +2,7 @@ import type { NostrEvent } from 'nostr-tools/pure';
 import { beforeAll, describe, expect, test } from 'vitest';
 import { buildAccountInfo, buildMatch, buildReport } from '../../src/events/codec.js';
 import { seasonById } from '../../src/game/definition.js';
-import { advanceRatings, provisionalRatings, toLocalView } from '../../src/rating/pipeline.js';
+import { advanceRatings, playersWithPendingMatches, provisionalRatings, toLocalView } from '../../src/rating/pipeline.js';
 import { initialState } from '../helpers/state.js';
 import { def } from '../helpers/def.js';
 import { newUser } from '../helpers/keys.js';
@@ -327,5 +327,15 @@ describe('toLocalView', () => {
     expect(v.lastMatchBetween(alice.pk, carol.pk)).toBeNull();
     expect(v.hasIdentity(alice.pk)).toBe(true);
     expect(v.hasIdentity(newUser().pk)).toBe(false);
+  });
+});
+
+describe('playersWithPendingMatches', () => {
+  test('lists the players of matches whose result is not settled yet', async () => {
+    const halfReported = await played(alice, bob, T0, ['win', null]);
+    expect([...playersWithPendingMatches(def, s0(), [...ids, ...halfReported], T0 + 100)].sort()).toEqual([alice.pk, bob.pk].sort());
+    // 確定した対戦と、締め切りを過ぎた対戦は含めない
+    expect(playersWithPendingMatches(def, s0(), [...ids, ...(await p1Wins(alice, bob, T0))], T0 + 100)).toEqual(new Set());
+    expect(playersWithPendingMatches(def, s0(), [...ids, ...halfReported], after(T0))).toEqual(new Set());
   });
 });

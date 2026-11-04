@@ -401,6 +401,23 @@ export function provisionalRatings(def: GameDefinition, state: RatingState, even
   return { ...state, players: ap.players, recentPairs: ap.recentPairs, kels: book.records, accounts: mergeAccounts(state.accounts, latest) };
 }
 
+/**
+ * 締め切り前で、まだ結果が決まっていない対戦に出ている選手。
+ * 画面の控え（前回の表示）を使ってよいかの判断に使う。確定すると値が変わるため
+ */
+export function playersWithPendingMatches(def: GameDefinition, state: RatingState, events: NostrEvent[], now: number): Set<Pubkey> {
+  const book = buildKelBook(state.kels, events, state.cutoff - def.report.deadlineSec, now);
+  const { linked } = collect(def, state.season, events, attributor(book.states), now);
+  const out = new Set<Pubkey>();
+  for (const l of linked) {
+    const deadline = matchDeadline(def, l.match.createdAt);
+    if (deadline <= state.cutoff) continue;
+    if (settleMatch(l.match, l.reports, now, deadline, def.results.draw).status !== 'pending') continue;
+    out.add(l.match.p1).add(l.match.p2);
+  }
+  return out;
+}
+
 export function toLocalView(def: GameDefinition, state: RatingState): LocalView {
   // 2人の組 → 最後に確定した時刻。マッチングは候補ごとに引くので、先にまとめておく
   const lastOf = new Map<string, number>();

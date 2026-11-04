@@ -18,6 +18,7 @@ export function App() {
   }, [app.account, route.name]);
 
   const usesRatings = route.name === 'lobby' || route.name === 'match' || route.name === 'ranking' || route.name === 'player';
+  const shown = app.loaded || (route.name === 'lobby' && app.lastView !== null);
 
   const tab = (name: 'lobby' | 'ranking' | 'settings') => (route.name === name || (name === 'ranking' && route.name === 'player') ? 'page' : undefined);
 
@@ -51,9 +52,9 @@ export function App() {
       <main>
         {route.name === 'onboarding' && <Onboarding />}
         {route.name === 'settings' && <Settings />}
-        {/* レートと紐づけを使う画面は、最初の同期が終わるまで初期値を見せない */}
-        {usesRatings && !app.loaded && <p className="loading">読み込み中…</p>}
-        {usesRatings && app.loaded && (
+        {/* レートと紐づけを使う画面は、最初の同期が終わるまで初期値を見せない。ロビーは前回の値を出せるときは先に出す */}
+        {usesRatings && !shown && <p className="loading">読み込み中…</p>}
+        {usesRatings && shown && (
           <>
             {route.name === 'lobby' && <Lobby />}
             {route.name === 'match' && <MatchRoom key={route.id} matchId={route.id} />}
