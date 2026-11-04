@@ -31,7 +31,7 @@ import { ChatPanel, type ChatLine } from '../components/ChatPanel.js';
 import { CopyButton } from '../components/CopyButton.js';
 import { Dock } from '../components/Dock.js';
 import { IdentityBadge } from '../components/IdentityBadge.js';
-import { latestReports, ReportPanel, reportStatus } from '../components/ReportPanel.js';
+import { latestReports, ReportPanel, reportStatus, resultSent } from '../components/ReportPanel.js';
 import { StageGuide } from '../components/StageGuide.js';
 import { defaultRoomPassword } from '../services/config.js';
 import { displayName, parseEach, useApp } from '../state/AppContext.js';
@@ -498,8 +498,8 @@ export function MatchRoom({ matchId }: { matchId: string }) {
       <ReportPanel
         status={reportStatus(def, match, reports, me, app.now())}
         closed={closed}
-        mine={latestReports(match, reports).get(me)}
-        resultSent={reports.some((r) => r.reporter === me && r.result !== 'cancel' && (def.results.draw || r.result !== 'draw'))}
+        mine={latestReports(def, match, reports, app.now()).get(me)}
+        resultSent={resultSent(def, match, reports, me, app.now())}
         record={record}
         allowDraw={def.results.draw}
         busy={busy}
