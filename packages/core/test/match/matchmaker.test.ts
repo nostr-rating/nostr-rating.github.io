@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { buildAccountInfo, buildMatch, buildRecruitment, parseApplication, type MatchRecord } from '../../src/events/codec.js';
+import { buildAccountInfo, buildApplication, buildMatch, buildRecruitment, parseApplication, type MatchRecord } from '../../src/events/codec.js';
+import { seedCommit } from '../../src/match/seat.js';
 import { KIND } from '../../src/events/kinds.js';
 import type { LocalView } from '../../src/match/conditions.js';
 import { Matchmaker } from '../../src/match/matchmaker.js';
@@ -7,6 +8,7 @@ import { MemoryRelay } from '../../src/relay/memory.js';
 import { def } from '../helpers/def.js';
 import { newUser } from '../helpers/keys.js';
 import { authorOf } from '../helpers/state.js';
+import { P1_SEED, SEED_HASH } from '../helpers/seeds.js';
 
 const now = () => Math.floor(Date.now() / 1000);
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -71,6 +73,60 @@ describe('Matchmaker', () => {
     expect(ma.p2).toBe(b.pk);
     expect(ma.p1Fighter).toBe('mario');
     expect(ma.p2Fighter).toBe('fox');
+    // マッチで明かした乱数は、申し込みに写した募集のハッシュと合う（docs/adr/0013）
+    const [appEv] = await relay.query([{ kinds: [KIND.application], ids: [ma.applicationId] }]);
+    const app = parseApplication('smash_sp', appEv!, authorOf(appEv!))!;
+    expect([seedCommit(ma.seed), app.seed === ma.seed]).toEqual([app.seedHash, false]);
+  });
+
+  test('the recruiter ignores an application that copied another commitment', async () => {
+    const relay = new MemoryRelay(now);
+    const a = maker(relay);
+    const b = maker(relay);
+    await relay.publish(await claimFor(b, now() - 100));
+    const ctrl = new AbortController();
+    const pa = a.mm.search(params('mario'), ctrl.signal).catch((e: Error) => e.name);
+    await vi.advanceTimersByTimeAsync(2000);
+    // 募集の seedHash ではなく、乱数を知っているハッシュを写した申し込み
+    await relay.publish(
+      await b.signer.signEvent(
+        buildApplication(
+          'smash_sp',
+          { recruiter: a.pk, recruiterSession: a.sessionAt(now()), firstFighter: 'fox', settingsId: 'b'.repeat(64), rangeChoice: null, rematchHours: 0, waitingSince: now() - 1, seedHash: SEED_HASH, seed: '2'.repeat(64) },
+          now(),
+        ),
+      ),
+    );
+    await vi.advanceTimersByTimeAsync(5000);
+    ctrl.abort();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect([await pa, relay.all().filter((e) => e.kind === KIND.match)]).toEqual(['AbortError', []]);
+  });
+
+  test('rejects a match whose seed does not open the commitment of the recruitment', async () => {
+    const relay = new MemoryRelay(now);
+    const b = maker(relay);
+    const mallory = newUser();
+    await relay.publish(
+      await mallory.signer.signEvent(
+        buildRecruitment('smash_sp', { firstFighter: 'mario', rating: 1500, rangeChoice: null, rematchHours: 0, settingsId: 'a'.repeat(64), waitingSince: now(), status: 'open', seedHash: SEED_HASH }, now(), 120),
+      ),
+    );
+    await relay.publish(await claimFor(mallory, now() - 100));
+    relay.subscribe([{ kinds: [KIND.application], '#p': [mallory.sessionAt(now())] }], (ev) => {
+      const app = parseApplication('smash_sp', ev, authorOf(ev))!;
+      void mallory.signer
+        .signEvent(
+          buildMatch(
+            'smash_sp',
+            { p1: mallory.pk, p2: app.pubkey, p1Fighter: 'mario', p2Fighter: app.firstFighter, p1SettingsId: 'a'.repeat(64), p2SettingsId: app.settingsId, applicationId: app.eventId, sessions: [mallory.sessionAt(now()), app.session], seed: '3'.repeat(64) },
+            now(),
+          ),
+        )
+        .then((m) => relay.publish(m));
+    });
+    const ctrl = new AbortController();
+    expect(await settle(b.mm.search(params('fox'), ctrl.signal), ctrl, 20_000)).toBe('AbortError');
   });
 
   test('two simultaneous seekers end up in exactly one match', async () => {
@@ -148,7 +204,7 @@ describe('Matchmaker', () => {
         .signEvent(
           buildMatch(
             'smash_sp',
-            { p1: mallory.pk, p2: app.pubkey, p1Fighter: 'mario', p2Fighter: app.firstFighter, p1SettingsId: 'a'.repeat(64), p2SettingsId: app.settingsId, applicationId: app.eventId, sessions: [mallory.sessionAt(now()), app.session] },
+            { p1: mallory.pk, p2: app.pubkey, p1Fighter: 'mario', p2Fighter: app.firstFighter, p1SettingsId: 'a'.repeat(64), p2SettingsId: app.settingsId, applicationId: app.eventId, sessions: [mallory.sessionAt(now()), app.session], seed: P1_SEED },
             now(),
           ),
         )
@@ -169,7 +225,7 @@ describe('Matchmaker', () => {
     const mallory = newUser();
     await relay.publish(
       await mallory.signer.signEvent(
-        buildRecruitment('smash_sp', { firstFighter: 'mario', rating: 1500, rangeChoice: null, rematchHours: 0, settingsId: 'a'.repeat(64), waitingSince: now(), status: 'open' }, now(), 600),
+        buildRecruitment('smash_sp', { firstFighter: 'mario', rating: 1500, rangeChoice: null, rematchHours: 0, settingsId: 'a'.repeat(64), waitingSince: now(), status: 'open', seedHash: SEED_HASH }, now(), 120),
       ),
     );
     await relay.publish(await claimFor(mallory, now() - 100));
@@ -179,7 +235,7 @@ describe('Matchmaker', () => {
         .signEvent(
           buildMatch(
             'smash_sp',
-            { p1: mallory.pk, p2: app.pubkey, p1Fighter: 'mario', p2Fighter: app.firstFighter, p1SettingsId: 'a'.repeat(64), p2SettingsId: app.settingsId, applicationId: app.eventId, sessions: [mallory.sessionAt(now()), app.session] },
+            { p1: mallory.pk, p2: app.pubkey, p1Fighter: 'mario', p2Fighter: app.firstFighter, p1SettingsId: 'a'.repeat(64), p2SettingsId: app.settingsId, applicationId: app.eventId, sessions: [mallory.sessionAt(now()), app.session], seed: P1_SEED },
             now() + 3600,
           ),
         )
@@ -196,7 +252,7 @@ describe('Matchmaker', () => {
     await relay.publish(await claimFor(spammer, now() - 100));
     await relay.publish(
       await spammer.signer.signEvent(
-        buildRecruitment('smash_sp', { firstFighter: 'mario', rating: 1500, rangeChoice: null, rematchHours: 0, settingsId: 'a'.repeat(64), waitingSince: 0, status: 'open' }, now(), 120),
+        buildRecruitment('smash_sp', { firstFighter: 'mario', rating: 1500, rangeChoice: null, rematchHours: 0, settingsId: 'a'.repeat(64), waitingSince: 0, status: 'open', seedHash: SEED_HASH }, now(), 120),
       ),
     );
     const ctrl = new AbortController();
@@ -225,7 +281,7 @@ describe('Matchmaker', () => {
       await a.signer.signEvent(
         buildMatch(
           'smash_sp',
-          { p1: a.pk, p2: b.pk, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: 'a'.repeat(64), p2SettingsId: 'b'.repeat(64), applicationId: 'c'.repeat(64), sessions: [a.sessionAt(now()), b.sessionAt(now())] },
+          { p1: a.pk, p2: b.pk, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: 'a'.repeat(64), p2SettingsId: 'b'.repeat(64), applicationId: 'c'.repeat(64), sessions: [a.sessionAt(now()), b.sessionAt(now())], seed: P1_SEED },
           now() - 3600,
         ),
       ),

@@ -63,7 +63,7 @@ test('two players match, exchange the room id, play a set and confirm the result
   await expect(b).toHaveURL(/#\/match\/[0-9a-f]{64}$/, { timeout: 30_000 });
   expect(a.url().split('/match/')[1]).toBe(b.url().split('/match/')[1]);
 
-  // 部屋を立てるのは P1 の側。どちらが P1 かはマッチの id で決まる
+  // 部屋を立てるのは P1 の側。どちらが P1 かは双方の乱数で決まる
   await expect(a.getByTestId('my-side')).toHaveText(/^あなたは「P[12]」です/);
   const aIsP1 = ((await a.getByTestId('my-side').textContent()) ?? '').startsWith('あなたは「P1」');
   const [host, guest] = aIsP1 ? [a, b] : [b, a];

@@ -7,6 +7,7 @@ import {
   type ReportResult,
 } from '../../src/events/codec.js';
 import { newUser } from './keys.js';
+import { P1_SEED, P2_SEED, SEED_HASH } from './seeds.js';
 
 export type User = ReturnType<typeof newUser>;
 
@@ -22,7 +23,7 @@ export async function application(p1: User, p2: User, at: number, game = G): Pro
   return p2.signer.signEvent(
     buildApplication(
       game,
-      { recruiter: p1.pk, recruiterSession: p1.sessionAt(at), firstFighter: 'fox', settingsId: '2'.repeat(64), rangeChoice: null, rematchHours: 0, waitingSince: at - 5 },
+      { recruiter: p1.pk, recruiterSession: p1.sessionAt(at), firstFighter: 'fox', settingsId: '2'.repeat(64), rangeChoice: null, rematchHours: 0, waitingSince: at - 5, seedHash: SEED_HASH, seed: P2_SEED },
       at,
     ),
   );
@@ -41,6 +42,7 @@ export async function matchFor(p1: User, p2: User, app: NostrEvent, at: number, 
         p2SettingsId: '2'.repeat(64),
         applicationId: app.id,
         sessions: [p1.sessionAt(at), app.pubkey],
+        seed: P1_SEED,
       },
       at,
     ),

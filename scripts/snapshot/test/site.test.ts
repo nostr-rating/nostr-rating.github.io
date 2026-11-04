@@ -10,6 +10,7 @@ import {
   verificationText,
   type KelPrefixPart,
   type KelIndexPart,
+  type MatchesPart,
   type PlayersPart,
   type RatingState,
   type SnapshotToc,
@@ -105,6 +106,9 @@ describe('buildSite', () => {
       const prefix = part<KelPrefixPart>(index[aid.slice(0, 2)]!.sha256);
       expect([part(prefix[aid]!), players.kels[aid]]).toEqual([snapshot().kels[aid], prefix[aid]]);
     }
+    // 対戦ごとの記録も、誰でも1つの対戦を確かめられるように配信する（docs/adr/0014）
+    // （この目次はレートの状態だけから作ったので、記録は空）
+    expect(part<MatchesPart>(toc.parts.matches!.sha256)).toEqual({ matches: [] });
     // アプリはリレーの一覧も同じ配信元から読む
     expect(readFileSync(join(out, 'configs/relays.json'), 'utf8')).toBe(readFileSync(join(root, 'configs/relays.json'), 'utf8'));
     // 生成だけが使う部品は配信しない

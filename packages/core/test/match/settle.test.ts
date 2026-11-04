@@ -20,6 +20,7 @@ const match: MatchRecord = {
   p2SettingsId: '2'.repeat(64),
   applicationId: '3'.repeat(64),
   sessions: [],
+  seed: '1'.repeat(64),
 };
 
 let seq = 0;

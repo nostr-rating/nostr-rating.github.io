@@ -9,6 +9,7 @@ import {
   buildReport,
   KIND,
   MemoryRelay,
+  seedCommit,
   serializePart,
   serializeToc,
   sha256Hex,
@@ -23,6 +24,10 @@ import {
 import { partStore, type PartStore } from '../src/parts.js';
 import { eachGame, runSnapshot, type RunOptions } from '../src/run.js';
 import { fixedAccount } from './account.js';
+
+const P1_SEED = '1'.repeat(64);
+const P2_SEED = '2'.repeat(64);
+const SEED_HASH = seedCommit(P1_SEED);
 
 const REPO = resolve(__dirname, '../../..');
 const FIXTURES = resolve(__dirname, 'fixtures');
@@ -53,14 +58,14 @@ async function seededEvents(): Promise<NostrEvent[]> {
   const app = b.sign(
     buildApplication(
       'smash_sp',
-      { recruiter: a.aid, recruiterSession: a.session(T0), firstFighter: 'fox', settingsId: '2'.repeat(64), rangeChoice: null, rematchHours: 0, waitingSince: T0 - 30 },
+      { recruiter: a.aid, recruiterSession: a.session(T0), firstFighter: 'fox', settingsId: '2'.repeat(64), rangeChoice: null, rematchHours: 0, waitingSince: T0 - 30, seedHash: SEED_HASH, seed: P2_SEED },
       T0 - 1,
     ),
   );
   const m = a.sign(
     buildMatch(
       'smash_sp',
-      { p1: a.aid, p2: b.aid, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: app.id, sessions: [a.session(T0), b.session(T0)] },
+      { p1: a.aid, p2: b.aid, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: app.id, sessions: [a.session(T0), b.session(T0)], seed: P1_SEED },
       T0,
     ),
   );
@@ -109,6 +114,8 @@ describe('runSnapshot', () => {
     expect(read('snapshots/smash_sp/latest.json')).toBe(readFileSync(join(FIXTURES, 'latest.json'), 'utf8'));
     expect(read(`.parts/${out.toc.parts.players.sha256}.json`)).toBe(readFileSync(join(FIXTURES, 'players.json'), 'utf8'));
     expect(read(`.parts/${out.toc.parts.ids.sha256}.json`)).toBe(readFileSync(join(FIXTURES, 'ids.json'), 'utf8'));
+    // 対戦ごとの記録（docs/adr/0014）
+    expect(read(`.parts/${out.toc.parts.matches!.sha256}.json`)).toBe(readFileSync(join(FIXTURES, 'matches.json'), 'utf8'));
     // 公開情報と KEL は aid の先頭1文字ごとの部品（fixtures の accounts-<文字>.json と kels-<文字>.json）
     for (const kind of ['accounts', 'kels'] as const) {
       const golden = readdirSync(FIXTURES).filter((f) => f.startsWith(`${kind}-`)).map((f) => f.slice(kind.length + 1, -'.json'.length));
@@ -116,7 +123,7 @@ describe('runSnapshot', () => {
       for (const [k, ref] of Object.entries(out.toc.parts[kind])) expect(read(`.parts/${ref.sha256}.json`)).toBe(readFileSync(join(FIXTURES, `${kind}-${k}.json`), 'utf8'));
     }
     // 新しい部品は、リリースに上げるまで upload/<タグ>/ にも置く
-    const uploaded = [out.toc.parts.players, out.toc.parts.ids, ...Object.values(out.toc.parts.accounts), ...Object.values(out.toc.parts.kels)].map((r) => r.sha256).sort();
+    const uploaded = [out.toc.parts.players, out.toc.parts.ids, out.toc.parts.matches!, ...Object.values(out.toc.parts.accounts), ...Object.values(out.toc.parts.kels)].map((r) => r.sha256).sort();
     expect(readdirSync(join(root, '.parts/upload', out.release)).sort()).toEqual(uploaded.map((sha) => `${sha}.json`));
   });
 

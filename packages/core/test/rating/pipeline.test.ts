@@ -7,6 +7,7 @@ import { initialState } from '../helpers/state.js';
 import { def } from '../helpers/def.js';
 import { newUser } from '../helpers/keys.js';
 import { application, DAY, identity, matchFor, p1Wins, played, type User } from '../helpers/scenario.js';
+import { P1_SEED } from '../helpers/seeds.js';
 
 const T0 = 1_790_800_000;
 let alice: User;
@@ -135,7 +136,7 @@ describe('advanceRatings', () => {
     const forged = await alice.signer.signEvent(
       buildMatch(
         'smash_sp',
-        { p1: alice.pk, p2: bob.pk, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: 'a'.repeat(64), sessions: [alice.sessionAt(T0), bob.sessionAt(T0)] },
+        { p1: alice.pk, p2: bob.pk, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: 'a'.repeat(64), sessions: [alice.sessionAt(T0), bob.sessionAt(T0)], seed: P1_SEED },
         T0,
       ),
     );
@@ -149,7 +150,7 @@ describe('advanceRatings', () => {
     const wrongP2 = await alice.signer.signEvent(
       buildMatch(
         'smash_sp',
-        { p1: alice.pk, p2: bob.pk, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: app.id, sessions: [alice.sessionAt(T0), bob.sessionAt(T0)] },
+        { p1: alice.pk, p2: bob.pk, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: app.id, sessions: [alice.sessionAt(T0), bob.sessionAt(T0)], seed: P1_SEED },
         T0,
       ),
     );
@@ -161,6 +162,24 @@ describe('advanceRatings', () => {
     const { state } = advanceRatings(def, s0(), [...ids, app, wrongP2, late, ...reports], after(T0 + 200));
     expect(state.players[alice.pk]!.matches).toBe(0);
     expect(state.players[bob.pk]!.manners.noReport).toBe(0);
+  });
+
+  test('a match whose seed does not open the commitment in the application does not link', async () => {
+    const app = await application(alice, bob, T0 - 1);
+    // 先後を選ぶために、募集に載せたのとは別の乱数を明かしたマッチ
+    const regrind = await alice.signer.signEvent(
+      buildMatch(
+        'smash_sp',
+        { p1: alice.pk, p2: bob.pk, p1Fighter: 'mario', p2Fighter: 'fox', p1SettingsId: '1'.repeat(64), p2SettingsId: '2'.repeat(64), applicationId: app.id, sessions: [alice.sessionAt(T0), bob.sessionAt(T0)], seed: '3'.repeat(64) },
+        T0,
+      ),
+    );
+    const reports = [
+      await alice.signer.signEvent(buildReport('smash_sp', { matchId: regrind.id, opponent: bob.pk, result: 'win' }, T0 + 100)),
+      await bob.signer.signEvent(buildReport('smash_sp', { matchId: regrind.id, opponent: alice.pk, result: 'lose' }, T0 + 101)),
+    ];
+    const { state } = advanceRatings(def, s0(), [...ids, app, regrind, ...reports], after(T0 + 200));
+    expect([state.players[alice.pk]?.matches ?? 0, state.players[bob.pk]?.matches ?? 0]).toEqual([0, 0]);
   });
 
   test('only one match per application counts', async () => {

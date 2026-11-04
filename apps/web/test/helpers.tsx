@@ -3,6 +3,7 @@ import {
   MemoryRelay,
   newRecoveryWords,
   parseGameDefinition,
+  seedCommit,
   sha256Hex,
   buildAccountInfo,
   buildApplication,
@@ -23,6 +24,11 @@ import { Account, memoryKeyStore } from '../src/account/account.js';
 import { AppProvider, type AppDeps } from '../src/state/AppContext.js';
 import { MemoryEventStore } from '../src/storage/memory.js';
 import { snapshotRoutes as snapshotFiles } from './snapshot.js';
+
+/** テストの対戦で使う、先後を決める乱数（docs/adr/0013）。先後は sideOf(P1_SEED, P2_SEED, …) で決まる */
+export const P1_SEED = '1'.repeat(64);
+export const P2_SEED = '2'.repeat(64);
+const SEED_HASH = seedCommit(P1_SEED);
 
 export const def = parseGameDefinition(rawDef);
 export const chess = parseGameDefinition(rawChess);
@@ -102,10 +108,10 @@ export async function matchBetween(
   const setA = await a.signer.signEvent(buildSettings(game, { stageBans: (o.bansA ?? (game === 'smash_sp' ? { mario: ['final_destination'] } : {})) as never, rangeChoice: null, rematchHours: 0 }, t - 10));
   const setB = await b.signer.signEvent(buildSettings(game, { stageBans: (o.bansB ?? {}) as never, rangeChoice: null, rematchHours: 0 }, t - 10));
   const app = await b.signer.signEvent(
-    buildApplication(game, { recruiter: a.aid, recruiterSession: sa, firstFighter: fb, settingsId: setB.id, rangeChoice: null, rematchHours: 0, waitingSince: t - 5 }, t - 1),
+    buildApplication(game, { recruiter: a.aid, recruiterSession: sa, firstFighter: fb, settingsId: setB.id, rangeChoice: null, rematchHours: 0, waitingSince: t - 5, seedHash: SEED_HASH, seed: P2_SEED }, t - 1),
   );
   const mev = await a.signer.signEvent(
-    buildMatch(game, { p1: a.aid, p2: b.aid, p1Fighter: fa, p2Fighter: fb, p1SettingsId: setA.id, p2SettingsId: setB.id, applicationId: app.id, sessions: [sa, sb] }, t),
+    buildMatch(game, { p1: a.aid, p2: b.aid, p1Fighter: fa, p2Fighter: fb, p1SettingsId: setA.id, p2SettingsId: setB.id, applicationId: app.id, sessions: [sa, sb], seed: P1_SEED }, t),
   );
   for (const e of [setA, setB, app, mev]) await relay.publish(e);
   return parseMatch(game, mev, a.aid)!;

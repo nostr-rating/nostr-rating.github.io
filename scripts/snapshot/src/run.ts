@@ -114,10 +114,10 @@ export async function runSnapshot(opts: RunOptions): Promise<RunResult> {
   // 前のシーズンが終わっていれば、まずその最終スナップショットだけを作る
   if (prev && prev.kind !== 'final' && prev.state.season < season.id) {
     const ended = seasonById(def, prev.state.season);
-    const { state, usedEventIds, excluded } = await advance(def, opts.relay, prev.state, ended.endsAt);
+    const { state, usedEventIds, excluded, matches } = await advance(def, opts.relay, prev.state, ended.endsAt);
     const finalState = { ...state, seasonSummaries: summarizeSeason(state) };
     const path = `snapshots/${def.id}/season_${ended.id}/final.json`;
-    return write(opts.root, opts.parts, path, buildSnapshot(finalState, meta(path, usedEventIds, 'final', excluded)));
+    return write(opts.root, opts.parts, path, buildSnapshot(finalState, { ...meta(path, usedEventIds, 'final', excluded), matches }));
   }
 
   let start: RatingState;
@@ -131,10 +131,10 @@ export async function runSnapshot(opts: RunOptions): Promise<RunResult> {
     start = prev.state;
   }
 
-  const { state, usedEventIds, excluded } = await advance(def, opts.relay, start, opts.cutoff);
+  const { state, usedEventIds, excluded, matches } = await advance(def, opts.relay, start, opts.cutoff);
   const path = `snapshots/${def.id}/season_${season.id}/${jstDate(opts.cutoff)}.json`;
   if (prev?.path === path) throw new Error(`${path} is the previous snapshot; use a cutoff on a later date`);
-  return write(opts.root, opts.parts, path, buildSnapshot(state, meta(path, usedEventIds, 'rolling', excluded)));
+  return write(opts.root, opts.parts, path, buildSnapshot(state, { ...meta(path, usedEventIds, 'rolling', excluded), matches }));
 }
 
 /**

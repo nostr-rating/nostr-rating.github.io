@@ -17,6 +17,7 @@ import {
 import { KIND } from '../../src/events/kinds.js';
 import { attributor, buildKelBook } from '../../src/kel/book.js';
 import { newUser, registeredKels } from '../helpers/keys.js';
+import { P1_SEED, P2_SEED, SEED_HASH } from '../helpers/seeds.js';
 
 const G = 'smash_sp';
 const alice = newUser();
@@ -46,7 +47,7 @@ describe('roundtrip build → sign → parse', () => {
     const ev = await alice.signer.signEvent(
       buildRecruitment(
         G,
-        { firstFighter: 'mario', rating: 1500, rangeChoice: null, rematchHours: 0, settingsId: 'a'.repeat(64), waitingSince: NOW, status: 'open' },
+        { firstFighter: 'mario', rating: 1500, rangeChoice: null, rematchHours: 0, settingsId: 'a'.repeat(64), waitingSince: NOW, status: 'open', seedHash: SEED_HASH },
         NOW,
         120,
       ),
@@ -64,6 +65,7 @@ describe('roundtrip build → sign → parse', () => {
       waitingSince: NOW,
       status: 'open',
       expiresAt: NOW + 120,
+      seedHash: SEED_HASH,
     });
   });
 
@@ -71,7 +73,7 @@ describe('roundtrip build → sign → parse', () => {
     const ev = await bob.signer.signEvent(
       buildApplication(
         G,
-        { recruiter: alice.pk, recruiterSession: alice.sessionAt(NOW), firstFighter: 'fox', settingsId: 'b'.repeat(64), rangeChoice: 150, rematchHours: 5, waitingSince: NOW - 30 },
+        { recruiter: alice.pk, recruiterSession: alice.sessionAt(NOW), firstFighter: 'fox', settingsId: 'b'.repeat(64), rangeChoice: 150, rematchHours: 5, waitingSince: NOW - 30, seedHash: SEED_HASH, seed: P2_SEED },
         NOW,
       ),
     );
@@ -88,12 +90,14 @@ describe('roundtrip build → sign → parse', () => {
       rangeChoice: 150,
       rematchHours: 5,
       waitingSince: NOW - 30,
+      seedHash: SEED_HASH,
+      seed: P2_SEED,
     });
   });
 
   test('match', async () => {
     const ev = await alice.signer.signEvent(
-      buildMatch(G, { ...M, p1: alice.pk, p2: bob.pk, sessions: [alice.sessionAt(NOW), bob.sessionAt(NOW)] }, NOW),
+      buildMatch(G, { ...M, p1: alice.pk, p2: bob.pk, sessions: [alice.sessionAt(NOW), bob.sessionAt(NOW)], seed: P1_SEED }, NOW),
     );
     expect(parseMatch(G, ev, by(ev))).toEqual({
       id: ev.id,
@@ -106,6 +110,7 @@ describe('roundtrip build → sign → parse', () => {
       p2SettingsId: 'b'.repeat(64),
       applicationId: 'c'.repeat(64),
       sessions: [alice.sessionAt(NOW), bob.sessionAt(NOW)],
+      seed: P1_SEED,
     });
   });
 
@@ -165,13 +170,13 @@ describe('parsers reject malformed events', () => {
   });
 
   test('match signed by someone other than p1', async () => {
-    const tmpl = buildMatch(G, { ...M, p1: alice.pk, p2: bob.pk, sessions: [alice.sessionAt(NOW), bob.sessionAt(NOW)] }, NOW);
+    const tmpl = buildMatch(G, { ...M, p1: alice.pk, p2: bob.pk, sessions: [alice.sessionAt(NOW), bob.sessionAt(NOW)], seed: P1_SEED }, NOW);
     const ev = await bob.signer.signEvent(tmpl);
     expect(parseMatch(G, ev, by(ev))).toBeNull();
   });
 
   test('match whose p tags do not name both sessions', async () => {
-    const tmpl = buildMatch(G, { ...M, p1: alice.pk, p2: bob.pk, sessions: [alice.sessionAt(NOW)] }, NOW);
+    const tmpl = buildMatch(G, { ...M, p1: alice.pk, p2: bob.pk, sessions: [alice.sessionAt(NOW)], seed: P1_SEED }, NOW);
     const ev = await alice.signer.signEvent(tmpl);
     expect(parseMatch(G, ev, by(ev))).toBeNull();
   });
