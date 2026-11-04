@@ -499,6 +499,7 @@ export function MatchRoom({ matchId }: { matchId: string }) {
         status={reportStatus(def, match, reports, me, app.now())}
         closed={closed}
         mine={latestReports(match, reports).get(me)}
+        resultSent={reports.some((r) => r.reporter === me && r.result !== 'cancel' && (def.results.draw || r.result !== 'draw'))}
         record={record}
         allowDraw={def.results.draw}
         busy={busy}
