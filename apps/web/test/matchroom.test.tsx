@@ -1,4 +1,4 @@
-import { MemoryRelay, sideOf } from '@nostr-rating/core';
+import { KIND, MemoryRelay, sideOf } from '@nostr-rating/core';
 import { cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -43,6 +43,25 @@ describe('MatchRoom', () => {
     expect(guest.getByTestId('room-format').textContent).toBe('2本先取 ／ ストック3・制限時間7分 ／ 入室制限「だれでも」 ／ 部屋の人数 2人');
     expect(guest.getByTestId('chat-note').textContent).toBe('部屋 ID とパスワードは上の「専用部屋」の欄から送ってください。');
   });
+
+  test('when the application cannot be read, the room says so and reads it again', async () => {
+    const relay = new MemoryRelay(realNow);
+    const claims = [{ platform: 'github' as const, identity: 'u', proof: 'abc' }];
+    const a = await newPlayer(relay, realNow, { claims });
+    const b = await newPlayer(relay, realNow, { claims });
+    const match = await matchBetween(relay, a, b);
+    // 申し込みを id で読む問い合わせを、リレーが戻るまで失敗させる
+    const query = relay.query.bind(relay);
+    let down = true;
+    relay.query = async (filters) => {
+      if (down && filters.some((f) => f.kinds?.includes(KIND.application) && f.ids?.includes(match.applicationId))) throw new Error('relay down');
+      return query(filters);
+    };
+    const room = within(renderWithApp(<MatchRoom matchId={match.id} />, { deps: makeDeps({ relay, now: realNow }), account: a.account }).container);
+    await room.findByText('申し込みを読み込めませんでした。読み込み直しています…', {}, { timeout: 9000 });
+    down = false;
+    await room.findByTestId('my-side', {}, { timeout: 8000 });
+  }, 20000);
 
   test('room id that is not 5 characters cannot be sent', async () => {
     const user = userEvent.setup();

@@ -267,6 +267,9 @@ export class Matchmaker {
     signal: AbortSignal,
   ): Promise<MatchRecord | null> {
     const { relay, identity, def, now, sleep } = this.#d;
+    // 同じ募集（同じ seedHash）に申し込み直すときは同じ乱数を使う。募集した側が都合の悪い乱数に応えずに待ち、
+    // 申し込み直しで先後を引き直すことを防ぐ（docs/adr/0013）
+    const seed = [...sent.values()].find((a) => a.seedHash === r.seedHash)?.seed ?? newSeed();
     const ev = await signAs(
       identity,
       buildApplication(
@@ -280,7 +283,7 @@ export class Matchmaker {
           rematchHours: p.rematchHours,
           waitingSince,
           seedHash: r.seedHash,
-          seed: newSeed(),
+          seed,
         },
         now(),
       ),

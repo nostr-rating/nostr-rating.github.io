@@ -129,6 +129,26 @@ describe('Matchmaker', () => {
     expect(await settle(b.mm.search(params('fox'), ctrl.signal), ctrl, 20_000)).toBe('AbortError');
   });
 
+  test('re-applying to the same commitment sends the same seed, so ignoring an application does not redraw the side (docs/adr/0013)', async () => {
+    const relay = new MemoryRelay(now);
+    const b = maker(relay);
+    const mallory = newUser();
+    await relay.publish(
+      await mallory.signer.signEvent(
+        buildRecruitment('smash_sp', { firstFighter: 'mario', rating: 1500, rangeChoice: null, rematchHours: 0, settingsId: 'a'.repeat(64), waitingSince: now() - 60, status: 'open', seedHash: SEED_HASH }, now(), 120),
+      ),
+    );
+    await relay.publish(await claimFor(mallory, now() - 100));
+    // mallory は申し込みに応えない。b が募集を出したあとも mallory に申し込み続けるよう、mallory のほうを長く待たせる
+    const seeds: string[] = [];
+    relay.subscribe([{ kinds: [KIND.application], '#p': [mallory.sessionAt(now())] }], (ev) => {
+      seeds.push(parseApplication('smash_sp', ev, authorOf(ev))!.seed);
+    });
+    const ctrl = new AbortController();
+    expect(await settle(b.mm.search(params('fox'), ctrl.signal), ctrl, 40_000)).toBe('AbortError');
+    expect([seeds.length >= 2, new Set(seeds).size]).toEqual([true, 1]);
+  });
+
   test('two simultaneous seekers end up in exactly one match', async () => {
     const relay = new MemoryRelay(now);
     const a = maker(relay);
