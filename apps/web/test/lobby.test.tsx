@@ -107,6 +107,32 @@ describe('Ranking', () => {
   });
 });
 
+describe('loading', () => {
+  test('rating pages show loading instead of the initial values until the first sync ends', async () => {
+    localStorage.clear();
+    location.hash = '#/lobby';
+    const relay = new MemoryRelay(realNow);
+    const account = await userWithIdentity(relay);
+    // リレーの返事を止めておき、同期が終わる前の画面を見る
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const slow = Object.assign(Object.create(relay) as MemoryRelay, {
+      query: async (...args: Parameters<MemoryRelay['query']>) => {
+        await gate;
+        return relay.query(...args);
+      },
+    });
+    renderWithApp(<App />, { deps: { ...makeDeps({ relay, now: realNow }), relay: slow }, account });
+    expect(await screen.findByText('読み込み中…')).toBeTruthy();
+    expect(screen.queryByTestId('my-rating')).toBeNull();
+    expect(screen.queryByText('対戦するには X か GitHub の紐づけが必要です。紐づけに進む', { selector: 'span' })).toBeNull();
+    release();
+    expect((await screen.findByTestId('my-rating')).textContent).toBe('1500');
+    expect(screen.queryByText('読み込み中…')).toBeNull();
+    expect(screen.queryByText('対戦するには X か GitHub の紐づけが必要です。紐づけに進む', { selector: 'span' })).toBeNull();
+  });
+});
+
 describe('game select', () => {
   test('choosing chess hides the character select, recruits for chess and is remembered', async () => {
     const user = userEvent.setup();

@@ -17,6 +17,8 @@ export function App() {
     if (!app.account && route.name !== 'onboarding') navigate({ name: 'onboarding' });
   }, [app.account, route.name]);
 
+  const usesRatings = route.name === 'lobby' || route.name === 'match' || route.name === 'ranking' || route.name === 'player';
+
   const tab = (name: 'lobby' | 'ranking' | 'settings') => (route.name === name || (name === 'ranking' && route.name === 'player') ? 'page' : undefined);
 
   return (
@@ -49,10 +51,16 @@ export function App() {
       <main>
         {route.name === 'onboarding' && <Onboarding />}
         {route.name === 'settings' && <Settings />}
-        {route.name === 'lobby' && <Lobby />}
-        {route.name === 'match' && <MatchRoom key={route.id} matchId={route.id} />}
-        {route.name === 'ranking' && <Ranking />}
-        {route.name === 'player' && <Player pubkey={route.pubkey} />}
+        {/* レートと紐づけを使う画面は、最初の同期が終わるまで初期値を見せない */}
+        {usesRatings && !app.loaded && <p className="loading">読み込み中…</p>}
+        {usesRatings && app.loaded && (
+          <>
+            {route.name === 'lobby' && <Lobby />}
+            {route.name === 'match' && <MatchRoom key={route.id} matchId={route.id} />}
+            {route.name === 'ranking' && <Ranking />}
+            {route.name === 'player' && <Player pubkey={route.pubkey} />}
+          </>
+        )}
       </main>
       {/* あとから届く知らせは、画面の下に留める（上の要素を押し出さない） */}
       <div className="dock">

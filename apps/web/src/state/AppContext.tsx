@@ -78,6 +78,8 @@ export interface AppValue extends AppDeps {
   ratings: RatingState;
   view: LocalView;
   syncing: boolean;
+  /** 今のゲームの最初の同期が終わったか（失敗も含む）。それまでのレートと紐づけは初期値 */
+  loaded: boolean;
   syncError: string | null;
   refresh(): Promise<void>;
   profiles: Record<Pubkey, string>;
@@ -142,6 +144,7 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
   const gameRef = useRef(def.id);
   const [ratings, setRatings] = useState<RatingState>(() => emptyState(def, deps.now()));
   const [syncing, setSyncing] = useState(false);
+  const [loadedGame, setLoadedGame] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<Record<Pubkey, string>>({});
   const [identities, setIdentities] = useState<Record<Pubkey, IdentityClaim[]>>({});
@@ -263,7 +266,10 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
       setSyncError(e instanceof Error ? e.message : String(e));
       if (pubkey) await loadPeople([pubkey]).catch(() => undefined);
     } finally {
-      if (gameRef.current === def.id) setSyncing(false);
+      if (gameRef.current === def.id) {
+        setSyncing(false);
+        setLoadedGame(def.id);
+      }
     }
   }, [account, def, deps, loadPeople, pubkey, resolver, snapshotCache]);
   // 同期はゲームごとに同時に1本だけ走らせ、走っている間に頼まれた分は終わったあとに1回だけ、そのときの値でやり直す。
@@ -394,6 +400,7 @@ export function AppProvider(props: { deps: AppDeps; initialAccount?: Account | n
     ratings,
     view,
     syncing,
+    loaded: loadedGame === def.id,
     syncError,
     refresh,
     profiles,
