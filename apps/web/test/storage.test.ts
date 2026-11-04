@@ -8,7 +8,7 @@ const ev = (kind: number, at: number) => finalizeEvent({ kind, created_at: at, t
 
 describe('event store', () => {
   test('falls back to memory storage when OPFS is unavailable', async () => {
-    const store = await openEventStore();
+    const store = await openEventStore(() => {});
     expect(store.persistent).toBe(false);
   });
 

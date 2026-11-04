@@ -191,3 +191,6 @@ details[open] > summary { margin-bottom: 12px; }
 .side { font-weight: 700; }
 /* 招待リンクの欄。届く前後で高さを変えない */
 .invite { min-height: 128px; display: flex; flex-direction: column; gap: 12px; }
+
+/* 別のタブで開いているときの案内（components/TabInUse.tsx）。ヘッダーがないので上を空ける */
+.tab-in-use { margin-top: 24px; }
