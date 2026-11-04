@@ -70,6 +70,7 @@ export type KelBody = IcpBody | IxnBody | RotBody;
  * 本文への署名。P-256 は digest のバイト列への ECDSA（WebCrypto の r||s）。
  * schnorr の鍵は任意のバイト列に署名できない署名アプリがあるので、content に digest を入れた
  * Nostr のイベント（kind ATTESTATION_KIND）への署名で代える。
+ * schnorr の端末は、同じ digest への掲載用の鍵の署名（signer は掲載用の鍵）も添える（publisherSigned）。
  */
 export type KelSig = { signer: string; p256: string } | { signer: string; created_at: number; sig: string };
 
@@ -174,6 +175,8 @@ function validDevice(d: DeviceRecord, at: number): boolean {
     validKey(d.key) &&
     d.id === deviceId(d.key) &&
     HEX64.test(d.publisher) &&
+    // 掲載用の鍵が端末の鍵と同じだと、端末の署名がそのまま掲載用の鍵の署名になる（publisherSigned）
+    d.publisher !== d.key.pub &&
     typeof d.label === 'string' &&
     d.label.length <= 64 &&
     Number.isSafeInteger(d.expiresAt) &&
@@ -243,6 +246,15 @@ function signedBy(digest: string, sigs: KelSig[], key: KeyRef, signer: string): 
   return sigs.some((s) => s.signer === signer && verifyKeySig(key, digest, s));
 }
 
+/**
+ * schnorr の端末の署名に、その端末の掲載用の鍵の署名が添えてあるか（docs/adr/0016）。
+ * schnorr の端末の鍵は署名アプリにあり、利用者がほかの Nostr のサイトでも使う。ほかのサイトが署名アプリから
+ * digest への署名を引き出しても、アプリの中にしかない掲載用の鍵の署名がなければ足りない。P-256 の端末の鍵はアプリの中にしかないので要らない
+ */
+export function publisherSigned(device: DeviceRecord, digest: string, sigs: KelSig[]): boolean {
+  return device.key.type === 'p256' || signedBy(digest, sigs, { type: 'schnorr', pub: device.publisher }, device.publisher);
+}
+
 function applyIcp(aid: string, input: KelInput): KelState | null {
   const b = input.entry.body;
   if (b.t !== 'icp' || b.v !== 1 || b.sn !== 0 || typeof b.nonce !== 'string') return null;
@@ -251,7 +263,7 @@ function applyIcp(aid: string, input: KelInput): KelState | null {
   if (!Array.isArray(b.devices) || b.devices.length === 0 || !validNext(b.next, false)) return null;
   if (new Set(b.devices.map((d) => d.id)).size !== b.devices.length) return null;
   for (const d of b.devices) {
-    if (!validDevice(d, input.at) || !signedBy(digest, input.entry.sigs, d.key, d.id)) return null;
+    if (!validDevice(d, input.at) || !signedBy(digest, input.entry.sigs, d.key, d.id) || !publisherSigned(d, digest, input.entry.sigs)) return null;
   }
   const devices = new Map<string, DeviceState>();
   for (const d of b.devices) devices.set(d.id, { record: d, intervals: [{ from: input.at, to: d.expiresAt }] });
@@ -268,7 +280,12 @@ function applyIxn(s: KelState, input: KelInput): KelState | null {
   // 有効な端末のどれか1つが署名していればよい
   const signer = input.entry.sigs.find((sig) => {
     const d = s.devices.get(sig.signer);
-    return !!d && deviceValidAt(s, sig.signer, input.at) && verifyKeySig(d.record.key, digest, sig);
+    return (
+      !!d &&
+      deviceValidAt(s, sig.signer, input.at) &&
+      verifyKeySig(d.record.key, digest, sig) &&
+      publisherSigned(d.record, digest, input.entry.sigs)
+    );
   });
   if (!signer) return null;
   const n = cloneState(s);

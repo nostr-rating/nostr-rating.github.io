@@ -1,6 +1,6 @@
 import type { NostrEvent } from 'nostr-tools/pure';
 import type { Pubkey } from '../types.js';
-import { deviceValidAt, digestOf, verifyKeySig, type KelSig, type KelState } from './kel.js';
+import { deviceValidAt, digestOf, publisherSigned, verifyKeySig, type KelSig, type KelState } from './kel.js';
 
 /** 使い捨ての鍵の証明書が有効な長さ */
 export const SESSION_LIFETIME_SEC = 86400;
@@ -23,6 +23,8 @@ export interface SessionCert {
 export interface SignedCert {
   cert: SessionCert;
   sig: KelSig;
+  /** schnorr の端末だけ: 同じ digest への、KEL に記録した掲載用の鍵の署名（docs/adr/0016） */
+  publisherSig?: KelSig;
 }
 
 export const CERT_TAG = 'cert';
@@ -40,7 +42,8 @@ export function verifyCert(state: KelState, signed: SignedCert, event: Pick<Nost
   if (event.created_at < c.from || event.created_at > c.until) return false;
   if (signed.sig.signer !== c.device || !deviceValidAt(state, c.device, c.from)) return false;
   const device = state.devices.get(c.device)!;
-  return verifyKeySig(device.record.key, digestOf(c), signed.sig);
+  const digest = digestOf(c);
+  return verifyKeySig(device.record.key, digest, signed.sig) && publisherSigned(device.record, digest, signed.publisherSig ? [signed.publisherSig] : []);
 }
 
 export function certTags(signed: SignedCert): string[][] {
