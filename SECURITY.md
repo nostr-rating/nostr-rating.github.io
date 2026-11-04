@@ -1,3 +1,5 @@
+[English](SECURITY.en.md)
+
 # 脆弱性の報告
 
 アカウントの乗っ取り、なりすまし、他人のレートを動かせる穴など、悪用できる問題を見つけたときは、公開の Issue に書かないでください。GitHub の「Security」タブにある「Report a vulnerability」から、非公開で報告してください。

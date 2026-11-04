@@ -1,3 +1,5 @@
+[English](README.en.md)
+
 # Nostr-Rating
 
 運営のいない、1対1の対戦ゲームのレート戦です。
