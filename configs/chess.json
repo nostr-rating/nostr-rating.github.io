@@ -1,24 +1,24 @@
 {
   "id": "chess",
-  "name": "チェス",
+  "name": { "ja": "チェス", "en": "Chess" },
   "format": {
     "bestOf": 1,
     "notes": [
-      "持ち時間: 15分＋1手ごとに10秒（国際チェス連盟の世界ラピッド選手権と同じ）"
+      { "ja": "持ち時間: 15分＋1手ごとに10秒（国際チェス連盟の世界ラピッド選手権と同じ）", "en": "Time control: 15 minutes + 10 seconds per move (the same as the World Rapid Championship of the International Chess Federation)" }
     ]
   },
   "results": {
     "draw": true
   },
   "sides": [
-    "白",
-    "黒"
+    { "ja": "白", "en": "White" },
+    { "ja": "黒", "en": "Black" }
   ],
   "room": {
     "kind": "link",
     "notes": [
-      "白の人が双方の使えるオンラインの対局サービスで、相手を招待するリンクを作って送ります",
-      "色（白・黒）と持ち時間は、この画面に出ているとおりに設定してください"
+      { "ja": "白の人が双方の使えるオンラインの対局サービスで、相手を招待するリンクを作って送ります", "en": "The White player creates an invite link on an online chess service that both players can use, and sends it" },
+      { "ja": "色（白・黒）と持ち時間は、この画面に出ているとおりに設定してください", "en": "Set the colors (White and Black) and the time control exactly as shown on this screen" }
     ]
   },
   "rating": {

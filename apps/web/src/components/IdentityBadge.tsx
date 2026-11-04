@@ -1,14 +1,26 @@
 import { proofUrl, verifyClaim, type IdentityClaim, type Pubkey, type VerifyStatus } from '@nostr-rating/core';
 import { useEffect, useState } from 'react';
+import { messages, useT } from '../i18n.js';
 
-const LABEL: Record<VerifyStatus, string> = {
-  verified: '確認済み',
-  failed: '確認できませんでした',
-};
+const M = messages({
+  ja: {
+    status: { verified: '確認済み', failed: '確認できませんでした' } as Record<VerifyStatus, string>,
+    checkingLinks: '紐づけを確認中…',
+    noLinks: '紐づけなし',
+    checking: '確認中…',
+  },
+  en: {
+    status: { verified: 'Verified', failed: 'Could not verify' },
+    checkingLinks: 'Checking linked accounts…',
+    noLinks: 'No linked accounts',
+    checking: 'Checking…',
+  },
+});
 const CLASS: Record<VerifyStatus, string> = { verified: 'ok', failed: 'ng' };
 
 export function StatusBadge({ status }: { status: VerifyStatus }) {
-  return <span className={`badge ${CLASS[status]}`}>{LABEL[status]}</span>;
+  const t = useT(M);
+  return <span className={`badge ${CLASS[status]}`}>{t.status[status]}</span>;
 }
 
 const PLATFORM: Record<IdentityClaim['platform'], string> = { github: 'GitHub', twitter: 'X' };
@@ -26,6 +38,7 @@ export function IdentityBadge({
   pubkey?: Pubkey;
   fetchFn?: typeof fetch;
 }) {
+  const t = useT(M);
   const [status, setStatus] = useState<Record<string, VerifyStatus>>({});
   useEffect(() => {
     if (!claims || !pubkey || !fetchFn) return;
@@ -40,8 +53,8 @@ export function IdentityBadge({
     };
   }, [claims, pubkey, fetchFn]);
 
-  if (claims === undefined) return <div className="claims"><span className="claim muted">紐づけを確認中…</span></div>;
-  if (claims.length === 0) return <div className="claims"><span className="claim"><span className="badge ng">紐づけなし</span></span></div>;
+  if (claims === undefined) return <div className="claims"><span className="claim muted">{t.checkingLinks}</span></div>;
+  if (claims.length === 0) return <div className="claims"><span className="claim"><span className="badge ng">{t.noLinks}</span></span></div>;
   return (
     <span className="claims">
       {claims.map((c) => {
@@ -51,7 +64,7 @@ export function IdentityBadge({
             <a className="chip" href={proofUrl(c)} target="_blank" rel="noreferrer noopener">
               {PLATFORM[c.platform]}: {c.identity}
             </a>
-            {pubkey && fetchFn && (status[key] ? <StatusBadge status={status[key]} /> : <span className="muted">確認中…</span>)}
+            {pubkey && fetchFn && (status[key] ? <StatusBadge status={status[key]} /> : <span className="muted">{t.checking}</span>)}
           </span>
         );
       })}

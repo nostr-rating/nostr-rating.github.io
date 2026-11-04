@@ -26,7 +26,8 @@ body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:
   display:flex;flex-direction:column;gap:48px}
 .proto{background:var(--warn-soft);color:var(--ink);border:1px solid var(--warn);border-radius:8px;padding:10px 14px;font-size:14px}
 .proto b{color:var(--warn)}
-header .app{font-size:13px;letter-spacing:.12em;color:var(--muted);margin:0 0 6px}
+header .app{font-size:13px;letter-spacing:.12em;color:var(--muted);margin:0 0 6px;display:flex;justify-content:space-between;gap:12px}
+header .app .lang{letter-spacing:0;color:var(--accent)}
 h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,7vw,44px);line-height:1.25;margin:0 0 16px;text-wrap:balance}
 h2{font-family:var(--display);font-weight:700;font-size:22px;line-height:1.4;margin:0 0 16px;text-wrap:balance;
   display:flex;gap:10px;align-items:baseline}
@@ -104,7 +105,7 @@ tr:last-child th,tr:last-child td{border-bottom:none}
 <div class="wrap">
 
   <header>
-    <p class="app"><a href="../" class="back">NOSTR-RATING</a> ヘルプ</p>
+    <p class="app"><span><a href="../" class="back">NOSTR-RATING</a> ヘルプ</span><a href="account.en.html" class="lang" lang="en" hreflang="en">English</a></p>
     <h1>アカウントの守り方</h1>
     <p class="lead">Nostr-Rating には運営が管理するアカウントもパスワードもありません。あなたのアカウントはあなたの手元の端末だけで成り立っています。このページではその仕組みと、困ったときにどうすればよいかを説明します。</p>
   </header>
@@ -209,7 +210,7 @@ tr:last-child th,tr:last-child td{border-bottom:none}
     <p class="sub">5で投稿する文の見本</p>
     <div class="post" aria-label="X に投稿する文の見本">
       <p class="who">あなた <span>@your_name</span></p>
-      <p class="txt">Verifying that I control the following Nostr public key: npub1q8x…7kfs</p>
+      <p class="txt">Verifying my Nostr-Rating account: 3f8a…c27d</p>
     </div>
     <p>GitHub の場合は、同じ文を公開の Gist に貼ります。投稿や Gist は紐づけのあとも消さないでください。</p>
     <figure class="flow">

@@ -1,0 +1,425 @@
+<!doctype html>
+<!-- This page is a translation of account.html as of commit dfe60fe. If the two differ, the Japanese page (account.html) is authoritative. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keeping your account safe | Nostr-Rating</title>
+<link rel="stylesheet" href="../fonts/zen-kaku-gothic-new.css">
+<style>
+/* 1段組みのヘルプページ。見出しの左に節の印、要点は「カード」、困ったときは開閉式 */
+:root{
+  --paper:#f5f7fa; --surface:#ffffff; --ink:#18223a; --muted:#5a6680;
+  --line:#d9dfea; --accent:#2f4fd8; --accent-soft:#e6ebfd; --warn:#b4560a; --warn-soft:#fdf0e3;
+  --display:"Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+  --body:"Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+  --mono:ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --paper:#10141f; --surface:#171d2c; --ink:#e7ebf5; --muted:#9aa5be;
+  --line:#2b3448; --accent:#8ea4ff; --accent-soft:#1f2a4d; --warn:#f0a35c; --warn-soft:#3a2a1a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#10141f; --surface:#171d2c; --ink:#e7ebf5; --muted:#9aa5be;
+  --line:#2b3448; --accent:#8ea4ff; --accent-soft:#1f2a4d; --warn:#f0a35c; --warn-soft:#3a2a1a; color-scheme:dark}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.85}
+.wrap{max-width:720px;margin:0 auto;padding-block:32px 80px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));
+  display:flex;flex-direction:column;gap:48px}
+.proto{background:var(--warn-soft);color:var(--ink);border:1px solid var(--warn);border-radius:8px;padding:10px 14px;font-size:14px}
+.proto b{color:var(--warn)}
+header .app{font-size:13px;letter-spacing:.12em;color:var(--muted);margin:0 0 6px;display:flex;justify-content:space-between;gap:12px}
+header .app .lang{letter-spacing:0;color:var(--accent)}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,7vw,44px);line-height:1.25;margin:0 0 16px;text-wrap:balance}
+h2{font-family:var(--display);font-weight:700;font-size:22px;line-height:1.4;margin:0 0 16px;text-wrap:balance;
+  display:flex;gap:10px;align-items:baseline}
+h2::before{content:"";flex:none;width:10px;height:10px;background:var(--accent);transform:translateY(-2px) rotate(45deg)}
+h3{font-size:17px;font-weight:700;margin:0}
+p{margin:0}
+section{display:flex;flex-direction:column;gap:14px}
+.lead{font-size:17px}
+ol,ul{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:6px}
+.quick{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px 20px 20px 16px}
+.quick ol{counter-reset:q;list-style:none;padding:0;gap:12px}
+.quick li{counter-increment:q;display:grid;grid-template-columns:32px 1fr;gap:10px;align-items:start}
+.quick li::before{content:counter(q);font-family:var(--display);color:var(--accent);background:var(--accent-soft);
+  width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:15px;font-weight:700}
+.note{color:var(--muted);font-size:15px}
+.keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.key{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.key .tag{font-size:12px;letter-spacing:.08em;color:var(--muted)}
+.key h3{font-size:18px}
+.key .like{font-size:14px;color:var(--accent);font-weight:700}
+.key dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:14px}
+.key dt{color:var(--muted)} .key dd{margin:0}
+.key.paper{border-color:var(--accent)}
+.point{border-left:3px solid var(--accent);padding:4px 0 4px 14px}
+.card{font-family:var(--mono);background:var(--surface);border:1px dashed var(--muted);border-radius:8px;padding:14px;
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px 14px;font-size:14px;position:relative}
+.card span{white-space:nowrap} .card span i{font-style:normal;color:var(--muted);display:inline-block;width:2.2em}
+.card::after{content:"Sample";position:absolute;top:-10px;right:12px;background:var(--paper);padding:0 6px;font-family:var(--body);font-size:12px;color:var(--warn)}
+details{background:var(--surface);border:1px solid var(--line);border-radius:10px}
+details+details{margin-top:-4px}
+summary{cursor:pointer;padding:14px 16px;font-weight:700;list-style:none;display:flex;justify-content:space-between;gap:12px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--accent);font-family:var(--mono)}
+details[open] summary::after{content:"−"}
+summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.dbody{padding:0 16px 16px;display:flex;flex-direction:column;gap:10px}
+.rules li::marker{color:var(--warn)}
+.rules{background:var(--warn-soft);border-radius:10px;padding:16px 16px 16px 2.2em}
+.tablebox{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:480px;font-size:15px}
+th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+thead th{font-family:var(--display);font-weight:700;font-size:15px}
+thead th:nth-child(3){color:var(--accent)}
+tbody th{color:var(--muted);font-weight:700;white-space:nowrap}
+tr:last-child th,tr:last-child td{border-bottom:none}
+.move{min-width:560px}
+.move tbody th{white-space:normal;min-width:9em}
+.back{color:inherit}
+.faq{display:flex;flex-direction:column;gap:18px}
+.faq div{display:flex;flex-direction:column;gap:6px}
+.flow{margin:0;display:flex;flex-direction:column;gap:8px}
+.flow svg{width:100%;max-width:520px;height:auto;display:block;margin:0 auto;font-family:var(--body)}
+.flow figcaption{font-size:14px;color:var(--muted)}
+.flow .b{fill:var(--surface);stroke:var(--line);stroke-width:1.2}
+.flow .u{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.2}
+.flow .d{stroke-dasharray:4 3;stroke:var(--muted)}
+.flow .k{stroke:var(--accent)}
+.flow .t{font-size:12px;fill:var(--ink);text-anchor:middle}
+.flow .lh{font-size:12px;fill:var(--muted);text-anchor:middle}
+.flow .sep{stroke:var(--line);stroke-dasharray:3 4}
+.flow .ln{fill:none;stroke:var(--muted);stroke-width:1.4}
+.flow .ah{fill:var(--muted)}
+.flow .nc{fill:var(--accent)}
+.flow .nt{font-size:11px;font-family:var(--mono);fill:var(--surface);text-anchor:middle}
+.post{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;position:relative}
+.post .who{font-size:14px;font-weight:700}
+.post .who span{color:var(--muted);font-weight:400}
+.post .txt{font-family:var(--mono);font-size:13px;overflow-wrap:anywhere}
+.post::after{content:"Sample";position:absolute;top:-10px;right:12px;background:var(--paper);padding:0 6px;font-size:12px;color:var(--warn)}
+.sub{font-size:14px;font-weight:700;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header>
+    <p class="app"><span><a href="../" class="back">NOSTR-RATING</a> Help</span><a href="account.html" class="lang" lang="ja" hreflang="ja">日本語</a></p>
+    <h1>Keeping your account safe</h1>
+    <p class="lead">Nostr-Rating has no accounts or passwords managed by an operator. Your account exists only on the devices in your hands. This page explains how that works and what to do when something goes wrong.</p>
+  </header>
+
+  <section aria-labelledby="s-quick">
+    <h2 id="s-quick">The essentials</h2>
+    <div class="quick">
+      <ol>
+        <li><span>To get started, just press "Start on this device".</span></li>
+        <li><span>Write the "recovery words" (12 words) that appear on a sheet of paper and put it away. You can start without writing them down, but then you cannot restore your account if you lose all your devices.</span></li>
+        <li><span>If you play on both a phone and a computer, registering the second device too gives you peace of mind.</span></li>
+      </ol>
+    </div>
+    <p>In everyday matches, you never have to think about keys or passwords.</p>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <h2 id="s-why">What it means to have no operator</h2>
+    <p>In a typical service, the operator's servers manage your account. If you forget your password, the operator restores it for you. In exchange, if the operator's servers are breached, everyone's account is at risk, and if the operator quits, the service ends.</p>
+    <p>Nostr-Rating has no such operator servers. Your account is held by your devices, so no operator can restore your account or act on it without you. You are the one who protects it, and it is built to be easy to protect on your own.</p>
+  </section>
+
+  <section aria-labelledby="s-keys">
+    <h2 id="s-keys">Three keys</h2>
+    <p>An account has three kinds of keys. Compared to a house, they look like this.</p>
+    <div class="keys">
+      <article class="key">
+        <span class="tag">Kept on the device</span>
+        <h3>Device key</h3>
+        <span class="like">The front-door key each family member carries</span>
+        <dl><dt>Used for</dt><dd>Making daily keys, and adding or revoking devices. Used automatically</dd><dt>What you do</dt><dd>Nothing. It is stored inside the device and cannot be taken out</dd></dl>
+      </article>
+      <article class="key">
+        <span class="tag">Automatic</span>
+        <h3>Daily key</h3>
+        <span class="like">A visitor pass good for one day</span>
+        <dl><dt>Used for</dt><dd>Sending match results. The device key makes one for each day. It stops working after a while</dd><dt>What you do</dt><dd>Nothing</dd></dl>
+      </article>
+      <article class="key paper">
+        <span class="tag">Kept on paper</span>
+        <h3>Recovery words</h3>
+        <span class="like">The deed to the house</span>
+        <dl><dt>Used for</dt><dd>Only when replacing all the front-door keys</dd><dt>What you do</dt><dd>Write them on paper and put it away</dd></dl>
+      </article>
+    </div>
+    <p class="point">Device keys and daily keys can be replaced even if they are stolen. The recovery words, which have the power to replace them, live on paper that is not connected to the internet.</p>
+  </section>
+
+  <section aria-labelledby="s-flow">
+    <h2 id="s-flow">From getting started to your first match</h2>
+    <p>These diagrams show what happens where, at first registration and in everyday matches. The colored boxes are what you do; the app handles everything else automatically.</p>
+    <figure class="flow">
+<svg viewBox="0 0 400 504" role="img" aria-label="The first registration. The device key is created, you write the recovery words on paper, and the account is published. Next, you post the linking statement on X or GitHub and paste the post's URL into the app; the app checks the post and publishes the linked account.">
+<defs><marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+<text class="lh" x="76.0" y="14">You / your device</text>
+<text class="lh" x="214.0" y="14">X / GitHub</text>
+<text class="lh" x="338.0" y="14">Nostr relays</text>
+<line class="sep" x1="151" y1="22" x2="151" y2="504"/>
+<line class="sep" x1="275" y1="22" x2="275" y2="504"/>
+<path class="ln" d="M76.0 74 V88" marker-end="url(#ah1)"/>
+<path class="ln" d="M76.0 134 V142.0 H338.0 V148" marker-end="url(#ah1)"/>
+<path class="ln" d="M338.0 194 V202.0 H76.0 V208" marker-end="url(#ah1)"/>
+<path class="ln" d="M76.0 254 V262.0 H214.0 V268" marker-end="url(#ah1)"/>
+<path class="ln" d="M214.0 314 V322.0 H76.0 V328" marker-end="url(#ah1)"/>
+<path class="ln" d="M76.0 374 V382.0 H214.0 V388" marker-end="url(#ah1)"/>
+<path class="ln" d="M214.0 434 V442.0 H338.0 V448" marker-end="url(#ah1)"/>
+<rect class="u" x="8" y="30" width="136" height="44" rx="8"/>
+<text class="t" x="76.0" y="49">"Start on this device"</text>
+<text class="t" x="76.0" y="65">creates the device key</text>
+<circle class="nc" cx="10" cy="32" r="9"/><text class="nt" x="10" y="36">1</text>
+<rect class="u" x="8" y="90" width="136" height="44" rx="8"/>
+<text class="t" x="76.0" y="109">Write the recovery</text>
+<text class="t" x="76.0" y="125">words on paper</text>
+<circle class="nc" cx="10" cy="92" r="9"/><text class="nt" x="10" y="96">2</text>
+<rect class="b" x="282" y="150" width="112" height="44" rx="8"/>
+<text class="t" x="338.0" y="169">Publish</text>
+<text class="t" x="338.0" y="185">the account</text>
+<circle class="nc" cx="284" cy="152" r="9"/><text class="nt" x="284" y="156">3</text>
+<rect class="u" x="8" y="210" width="136" height="44" rx="8"/>
+<text class="t" x="76.0" y="229">Copy the</text>
+<text class="t" x="76.0" y="245">linking statement</text>
+<circle class="nc" cx="10" cy="212" r="9"/><text class="nt" x="10" y="216">4</text>
+<rect class="u" x="158" y="270" width="112" height="44" rx="8"/>
+<text class="t" x="214.0" y="289">Post it on X</text>
+<text class="t" x="214.0" y="305">or as a Gist</text>
+<circle class="nc" cx="160" cy="272" r="9"/><text class="nt" x="160" y="276">5</text>
+<rect class="u" x="8" y="330" width="136" height="44" rx="8"/>
+<text class="t" x="76.0" y="349">Paste the post's URL</text>
+<text class="t" x="76.0" y="365">into the app</text>
+<circle class="nc" cx="10" cy="332" r="9"/><text class="nt" x="10" y="336">6</text>
+<rect class="b d" x="158" y="390" width="112" height="44" rx="8"/>
+<text class="t" x="214.0" y="409">The app reads</text>
+<text class="t" x="214.0" y="425">and checks it</text>
+<circle class="nc" cx="160" cy="392" r="9"/><text class="nt" x="160" y="396">7</text>
+<rect class="b" x="282" y="450" width="112" height="44" rx="8"/>
+<text class="t" x="338.0" y="469">Publish the</text>
+<text class="t" x="338.0" y="485">linked account</text>
+<circle class="nc" cx="284" cy="452" r="9"/><text class="nt" x="284" y="456">8</text>
+</svg>
+      <figcaption>Figure 1. First registration. Steps 1 to 3 happen only once; steps 4 to 8 link your account to X or GitHub. Linking one of them is enough.</figcaption>
+    </figure>
+    <p class="sub">A sample of the text you post in step 5</p>
+    <div class="post" aria-label="A sample of the text to post on X">
+      <p class="who">You <span>@your_name</span></p>
+      <p class="txt">Verifying my Nostr-Rating account: 3f8a…c27d</p>
+    </div>
+    <p>For GitHub, paste the same text into a public Gist. Do not delete the post or the Gist after linking.</p>
+    <figure class="flow">
+<svg viewBox="0 0 400 384" role="img" aria-label="An everyday match. Both devices make today's daily key, and a match is made through recruiting and applying on the relays. You play on the game console, both players report the result, and after the deadline the tally reflects it in the ratings.">
+<defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+<text class="lh" x="76.0" y="14">Your device</text>
+<text class="lh" x="214.0" y="14">Nostr relays</text>
+<text class="lh" x="338.0" y="14">Opponent's device</text>
+<line class="sep" x1="151" y1="22" x2="151" y2="384"/>
+<line class="sep" x1="275" y1="22" x2="275" y2="384"/>
+<path class="ln" d="M76.0 74 V82.0 H214.0 V88" marker-end="url(#ah2)"/>
+<path class="ln" d="M338.0 74 V82.0 H214.0 V88" marker-end="url(#ah2)"/>
+<path class="ln" d="M214.0 134 V148" marker-end="url(#ah2)"/>
+<path class="ln" d="M76 194 V208" marker-end="url(#ah2)"/>
+<path class="ln" d="M338 194 V208" marker-end="url(#ah2)"/>
+<path class="ln" d="M76.0 254 V262.0 H214.0 V268" marker-end="url(#ah2)"/>
+<path class="ln" d="M338.0 254 V262.0 H214.0 V268" marker-end="url(#ah2)"/>
+<path class="ln" d="M214.0 314 V328" marker-end="url(#ah2)"/>
+<rect class="b" x="8" y="30" width="136" height="44" rx="8"/>
+<text class="t" x="76.0" y="49">The device key makes</text>
+<text class="t" x="76.0" y="65">today's daily key</text>
+<circle class="nc" cx="10" cy="32" r="9"/><text class="nt" x="10" y="36">1</text>
+<rect class="b" x="282" y="30" width="112" height="44" rx="8"/>
+<text class="t" x="338.0" y="49">The opponent</text>
+<text class="t" x="338.0" y="65">makes theirs</text>
+<rect class="b" x="158" y="90" width="112" height="44" rx="8"/>
+<text class="t" x="214.0" y="109">Recruit / apply</text>
+<text class="t" x="214.0" y="125">Match made</text>
+<circle class="nc" cx="160" cy="92" r="9"/><text class="nt" x="160" y="96">2</text>
+<rect class="u" x="8" y="150" width="386" height="44" rx="8"/>
+<text class="t" x="201.0" y="177">Play on the game console</text>
+<circle class="nc" cx="10" cy="152" r="9"/><text class="nt" x="10" y="156">3</text>
+<rect class="u" x="8" y="210" width="136" height="44" rx="8"/>
+<text class="t" x="76.0" y="237">Report the result</text>
+<circle class="nc" cx="10" cy="212" r="9"/><text class="nt" x="10" y="216">4</text>
+<rect class="u" x="282" y="210" width="112" height="44" rx="8"/>
+<text class="t" x="338.0" y="237">They report too</text>
+<rect class="b" x="158" y="270" width="112" height="44" rx="8"/>
+<text class="t" x="214.0" y="289">Both reported:</text>
+<text class="t" x="214.0" y="305">rated (provisional)</text>
+<circle class="nc" cx="160" cy="272" r="9"/><text class="nt" x="160" y="276">5</text>
+<rect class="b k" x="8" y="330" width="386" height="44" rx="8"/>
+<text class="t" x="201.0" y="349">Rating tally (anyone can rebuild it)</text>
+<text class="t" x="201.0" y="365">Final after the 24-hour deadline</text>
+<circle class="nc" cx="10" cy="332" r="9"/><text class="nt" x="10" y="336">6</text>
+</svg>
+      <figcaption>Figure 2. An everyday match. Every day, the app uses the device key to make a daily key, and signs recruitments and result reports with that daily key. When the two reports agree, the ratings move right away. The 24-hour deadline is the waiting time for when the reports disagree or one player does not report. The values become final in the tally after the deadline, which also re-checks the X and GitHub posts.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="s-start">
+    <h2 id="s-start">Getting started</h2>
+    <ol>
+      <li>Press "Start on this device".</li>
+      <li>Your recovery words appear. Write them down on paper.</li>
+      <li>To check that you wrote them correctly, enter 3 of the 12 words.</li>
+    </ol>
+    <div class="card" aria-label="A sample of recovery words (not a real key)">
+      <span><i>1</i>harbor</span><span><i>2</i>velvet</span><span><i>3</i>orbit</span><span><i>4</i>candle</span>
+      <span><i>5</i>meadow</span><span><i>6</i>pilot</span><span><i>7</i>garlic</span><span><i>8</i>tunnel</span>
+      <span><i>9</i>silver</span><span><i>10</i>anchor</span><span><i>11</i>maple</span><span><i>12</i>rhythm</span>
+    </div>
+    <p class="note">This is a sample of how they are shown. The real words are newly made for each device, different every time.</p>
+    <p>You can also start without writing down your recovery words. However, the words are not kept on the device either, so you cannot write them down later. If you lose all your devices, the account cannot be restored.</p>
+  </section>
+
+  <section aria-labelledby="s-second">
+    <h2 id="s-second">Registering a second device</h2>
+    <ol>
+      <li>On the new device, choose "I already have an account". A QR code appears.</li>
+      <li>On a registered device, press "Scan QR" in Settings and scan that QR code. Then press "Add this device".</li>
+    </ol>
+    <p>This does not use your recovery words.</p>
+  </section>
+
+  <section aria-labelledby="s-move">
+    <h2 id="s-move">When the operator or the app's URL changes</h2>
+    <p>Your account itself is not the URL where the app runs, but a record kept on the Nostr relays. The record lists your registered devices and a mark of your recovery words. Even if the operator goes away or the URL where the app runs changes, this record stays as it is.</p>
+    <p>On the other hand, device keys are stored on the device separately for each URL, and a page at a different URL cannot read them. So even on the same phone, a page at a new URL counts as a different device. The device list shows the same phone once for each URL.</p>
+    <div class="tablebox">
+      <table class="move">
+        <thead><tr><th scope="col">Situation</th><th scope="col">What changes</th><th scope="col">What you do</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">The operator went away</th><td>Your account and rating records remain, and anyone can rebuild the rating tally. The app may keep running at its current URL for a while, but there is no telling when it will stop. If someone else gets that URL after it stops, their page can use the device keys stored for pages at that URL.</td><td>When someone starts running the app at a different URL, move there early (the steps in the next row). After moving, revoke the device for the old URL.</td></tr>
+          <tr><th scope="row">The URL where the app runs changed (the old URL still opens)</th><td>The page at the new URL becomes a different device. Your rating and record carry over as they are.</td><td>Scan the QR code from the page at the old URL, in the same way as registering a second device. When done, revoke the device for the old URL.</td></tr>
+          <tr><th scope="row">The old URL no longer opens</th><td>The device keys stored for the page at the old URL can no longer be used.</td><td>On the page at the new URL, restore your account with your recovery words.</td></tr>
+          <tr><th scope="row">You host your own copy of the app</th><td>Your own copy also becomes one of your devices. It cannot read other people's device keys.</td><td>The same as the two rows above.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>When you are not sure you can trust the new URL</h3>
+    <p>Once you register a page at a new URL, that page can play matches as you. If it turns out to be a malicious page, what it can do is the same as when a device is stolen.</p>
+    <ul>
+      <li>It can: send match results as you until you revoke it (up to about one day), and revoke your other devices.</li>
+      <li>It cannot: read device keys stored for pages at other URLs, or take over the account without the recovery words.</li>
+    </ul>
+    <p>If you notice, revoke it from another device or restore your account with your recovery words. Whatever URL you move to, never enter your recovery words into the usual page.</p>
+    <p>If you did not make recovery words, you cannot move your account once the old URL stops opening. If you linked X or GitHub, a new account can carry over your past seasons' records.</p>
+    <p class="point">The URL you can trust most is one you run yourself. The app's source code is public: make a copy (fork) on GitHub and publish it with GitHub Pages, and you can run it at your own URL for free. If you leave the settings unchanged, it uses the same relays as everyone else, so you can play against people using other URLs as usual. Even if nobody else runs the app any more, the service goes on as long as you run it.</p>
+  </section>
+
+  <section aria-labelledby="s-trouble">
+    <h2 id="s-trouble">When something goes wrong</h2>
+    <details>
+      <summary>I lost or broke my phone</summary>
+      <div class="dbody">
+        <p>On another registered device, open the "Device list" and press "Revoke" for the lost device. Even if someone picks it up, they can no longer play as you on that device.</p>
+        <p>If you have no other registered device, restore your account with the steps in "I lost all my devices" below.</p>
+      </div>
+    </details>
+    <details>
+      <summary>I lost all my devices</summary>
+      <div class="dbody">
+        <p>Open the app on a new device and choose "I already have an account". A QR code appears. On another device (such as a computer), open the recovery tool, enter the 12 words, and then scan that QR code. If you only have a phone, see "Opening the recovery tool on a phone" below. All of the account's keys are replaced, and only the new device can be used.</p>
+        <p>At this point, new recovery words are shown. The old words no longer work, so write the new ones down on a new sheet of paper.</p>
+        <p>The recovery tool is a single file (nostr-rating-recovery.html) that you download from the releases of the app's repository. Open the downloaded file in a browser to use it. Links to download it are also on the screen after "I already have an account" in the app, and in Settings.</p>
+        <!-- recovery-link -->
+      </div>
+    </details>
+    <details>
+      <summary>Opening the recovery tool on a phone</summary>
+      <div class="dbody">
+        <p>On a phone, opening a downloaded file in a browser takes a few extra steps. The steps may differ by model and version.</p>
+        <p class="sub">On Android</p>
+        <ol>
+          <li>Open a file manager app (such as Files by Google).</li>
+          <li>Tap the downloaded nostr-rating-recovery.html.</li>
+          <li>If asked which app to open it with, choose a browser such as Chrome.</li>
+        </ol>
+        <p class="sub">On iPhone</p>
+        <ol>
+          <li>Open the Files app and go to where you saved the file (such as "On My iPhone" or "iCloud Drive").</li>
+          <li>Long-press or tap nostr-rating-recovery.html.</li>
+          <li>If it does not open well, press the share button (the square with an arrow pointing up) and choose Safari or Chrome to open it.</li>
+        </ol>
+        <p>When you use the new device and the recovery tool on the same phone, you cannot scan the QR code on the screen. Press "Copy request" in the app and paste it into the "device request" field of the recovery tool.</p>
+      </div>
+    </details>
+    <details>
+      <summary>There is an unknown device in the list</summary>
+      <div class="dbody">
+        <p>When the app tells you "An unknown device was registered", check whether you remember registering it yourself.</p>
+        <ul>
+          <li>If you do not, revoke that device.</li>
+          <li>If your own devices were revoked too, restore your account with your recovery words. Restoring makes every device registered by the attacker unusable.</li>
+        </ul>
+        <p>Match results the attacker sent before you revoked the device (up to about one day) may remain.</p>
+      </div>
+    </details>
+    <details>
+      <summary>I lost my recovery words</summary>
+      <div class="dbody">
+        <p>If you still have a device, you can keep playing. However, recovery words cannot be made again, so if you lose all your devices, the account can no longer be restored.</p>
+        <p>If you have no device left either, the account cannot be restored. If you make a new account and link the same X or GitHub account as before, you can carry over your past seasons' records. The rating for the current season cannot be carried over.</p>
+      </div>
+    </details>
+  </section>
+
+  <section aria-labelledby="s-rules">
+    <h2 id="s-rules">Rules for your recovery words</h2>
+    <ul class="rules">
+      <li>Write them on paper. Do not take photos of them or save them in phone notes or the cloud.</li>
+      <li>Do not show them to anyone. Do not tell them even to people who claim to be the operator or support. The operator never asks for your recovery words.</li>
+      <li>Enter them only into the recovery tool. It is a file you download and open, separate from the page you usually play on. This protects the restore step even if the usual page is ever taken over.</li>
+      <li>If you are worried, you can split them into 3 cards and keep them in different places. Any 2 of the 3 can restore the account, so losing one is not a problem. You can split them only on the screen where the words are shown when you start.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="s-plans">
+    <h2 id="s-plans">Ways to get started</h2>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th scope="col"></th><th scope="col">Easy</th><th scope="col">Safer</th><th scope="col">Thorough</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Devices</th><td>1</td><td>2</td><td>2 or more</td></tr>
+          <tr><th scope="row">Recovery words</th><td>None</td><td>1 card</td><td>Split into 3 cards (any 2 restore)</td></tr>
+          <tr><th scope="row">If you lose all devices</th><td>Start over</td><td>Can restore</td><td>Can restore</td></tr>
+          <tr><th scope="row">Effort</th><td>Little</td><td>Some</td><td>More</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-faq">
+    <h2 id="s-faq">Frequently asked questions</h2>
+    <div class="faq">
+      <div><h3>Do I have to make recovery words?</h3>
+        <p>You can play without them. To start without them, choose "Start without writing them down" when you start. However, you cannot restore your account if you lose all your devices. Ratings reset every season, so if you are fine with starting over after losing your devices, not making them is a valid choice.</p></div>
+      <div><h3>Can the operator restore my account for me?</h3>
+        <p>No. The operator does not hold your account. That is also why your account stays safe even if the operator is breached.</p></div>
+      <div><h3>What happens if I clear my browser data?</h3>
+        <p>That device's key is deleted. You can restore it from another registered device or with your recovery words. Some browsers delete data if you do not open a site for a while, so we recommend adding the app to your home screen.</p></div>
+      <div><h3>What is linking X or GitHub for?</h3>
+        <p>It lets you take part in rated matches, and shows that accounts belong to the same person. Accounts without a linked account cannot take part in rated matches. A player's page also shows the records of other accounts linked to the same X or GitHub account. It is not a way to restore your account.</p>
+        <p>Do not delete the post you made when linking. If you delete it, the link is removed and you can no longer carry over your past seasons' records.</p></div>
+      <div><h3>(For people familiar with Nostr) Can I use a signer app?</h3>
+        <p>Yes. You can register a NIP-07 browser extension or a NIP-46 remote signer (bunker) as one of your device keys. Choose "Use a signer app" when you start, or when you register a second device. On Android, any signer app that can act as a NIP-46 bunker can be registered. Signer apps that split the key with FROST can be registered the same way, as long as they work over NIP-07 or NIP-46.</p>
+        <p>The key lives outside this page, so even if the page is taken over, the key itself cannot be carried off. However, this cannot prevent the page from asking for signatures while it is open. With a signer app that asks for confirmation on every signature, you can check on the spot what you are signing.</p>
+        <p>What this app asks a signer app to sign is a kind 23753 event whose content is just a 64-digit hexadecimal value. The app also signs the same value with a per-device key kept inside the app, and accepts only what has both signatures. So even if another site asks for a signature of the same form and you approve it, it cannot add a device or impersonate you. Still, do not approve requests you do not recognize.</p>
+        <p>The registered key is treated as one of this account's device keys. The npub you use in other Nostr clients does not itself become this account.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-about">
+    <h2 id="s-about">About this app</h2>
+    <p>Nostr-Rating is an unofficial service made by volunteers. It is not affiliated with the developers or publishers of the supported games. Game names are trademarks of their respective owners.</p>
+    <p>The licenses of the software the app uses are in the <a href="../THIRD_PARTY_NOTICES.txt">list of licenses</a>.</p>
+  </section>
+</div>
+</body>
+</html>

@@ -11,7 +11,15 @@ const games = JSON.parse(readFileSync(resolve(__dirname, '../../../../configs/ga
 describe('parseGameDefinition', () => {
   test('loads smash_sp', () => {
     expect(def.characters!.list).toHaveLength(86);
-    expect([def.sides, def.results.draw, def.room.kind, def.format]).toEqual([['P1', 'P2'], false, 'code', { bestOf: 3, notes: ['ストック3', '制限時間7分'] }]);
+    expect([def.name, def.sides, def.results.draw, def.room.kind, def.format]).toEqual([
+      { ja: '大乱闘スマッシュブラザーズ SPECIAL', en: 'Super Smash Bros. Ultimate' },
+      [{ ja: 'P1', en: 'P1' }, { ja: 'P2', en: 'P2' }],
+      false,
+      'code',
+      { bestOf: 3, notes: [{ ja: 'ストック3', en: '3 stocks' }, { ja: '制限時間7分', en: '7-minute time limit' }] },
+    ]);
+    expect(def.characters!.list[0]).toEqual({ id: 'mario', name: { ja: 'マリオ', en: 'Mario' } });
+    expect(def.stages!.all[0]).toEqual({ id: 'final_destination', name: { ja: '終点', en: 'Final Destination' } });
     expect(def.stages!.starter).toEqual([
       'final_destination', 'battlefield', 'pokemon_stadium_2', 'small_battlefield', 'hollow_bastion', 'town_and_city',
     ]);
@@ -72,8 +80,8 @@ describe('parseGameDefinition', () => {
   });
 
   test('room notes for the in-game room settings', () => {
-    expect(def.room.kind === 'code' && def.room.entryRestriction).toBe('だれでも');
-    expect(def.room.notes).toEqual([
+    expect(def.room.kind === 'code' && def.room.entryRestriction).toEqual({ ja: 'だれでも', en: 'Anyone' });
+    expect(def.room.notes.map((n) => n.ja)).toEqual([
       'ステージギミック: なし',
       'アイテム・スピリッツ・チャージ切り札: なし',
       '「終点」「戦場」は、終点化・戦場化したステージとしても選べます',
@@ -81,11 +89,37 @@ describe('parseGameDefinition', () => {
   });
 });
 
+describe('localized display strings', () => {
+  test('a plain string is the same in every locale', () => {
+    const d = structuredClone(chessJson);
+    d.name = 'Chess960';
+    expect(parseGameDefinition(d).name).toEqual({ ja: 'Chess960', en: 'Chess960' });
+  });
+
+  test('rejects a missing locale', () => {
+    const bad = structuredClone(chessJson);
+    bad.name = { ja: 'チェス' };
+    expect(() => parseGameDefinition(bad)).toThrow(new Error('invalid game definition: name must have a non-empty string for en'));
+  });
+
+  test('rejects an unknown locale', () => {
+    const bad = structuredClone(chessJson);
+    bad.sides = [{ ja: '白', en: 'White', fr: 'Blancs' }, '黒'];
+    expect(() => parseGameDefinition(bad)).toThrow(new Error('invalid game definition: sides[0] has unknown locale fr'));
+  });
+
+  test('rejects sides that are the same in some locale', () => {
+    const bad = structuredClone(chessJson);
+    bad.sides = [{ ja: '白', en: 'Side' }, { ja: '黒', en: 'Side' }];
+    expect(() => parseGameDefinition(bad)).toThrow(new Error('invalid game definition: sides must be two different names'));
+  });
+});
+
 describe('chess and the list of games', () => {
   test('loads chess without characters or stages, with draws, sides and invite links', () => {
     const chess = parseGameDefinition(chessJson);
     expect([chess.id, chess.characters, chess.stages, chess.results.draw, chess.sides, chess.room.kind, chess.format.bestOf]).toEqual([
-      'chess', null, null, true, ['白', '黒'], 'link', 1,
+      'chess', null, null, true, [{ ja: '白', en: 'White' }, { ja: '黒', en: 'Black' }], 'link', 1,
     ]);
   });
 
@@ -94,6 +128,14 @@ describe('chess and the list of games', () => {
     for (const id of games.games) {
       const d = parseGameDefinition(JSON.parse(readFileSync(resolve(__dirname, `../../../../configs/${id}.json`), 'utf8')));
       expect(d.id).toBe(id);
+    }
+  });
+
+  test('every display string has every locale', () => {
+    for (const id of games.games) {
+      const d = parseGameDefinition(JSON.parse(readFileSync(resolve(__dirname, `../../../../configs/${id}.json`), 'utf8')));
+      const texts = [d.name, ...d.sides, ...d.format.notes, ...d.room.notes, ...(d.characters?.list.map((c) => c.name) ?? []), ...(d.stages?.all.map((s) => s.name) ?? [])];
+      for (const t of texts) expect(Object.keys(t)).toEqual(['ja', 'en']);
     }
   });
 

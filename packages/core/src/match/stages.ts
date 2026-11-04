@@ -10,31 +10,40 @@ function stagesOf(def: GameDefinition): NonNullable<GameDefinition['stages']> {
   return def.stages;
 }
 
-export function validateStageBans(def: GameDefinition, bans: StageBans): string[] {
-  const errors: string[] = [];
-  if (!def.stages || !def.characters) return Object.keys(bans).length === 0 ? [] : ['このゲームには拒否ステージがありません'];
+/** 拒否ステージの設定の誤り。表示の文言は画面の側で言語ごとに作る */
+export type StageBanError =
+  | { code: 'no_stages' }
+  | { code: 'unknown_fighter'; fighter: FighterId }
+  | { code: 'use_group_key'; fighter: FighterId; key: FighterId }
+  | { code: 'too_many'; fighter: FighterId; max: number }
+  | { code: 'unknown_stage'; fighter: FighterId; stage: string }
+  | { code: 'duplicate_stage'; fighter: FighterId };
+
+export function validateStageBans(def: GameDefinition, bans: StageBans): StageBanError[] {
+  const errors: StageBanError[] = [];
+  if (!def.stages || !def.characters) return Object.keys(bans).length === 0 ? [] : [{ code: 'no_stages' }];
   const fighterIds = new Set(def.characters.list.map((f) => f.id));
   const allowed = new Set<string>(def.stages.counterpick);
   for (const [fighter, stages] of Object.entries(bans)) {
     if (!fighterIds.has(fighter)) {
-      errors.push(`${fighter}: 不明なファイター`);
+      errors.push({ code: 'unknown_fighter', fighter });
       continue;
     }
     const key = banGroupKey(def, fighter);
     if (key !== fighter) {
-      errors.push(`${fighter}: ${key} として設定してください`);
+      errors.push({ code: 'use_group_key', fighter, key });
       continue;
     }
     if (stages.length > def.stages.maxBansPerFighter) {
-      errors.push(`${fighter}: 拒否ステージは${def.stages.maxBansPerFighter}つまでです`);
+      errors.push({ code: 'too_many', fighter, max: def.stages.maxBansPerFighter });
       continue;
     }
     const unknown = stages.find((s) => !allowed.has(s));
     if (unknown !== undefined) {
-      errors.push(`${fighter}: 不明なステージ ${unknown}`);
+      errors.push({ code: 'unknown_stage', fighter, stage: unknown });
       continue;
     }
-    if (new Set(stages).size !== stages.length) errors.push(`${fighter}: 同じステージが重複しています`);
+    if (new Set(stages).size !== stages.length) errors.push({ code: 'duplicate_stage', fighter });
   }
   return errors;
 }

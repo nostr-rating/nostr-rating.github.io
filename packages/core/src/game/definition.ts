@@ -1,4 +1,5 @@
 import type { FighterId, StageId } from '../types.js';
+import { LOCALES, parseLocalizedText, type LocalizedText } from './text.js';
 
 export interface Season {
   id: number;
@@ -8,23 +9,24 @@ export interface Season {
 
 export interface Character {
   id: FighterId;
-  name: string;
+  name: LocalizedText;
 }
 
+/** 表示に使う文字列（name、notes、sides など）は言語ごとに持つ（game/text.ts）。イベントには id と番号だけを入れる */
 export interface GameDefinition {
   id: string;
-  name: string;
+  name: LocalizedText;
   /** 何本先取か（bestOf は奇数）と、対戦ルームに出す試合の形式の説明 */
-  format: { bestOf: number; notes: string[] };
+  format: { bestOf: number; notes: LocalizedText[] };
   /** 報告できる結果。win・lose・cancel は必ずあり、draw はゲームによる（docs/adr/0010） */
   results: { draw: boolean };
   /** 先後の名前。対戦ごとに双方の乱数で決め（match/seat.ts）、1つ目の側が対戦の場所を用意する */
-  sides: [string, string];
+  sides: [LocalizedText, LocalizedText];
   /** キャラを選ぶゲームだけ。拒否ステージを共有するキャラの組も持つ */
   characters: { list: Character[]; sharedBanGroups: FighterId[][] } | null;
   /** ステージを拒否し合うゲームだけ（characters が必要） */
   stages: {
-    all: { id: StageId; name: string }[];
+    all: { id: StageId; name: LocalizedText }[];
     starter: StageId[];
     counterpick: StageId[];
     maxBansPerFighter: number;
@@ -37,11 +39,11 @@ export interface GameDefinition {
         password: { minDigits: number; maxDigits: number; generatedDigits: number };
         roomIdPattern: string;
         maxPlayers: number;
-        entryRestriction: string;
+        entryRestriction: LocalizedText;
         /** 対戦ルームに表示する部屋の設定の注意書き */
-        notes: string[];
+        notes: LocalizedText[];
       }
-    | { kind: 'link'; notes: string[] };
+    | { kind: 'link'; notes: LocalizedText[] };
   rating: {
     system: 'glicko2';
     initialRating: number;
@@ -97,14 +99,15 @@ function numObj<K extends string>(v: unknown, path: string, keys: readonly K[]):
   return out;
 }
 
-const strList = (v: unknown, path: string): string[] => arr(v, path).map((n, i) => str(n, `${path}[${i}]`));
+const text = (v: unknown, path: string): LocalizedText => parseLocalizedText(v, (reason) => fail(path, reason));
+const textList = (v: unknown, path: string): LocalizedText[] => arr(v, path).map((n, i) => text(n, `${path}[${i}]`));
 
 function parseCharacters(v: unknown): GameDefinition['characters'] {
   if (v === undefined || v === null) return null;
   const o = obj(v, 'characters');
   const list = arr(o.list, 'characters.list').map((f, i) => {
     const c = obj(f, `characters.list[${i}]`);
-    return { id: str(c.id, `characters.list[${i}].id`), name: str(c.name, `characters.list[${i}].name`) };
+    return { id: str(c.id, `characters.list[${i}].id`), name: text(c.name, `characters.list[${i}].name`) };
   });
   if (list.length === 0) fail('characters.list', 'must not be empty');
   const ids = new Set(list.map((f) => f.id));
@@ -126,7 +129,7 @@ function parseStages(v: unknown, characters: GameDefinition['characters']): Game
   const st = obj(v, 'stages');
   const all = arr(st.all, 'stages.all').map((s, i) => {
     const o = obj(s, `stages.all[${i}]`);
-    return { id: str(o.id, `stages.all[${i}].id`) as StageId, name: str(o.name, `stages.all[${i}].name`) };
+    return { id: str(o.id, `stages.all[${i}].id`) as StageId, name: text(o.name, `stages.all[${i}].name`) };
   });
   const stageIds = new Set<string>(all.map((s) => s.id));
   const stageList = (x: unknown, path: string): StageId[] =>
@@ -155,7 +158,7 @@ function parsePassword(v: unknown): { minDigits: number; maxDigits: number; gene
 
 function parseRoom(v: unknown): GameDefinition['room'] {
   const room = obj(v, 'room');
-  const notes = strList(room.notes ?? [], 'room.notes');
+  const notes = textList(room.notes ?? [], 'room.notes');
   if (room.kind === 'link') return { kind: 'link', notes };
   if (room.kind !== 'code') fail('room.kind', 'must be code or link');
   return {
@@ -163,7 +166,7 @@ function parseRoom(v: unknown): GameDefinition['room'] {
     password: parsePassword(room.password),
     roomIdPattern: str(room.roomIdPattern, 'room.roomIdPattern'),
     maxPlayers: num(room.maxPlayers, 'room.maxPlayers'),
-    entryRestriction: str(room.entryRestriction, 'room.entryRestriction'),
+    entryRestriction: text(room.entryRestriction, 'room.entryRestriction'),
     notes,
   };
 }
@@ -174,13 +177,13 @@ export function parseGameDefinition(json: unknown): GameDefinition {
   const stages = parseStages(root.stages, characters);
 
   const fmt = obj(root.format, 'format');
-  const format = { bestOf: num(fmt.bestOf, 'format.bestOf'), notes: strList(fmt.notes ?? [], 'format.notes') };
+  const format = { bestOf: num(fmt.bestOf, 'format.bestOf'), notes: textList(fmt.notes ?? [], 'format.notes') };
   if (!Number.isInteger(format.bestOf) || format.bestOf < 1 || format.bestOf % 2 !== 1) fail('format.bestOf', 'must be a positive odd integer');
 
   const res = obj(root.results ?? {}, 'results');
   if (res.draw !== undefined && typeof res.draw !== 'boolean') fail('results.draw', 'must be a boolean');
-  const sides = strList(root.sides, 'sides');
-  if (sides.length !== 2 || sides[0] === sides[1]) fail('sides', 'must be two different names');
+  const sides = textList(root.sides, 'sides');
+  if (sides.length !== 2 || LOCALES.some((l) => sides[0]![l] === sides[1]![l])) fail('sides', 'must be two different names');
 
   const rating = obj(root.rating, 'rating');
   if (rating.system !== 'glicko2') fail('rating.system', 'must be glicko2');
@@ -195,7 +198,7 @@ export function parseGameDefinition(json: unknown): GameDefinition {
 
   return {
     id,
-    name: str(root.name, 'name'),
+    name: text(root.name, 'name'),
     format,
     results: { draw: res.draw === true },
     sides: [sides[0]!, sides[1]!],

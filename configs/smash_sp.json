@@ -1,11 +1,11 @@
 {
   "id": "smash_sp",
-  "name": "大乱闘スマッシュブラザーズ SPECIAL",
+  "name": { "ja": "大乱闘スマッシュブラザーズ SPECIAL", "en": "Super Smash Bros. Ultimate" },
   "format": {
     "bestOf": 3,
     "notes": [
-      "ストック3",
-      "制限時間7分"
+      { "ja": "ストック3", "en": "3 stocks" },
+      { "ja": "制限時間7分", "en": "7-minute time limit" }
     ]
   },
   "results": {
@@ -20,358 +20,358 @@
     "password": { "minDigits": 4, "maxDigits": 8, "generatedDigits": 4 },
     "roomIdPattern": "^[A-Za-z0-9]{5}$",
     "maxPlayers": 2,
-    "entryRestriction": "だれでも",
+    "entryRestriction": { "ja": "だれでも", "en": "Anyone" },
     "notes": [
-      "ステージギミック: なし",
-      "アイテム・スピリッツ・チャージ切り札: なし",
-      "「終点」「戦場」は、終点化・戦場化したステージとしても選べます"
+      { "ja": "ステージギミック: なし", "en": "Stage hazards: Off" },
+      { "ja": "アイテム・スピリッツ・チャージ切り札: なし", "en": "Items, Spirits and FS Meter: Off" },
+      { "ja": "「終点」「戦場」は、終点化・戦場化したステージとしても選べます", "en": "\"Final Destination\" and \"Battlefield\" can also be played as the Ω form or Battlefield form of another stage" }
     ]
   },
   "characters": {
     "list": [
       {
         "id": "mario",
-        "name": "マリオ"
+        "name": { "ja": "マリオ", "en": "Mario" }
       },
       {
         "id": "donkey_kong",
-        "name": "ドンキーコング"
+        "name": { "ja": "ドンキーコング", "en": "Donkey Kong" }
       },
       {
         "id": "link",
-        "name": "リンク"
+        "name": { "ja": "リンク", "en": "Link" }
       },
       {
         "id": "samus",
-        "name": "サムス"
+        "name": { "ja": "サムス", "en": "Samus" }
       },
       {
         "id": "dark_samus",
-        "name": "ダークサムス"
+        "name": { "ja": "ダークサムス", "en": "Dark Samus" }
       },
       {
         "id": "yoshi",
-        "name": "ヨッシー"
+        "name": { "ja": "ヨッシー", "en": "Yoshi" }
       },
       {
         "id": "kirby",
-        "name": "カービィ"
+        "name": { "ja": "カービィ", "en": "Kirby" }
       },
       {
         "id": "fox",
-        "name": "フォックス"
+        "name": { "ja": "フォックス", "en": "Fox" }
       },
       {
         "id": "pikachu",
-        "name": "ピカチュウ"
+        "name": { "ja": "ピカチュウ", "en": "Pikachu" }
       },
       {
         "id": "luigi",
-        "name": "ルイージ"
+        "name": { "ja": "ルイージ", "en": "Luigi" }
       },
       {
         "id": "ness",
-        "name": "ネス"
+        "name": { "ja": "ネス", "en": "Ness" }
       },
       {
         "id": "captain_falcon",
-        "name": "キャプテン・ファルコン"
+        "name": { "ja": "キャプテン・ファルコン", "en": "Captain Falcon" }
       },
       {
         "id": "jigglypuff",
-        "name": "プリン"
+        "name": { "ja": "プリン", "en": "Jigglypuff" }
       },
       {
         "id": "peach",
-        "name": "ピーチ"
+        "name": { "ja": "ピーチ", "en": "Peach" }
       },
       {
         "id": "daisy",
-        "name": "デイジー"
+        "name": { "ja": "デイジー", "en": "Daisy" }
       },
       {
         "id": "bowser",
-        "name": "クッパ"
+        "name": { "ja": "クッパ", "en": "Bowser" }
       },
       {
         "id": "ice_climbers",
-        "name": "アイスクライマー"
+        "name": { "ja": "アイスクライマー", "en": "Ice Climbers" }
       },
       {
         "id": "sheik",
-        "name": "シーク"
+        "name": { "ja": "シーク", "en": "Sheik" }
       },
       {
         "id": "zelda",
-        "name": "ゼルダ"
+        "name": { "ja": "ゼルダ", "en": "Zelda" }
       },
       {
         "id": "dr_mario",
-        "name": "ドクターマリオ"
+        "name": { "ja": "ドクターマリオ", "en": "Dr. Mario" }
       },
       {
         "id": "pichu",
-        "name": "ピチュー"
+        "name": { "ja": "ピチュー", "en": "Pichu" }
       },
       {
         "id": "falco",
-        "name": "ファルコ"
+        "name": { "ja": "ファルコ", "en": "Falco" }
       },
       {
         "id": "marth",
-        "name": "マルス"
+        "name": { "ja": "マルス", "en": "Marth" }
       },
       {
         "id": "lucina",
-        "name": "ルキナ"
+        "name": { "ja": "ルキナ", "en": "Lucina" }
       },
       {
         "id": "young_link",
-        "name": "こどもリンク"
+        "name": { "ja": "こどもリンク", "en": "Young Link" }
       },
       {
         "id": "ganondorf",
-        "name": "ガノンドロフ"
+        "name": { "ja": "ガノンドロフ", "en": "Ganondorf" }
       },
       {
         "id": "mewtwo",
-        "name": "ミュウツー"
+        "name": { "ja": "ミュウツー", "en": "Mewtwo" }
       },
       {
         "id": "roy",
-        "name": "ロイ"
+        "name": { "ja": "ロイ", "en": "Roy" }
       },
       {
         "id": "chrom",
-        "name": "クロム"
+        "name": { "ja": "クロム", "en": "Chrom" }
       },
       {
         "id": "mr_game_and_watch",
-        "name": "Mr.ゲーム＆ウォッチ"
+        "name": { "ja": "Mr.ゲーム＆ウォッチ", "en": "Mr. Game & Watch" }
       },
       {
         "id": "meta_knight",
-        "name": "メタナイト"
+        "name": { "ja": "メタナイト", "en": "Meta Knight" }
       },
       {
         "id": "pit",
-        "name": "ピット"
+        "name": { "ja": "ピット", "en": "Pit" }
       },
       {
         "id": "dark_pit",
-        "name": "ブラックピット"
+        "name": { "ja": "ブラックピット", "en": "Dark Pit" }
       },
       {
         "id": "zero_suit_samus",
-        "name": "ゼロスーツサムス"
+        "name": { "ja": "ゼロスーツサムス", "en": "Zero Suit Samus" }
       },
       {
         "id": "wario",
-        "name": "ワリオ"
+        "name": { "ja": "ワリオ", "en": "Wario" }
       },
       {
         "id": "snake",
-        "name": "スネーク"
+        "name": { "ja": "スネーク", "en": "Snake" }
       },
       {
         "id": "ike",
-        "name": "アイク"
+        "name": { "ja": "アイク", "en": "Ike" }
       },
       {
         "id": "pokemon_trainer",
-        "name": "ポケモントレーナー"
+        "name": { "ja": "ポケモントレーナー", "en": "Pokémon Trainer" }
       },
       {
         "id": "diddy_kong",
-        "name": "ディディーコング"
+        "name": { "ja": "ディディーコング", "en": "Diddy Kong" }
       },
       {
         "id": "lucas",
-        "name": "リュカ"
+        "name": { "ja": "リュカ", "en": "Lucas" }
       },
       {
         "id": "sonic",
-        "name": "ソニック"
+        "name": { "ja": "ソニック", "en": "Sonic" }
       },
       {
         "id": "king_dedede",
-        "name": "デデデ"
+        "name": { "ja": "デデデ", "en": "King Dedede" }
       },
       {
         "id": "olimar",
-        "name": "ピクミン＆オリマー"
+        "name": { "ja": "ピクミン＆オリマー", "en": "Olimar" }
       },
       {
         "id": "lucario",
-        "name": "ルカリオ"
+        "name": { "ja": "ルカリオ", "en": "Lucario" }
       },
       {
         "id": "rob",
-        "name": "ロボット"
+        "name": { "ja": "ロボット", "en": "R.O.B." }
       },
       {
         "id": "toon_link",
-        "name": "トゥーンリンク"
+        "name": { "ja": "トゥーンリンク", "en": "Toon Link" }
       },
       {
         "id": "wolf",
-        "name": "ウルフ"
+        "name": { "ja": "ウルフ", "en": "Wolf" }
       },
       {
         "id": "villager",
-        "name": "むらびと"
+        "name": { "ja": "むらびと", "en": "Villager" }
       },
       {
         "id": "mega_man",
-        "name": "ロックマン"
+        "name": { "ja": "ロックマン", "en": "Mega Man" }
       },
       {
         "id": "wii_fit_trainer",
-        "name": "Wii Fit トレーナー"
+        "name": { "ja": "Wii Fit トレーナー", "en": "Wii Fit Trainer" }
       },
       {
         "id": "rosalina",
-        "name": "ロゼッタ＆チコ"
+        "name": { "ja": "ロゼッタ＆チコ", "en": "Rosalina & Luma" }
       },
       {
         "id": "little_mac",
-        "name": "リトル・マック"
+        "name": { "ja": "リトル・マック", "en": "Little Mac" }
       },
       {
         "id": "greninja",
-        "name": "ゲッコウガ"
+        "name": { "ja": "ゲッコウガ", "en": "Greninja" }
       },
       {
         "id": "mii_brawler",
-        "name": "Mii 格闘タイプ"
+        "name": { "ja": "Mii 格闘タイプ", "en": "Mii Brawler" }
       },
       {
         "id": "mii_swordfighter",
-        "name": "Mii 剣術タイプ"
+        "name": { "ja": "Mii 剣術タイプ", "en": "Mii Swordfighter" }
       },
       {
         "id": "mii_gunner",
-        "name": "Mii 射撃タイプ"
+        "name": { "ja": "Mii 射撃タイプ", "en": "Mii Gunner" }
       },
       {
         "id": "palutena",
-        "name": "パルテナ"
+        "name": { "ja": "パルテナ", "en": "Palutena" }
       },
       {
         "id": "pac_man",
-        "name": "パックマン"
+        "name": { "ja": "パックマン", "en": "Pac-Man" }
       },
       {
         "id": "robin",
-        "name": "ルフレ"
+        "name": { "ja": "ルフレ", "en": "Robin" }
       },
       {
         "id": "shulk",
-        "name": "シュルク"
+        "name": { "ja": "シュルク", "en": "Shulk" }
       },
       {
         "id": "bowser_jr",
-        "name": "クッパJr."
+        "name": { "ja": "クッパJr.", "en": "Bowser Jr." }
       },
       {
         "id": "duck_hunt",
-        "name": "ダックハント"
+        "name": { "ja": "ダックハント", "en": "Duck Hunt" }
       },
       {
         "id": "ryu",
-        "name": "リュウ"
+        "name": { "ja": "リュウ", "en": "Ryu" }
       },
       {
         "id": "ken",
-        "name": "ケン"
+        "name": { "ja": "ケン", "en": "Ken" }
       },
       {
         "id": "cloud",
-        "name": "クラウド"
+        "name": { "ja": "クラウド", "en": "Cloud" }
       },
       {
         "id": "corrin",
-        "name": "カムイ"
+        "name": { "ja": "カムイ", "en": "Corrin" }
       },
       {
         "id": "bayonetta",
-        "name": "ベヨネッタ"
+        "name": { "ja": "ベヨネッタ", "en": "Bayonetta" }
       },
       {
         "id": "inkling",
-        "name": "インクリング"
+        "name": { "ja": "インクリング", "en": "Inkling" }
       },
       {
         "id": "ridley",
-        "name": "リドリー"
+        "name": { "ja": "リドリー", "en": "Ridley" }
       },
       {
         "id": "simon",
-        "name": "シモン"
+        "name": { "ja": "シモン", "en": "Simon" }
       },
       {
         "id": "richter",
-        "name": "リヒター"
+        "name": { "ja": "リヒター", "en": "Richter" }
       },
       {
         "id": "king_k_rool",
-        "name": "キングクルール"
+        "name": { "ja": "キングクルール", "en": "King K. Rool" }
       },
       {
         "id": "isabelle",
-        "name": "しずえ"
+        "name": { "ja": "しずえ", "en": "Isabelle" }
       },
       {
         "id": "incineroar",
-        "name": "ガオガエン"
+        "name": { "ja": "ガオガエン", "en": "Incineroar" }
       },
       {
         "id": "piranha_plant",
-        "name": "パックンフラワー"
+        "name": { "ja": "パックンフラワー", "en": "Piranha Plant" }
       },
       {
         "id": "joker",
-        "name": "ジョーカー"
+        "name": { "ja": "ジョーカー", "en": "Joker" }
       },
       {
         "id": "hero",
-        "name": "勇者"
+        "name": { "ja": "勇者", "en": "Hero" }
       },
       {
         "id": "banjo_kazooie",
-        "name": "バンジョー＆カズーイ"
+        "name": { "ja": "バンジョー＆カズーイ", "en": "Banjo & Kazooie" }
       },
       {
         "id": "terry",
-        "name": "テリー"
+        "name": { "ja": "テリー", "en": "Terry" }
       },
       {
         "id": "byleth",
-        "name": "ベレト/ベレス"
+        "name": { "ja": "ベレト/ベレス", "en": "Byleth" }
       },
       {
         "id": "min_min",
-        "name": "ミェンミェン"
+        "name": { "ja": "ミェンミェン", "en": "Min Min" }
       },
       {
         "id": "steve",
-        "name": "スティーブ/アレックス"
+        "name": { "ja": "スティーブ/アレックス", "en": "Steve / Alex" }
       },
       {
         "id": "sephiroth",
-        "name": "セフィロス"
+        "name": { "ja": "セフィロス", "en": "Sephiroth" }
       },
       {
         "id": "pyra_mythra",
-        "name": "ホムラ/ヒカリ"
+        "name": { "ja": "ホムラ/ヒカリ", "en": "Pyra / Mythra" }
       },
       {
         "id": "kazuya",
-        "name": "カズヤ"
+        "name": { "ja": "カズヤ", "en": "Kazuya" }
       },
       {
         "id": "sora",
-        "name": "ソラ"
+        "name": { "ja": "ソラ", "en": "Sora" }
       }
     ],
     "sharedBanGroups": [
@@ -393,31 +393,31 @@
     "all": [
       {
         "id": "final_destination",
-        "name": "終点"
+        "name": { "ja": "終点", "en": "Final Destination" }
       },
       {
         "id": "battlefield",
-        "name": "戦場"
+        "name": { "ja": "戦場", "en": "Battlefield" }
       },
       {
         "id": "pokemon_stadium_2",
-        "name": "ポケモンスタジアム2"
+        "name": { "ja": "ポケモンスタジアム2", "en": "Pokémon Stadium 2" }
       },
       {
         "id": "small_battlefield",
-        "name": "小戦場"
+        "name": { "ja": "小戦場", "en": "Small Battlefield" }
       },
       {
         "id": "hollow_bastion",
-        "name": "ホロウバスティオン"
+        "name": { "ja": "ホロウバスティオン", "en": "Hollow Bastion" }
       },
       {
         "id": "town_and_city",
-        "name": "村と街"
+        "name": { "ja": "村と街", "en": "Town and City" }
       },
       {
         "id": "smashville",
-        "name": "すま村"
+        "name": { "ja": "すま村", "en": "Smashville" }
       }
     ],
     "starter": [

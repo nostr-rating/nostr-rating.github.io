@@ -10,9 +10,15 @@ import {
   newRecoveryWords,
   normalizeRecoveryWords,
   recoveryKey,
+  RecoverError,
   recoveryRotation,
   verifyRotation,
 } from '@nostr-rating/core';
+
+const RECOVER_ERRORS: Record<RecoverError['code'], string> = {
+  unverifiable_account: 'アカウントの記録を確かめられませんでした',
+  words_not_usable: 'この復活の言葉では入れ替えられません（もう使えない言葉か、別のアカウントの言葉です）',
+};
 
 /**
  * 復活の道具の CLI 版（docs/adr/0008「復活の道具」）。復活の言葉で、端末を新しい端末1台に入れ替える。
@@ -62,7 +68,7 @@ try {
   await relay.publish(event);
   console.log(`入れ替えました。新しい端末（${request.label}）の画面が自動で進みます。古い言葉の紙は捨ててください。`);
 } catch (e) {
-  console.error(e instanceof Error ? e.message : String(e));
+  console.error(e instanceof RecoverError ? RECOVER_ERRORS[e.code] : e instanceof Error ? e.message : String(e));
   process.exitCode = 1;
 } finally {
   rl.close();

@@ -9,6 +9,7 @@ import {
   encodeDeviceRequest,
   findAccountsByNextKeys,
   loadKel,
+  RecoverError,
   recoveryRotation,
   verifyRotation,
 } from '../../src/kel/recover.js';
@@ -79,7 +80,7 @@ describe('recovery', () => {
     const { chain } = await loadKel(relay, a.aid, T0);
     const other = generateSecretKey();
     expect(() => recoveryRotation(a.aid, chain, [deviceRecordFor({ key: newDevice(T0).record.key, publisher: getPublicKey(other), label: 'x' }, T0)], { keys: [getPublicKey(other)], threshold: 1 }, [other], T0)).toThrow(
-      'この復活の言葉では入れ替えられません（もう使えない言葉か、別のアカウントの言葉です）',
+      new RecoverError('words_not_usable'),
     );
   });
 

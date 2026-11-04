@@ -10,6 +10,8 @@ export default defineConfig({
     baseURL: 'http://localhost:5174',
     ...devices['iPhone 13'],
     browserName: 'chromium',
+    // シナリオは日本語の文言で書いている（英語のブラウザでは画面が英語になる）
+    locale: 'ja-JP',
     trace: 'retain-on-failure',
   },
   webServer: {

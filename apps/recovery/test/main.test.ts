@@ -25,6 +25,8 @@ const $$ = <T extends Element>(s: string) => [...document.querySelectorAll<T>(s)
 const button = (name: string) => $$<HTMLButtonElement>('button').find((b) => b.textContent!.startsWith(name))!;
 
 beforeAll(async () => {
+  // jsdom のブラウザの言語は英語なので、日本語の文言で確かめるために先に日本語にする
+  Object.defineProperty(navigator, 'languages', { value: ['ja-JP'], configurable: true });
   document.body.innerHTML = '<div id="app"></div>';
   await import('../src/main.js');
 });
@@ -40,5 +42,29 @@ describe('recovery words split into cards', () => {
     $$<HTMLTextAreaElement>('.words-input')[1]!.value = cards.words[1]!;
     button('アカウントを探す').click();
     await vi.waitFor(() => expect($$('h2').map((e) => e.textContent)).toEqual(['2. 新しい端末の申請']));
+  });
+});
+
+describe('language', () => {
+  test('switching the language redraws the current step in that language and keeps what was typed', () => {
+    const select = $<HTMLSelectElement>('select.locale-select');
+    expect([document.documentElement.lang, document.title, select.value]).toEqual(['ja', '復活の道具 | Nostr-Rating', 'ja']);
+    $<HTMLTextAreaElement>('textarea[placeholder]').value = 'nr-device:abc';
+
+    select.value = 'en';
+    select.dispatchEvent(new Event('change'));
+    expect([document.documentElement.lang, document.title, $('h1').textContent, $$('h2').map((e) => e.textContent)]).toEqual([
+      'en',
+      'Recovery tool | Nostr-Rating',
+      'Recovery tool',
+      ['2. Request from the new device'],
+    ]);
+    expect($<HTMLTextAreaElement>('textarea[placeholder]').value).toBe('nr-device:abc');
+    expect(localStorage.getItem('nostr-rating:locale')).toBe('en');
+
+    const back = $<HTMLSelectElement>('select.locale-select');
+    back.value = 'ja';
+    back.dispatchEvent(new Event('change'));
+    expect($$('h2').map((e) => e.textContent)).toEqual(['2. 新しい端末の申請']);
   });
 });

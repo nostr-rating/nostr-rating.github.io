@@ -63,6 +63,8 @@ section { display: flex; flex-direction: column; gap: 16px; }
 .app-header .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; }
 .brand { font-weight: 700; font-size: 18px; letter-spacing: 0.02em; color: var(--ink); text-decoration: none; }
 .app-header .help { padding: 8px 0; }
+/* 言語の切り替えはヘルプの隣に寄せる（左の余白が空きを吸う） */
+.app-header .locale-select { width: auto; margin-left: auto; padding-top: 4px; padding-bottom: 4px; }
 .app-header .bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
 .app-header .game-select { width: auto; flex: 1 1 200px; }
 .tabs { display: flex; gap: 4px; flex: 1 1 260px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px; }

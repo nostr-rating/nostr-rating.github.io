@@ -196,12 +196,12 @@ describe('buildSite', () => {
     const { players, games } = await site(stubFetch());
     expect(games).toEqual(['smash_sp', 'chess']);
     expect(players).toBe(2);
-    expect(read<{ games: { id: string; name: string; players: number }[] }>('api/v1/index.json').games.map((g) => [g.id, g.name, g.players])).toEqual([
-      ['smash_sp', '大乱闘スマッシュブラザーズ SPECIAL', 2],
-      ['chess', 'チェス', 1],
+    expect(read<{ games: { id: string; name: string; names: unknown; players: number }[] }>('api/v1/index.json').games.map((g) => [g.id, g.name, g.names, g.players])).toEqual([
+      ['smash_sp', '大乱闘スマッシュブラザーズ SPECIAL', { ja: '大乱闘スマッシュブラザーズ SPECIAL', en: 'Super Smash Bros. Ultimate' }, 2],
+      ['chess', 'チェス', { ja: 'チェス', en: 'Chess' }, 1],
     ]);
     const doc = read<PlayerDoc>(`api/v1/chess/players/${a}.json`);
-    expect([doc.game, doc.draws, doc.snapshot.path]).toEqual([{ id: 'chess', name: 'チェス' }, 2, 'snapshots/chess/season_1/2026-10-02.json']);
+    expect([doc.game, doc.draws, doc.snapshot.path]).toEqual([{ id: 'chess', name: 'チェス', names: { ja: 'チェス', en: 'Chess' } }, 2, 'snapshots/chess/season_1/2026-10-02.json']);
     expect(existsSync(join(out, `api/v1/chess/players/${b}.json`))).toBe(false);
     // 紐づけは全ゲームで共通なので、チェスの索引にも出る
     expect(read<{ players: PlayerDoc[] }>('api/v1/chess/by/github/a1.json').players.map((p) => p.aid)).toEqual([a]);
