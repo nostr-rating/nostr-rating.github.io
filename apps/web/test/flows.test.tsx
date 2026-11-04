@@ -118,6 +118,43 @@ describe('match room', () => {
     );
     expect(screen.getByTestId('deadline').textContent).toMatch(/^報告の締め切り: \d{1,2}\/\d{1,2} \d{2}:\d{2}（あと 1時間0分）$/);
   });
+
+  test('the report buttons are gone as soon as the deadline passes', async () => {
+    const end = 1_798_729_200; // シーズン1の終わり（2027-01-01 JST）
+    // 開いた2秒後にシーズンが終わる時計
+    const shift = end - 2 - Math.floor(Date.now() / 1000);
+    const now = () => Math.floor(Date.now() / 1000) + shift;
+    const relay = new MemoryRelay(now);
+    const a = await newPlayer(relay, now, { name: 'alice', claims: [{ platform: 'github', identity: 'alice', proof: 'aaa1' }] });
+    const b = await newPlayer(relay, now, { name: 'bob', claims: [{ platform: 'github', identity: 'bob', proof: 'bbb1' }] });
+    const m = await matchBetween(relay, a, b, { at: end - 600 });
+    renderWithApp(<MatchRoom matchId={m.id} />, { deps: makeDeps({ relay, now }), account: b.account });
+    expect(await screen.findByRole('button', { name: '負け' })).toBeTruthy();
+    expect(await screen.findByRole('link', { name: 'ロビーに戻る' }, { timeout: 5000 })).toBeTruthy();
+    expect(screen.getByTestId('report-status').textContent).toBe('報告がそろわないまま締め切られました');
+    expect(screen.queryByRole('button', { name: '負け' })).toBeNull();
+  });
+
+  test('a report confirmed after the deadline is not sent', async () => {
+    const user = userEvent.setup();
+    const end = 1_798_729_200; // シーズン1の終わり（2027-01-01 JST）
+    let t = end - 60;
+    const now = () => t;
+    const relay = new MemoryRelay(now);
+    const a = await newPlayer(relay, now, { name: 'alice', claims: [{ platform: 'github', identity: 'alice', proof: 'aaa1' }] });
+    const b = await newPlayer(relay, now, { name: 'bob', claims: [{ platform: 'github', identity: 'bob', proof: 'bbb1' }] });
+    const m = await matchBetween(relay, a, b, { at: end - 600 });
+    // 確認のダイアログを開いている間に締め切りを過ぎる
+    vi.spyOn(window, 'confirm').mockImplementation(() => {
+      t = end + 1;
+      return true;
+    });
+    renderWithApp(<MatchRoom matchId={m.id} />, { deps: makeDeps({ relay, now }), account: b.account });
+    await user.click(await screen.findByRole('button', { name: '負け' }));
+    expect(await screen.findByText('報告の締め切りを過ぎたため、送れませんでした。')).toBeTruthy();
+    expect(relay.all().filter((e) => e.kind === KIND.report)).toHaveLength(0);
+    expect(screen.getByTestId('report-status').textContent).toBe('報告がそろわないまま締め切られました');
+  });
 });
 
 async function forgedMatch(relay: MemoryRelay, attacker: Player, victim: Player): Promise<string> {

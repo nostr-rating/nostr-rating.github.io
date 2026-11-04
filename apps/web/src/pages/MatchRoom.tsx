@@ -38,6 +38,7 @@ import { displayName, parseEach, useApp } from '../state/AppContext.js';
 /** NIP-17 は gift wrap の時刻を最大2日前までずらすので、その分さかのぼって購読する */
 const WRAP_LOOKBACK_SEC = 2 * 24 * 3600 + 600;
 const SEND_FAILED = '送れませんでした。電波のよい場所でもう一度押してください。';
+const PAST_DEADLINE = '報告の締め切りを過ぎたため、送れませんでした。';
 const bansKey = (matchId: string) => `nostr-rating:bans:${matchId}`;
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -236,7 +237,17 @@ export function MatchRoom({ matchId }: { matchId: string }) {
     return () => clearInterval(t);
   }, []);
 
-  const settlement = match ? settleMatch(match, reports, app.now(), matchDeadline(def, match.createdAt), def.results.draw) : null;
+  // 締め切りの時刻ちょうどにも描き直し、報告のボタンを消す
+  const deadline = match ? matchDeadline(def, match.createdAt) : null;
+  useEffect(() => {
+    if (deadline === null) return;
+    const ms = (deadline - app.now()) * 1000;
+    if (ms <= 0) return;
+    const t = setTimeout(() => setTick((n) => n + 1), ms);
+    return () => clearTimeout(t);
+  }, [deadline, app]);
+
+  const settlement = match && deadline !== null ? settleMatch(match, reports, app.now(), deadline, def.results.draw) : null;
   const confirmed = settlement?.status === 'confirmed';
   // 確定したらレートと順位を読み直す
   useEffect(() => {
@@ -291,10 +302,17 @@ export function MatchRoom({ matchId }: { matchId: string }) {
       await app.relay.publish(await wrapRoomMessage(s, mySessionPk, match.id, msg, t, opponentSession));
     });
 
-  const report = (result: ReportResult) =>
-    guarded(async () => {
+  const report = async (result: ReportResult) => {
+    // 確認のダイアログを開いたまま締め切りをまたぐと、送っても数えられない
+    if (app.now() > matchDeadline(def, match.createdAt)) {
+      setSendError(PAST_DEADLINE);
+      setTick((n) => n + 1);
+      return;
+    }
+    await guarded(async () => {
       await app.relay.publish(await signer.signEvent(buildReport(def.id, { matchId: match.id, opponent: opponentSession, result }, app.now())));
     });
+  };
 
   // ステージ案内で記録した勝敗の数。どちらの結果を報告するかは、本人が決める。
   // ステージ案内のあるゲームでは最初から 0 - 0 を出し、記録が届いても下の要素を動かさない
