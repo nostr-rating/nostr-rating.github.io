@@ -5,8 +5,9 @@ import { openEventStore } from '../storage/db.js';
 import type { AppDeps } from '../state/AppContext.js';
 import { gameDefinitions, relayUrls, snapshotBase } from './config.js';
 
-export async function boot(): Promise<{ deps: AppDeps; account: Account | null }> {
-  const [store, urls] = await Promise.all([openEventStore(), relayUrls(), initFastVerify()]);
+/** onInUse: キャッシュから戻ったときに、別のタブが保存先を開いていた（起動のときは StorageInUseError で失敗する） */
+export async function boot(onInUse: () => void): Promise<{ deps: AppDeps; account: Account | null }> {
+  const [store, urls] = await Promise.all([openEventStore(onInUse), relayUrls(), initFastVerify()]);
   const deps: AppDeps = {
     games: gameDefinitions(),
     relay: createNostrRelayClient(urls),
