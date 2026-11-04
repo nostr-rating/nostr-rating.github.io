@@ -39,6 +39,8 @@ import { displayName, parseEach, useApp } from '../state/AppContext.js';
 /** NIP-17 は gift wrap の時刻を最大2日前までずらすので、その分さかのぼって購読する */
 const WRAP_LOOKBACK_SEC = 2 * 24 * 3600 + 600;
 const SEND_FAILED = '送れませんでした。電波のよい場所でもう一度押してください。';
+/** 申し込みを読み込めなかったときに読み直すまでの間 */
+const LINK_RETRY_MS = 5000;
 const PAST_DEADLINE = '報告の締め切りを過ぎたため、送れませんでした。';
 const bansKey = (matchId: string) => `nostr-rating:bans:${matchId}`;
 
@@ -92,6 +94,8 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   const [linked, setLinked] = useState<boolean | null>(null);
   /** 対戦が結び付いた申し込み。先後を決める申し込んだ側の乱数を持つ */
   const [application, setApplication] = useState<Application | null>(null);
+  /** 申し込みを読み込めなかった回数。読み込めるまで読み直す（先後が決まらず、部屋も報告も出せないため） */
+  const [linkFailures, setLinkFailures] = useState(0);
   const [, setTick] = useState(0);
   // 対戦のゲームに切り替わってから作る（開いた時点では別のゲームのことがある）
   useEffect(() => setPassword(roomPassword(def, matchId)), [def, matchId]);
@@ -145,6 +149,7 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   useEffect(() => {
     if (!match) return;
     let alive = true;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     void app.relay
       .query([{ kinds: [KIND.application], ids: [match.applicationId] }])
       .then(async (evs) => {
@@ -154,11 +159,14 @@ export function MatchRoom({ matchId }: { matchId: string }) {
         setLinked(ok);
         setApplication(ok ? a : null);
       })
-      .catch(() => alive && setLinked(null));
+      .catch(() => {
+        if (alive) retry = setTimeout(() => setLinkFailures((n) => n + 1), LINK_RETRY_MS);
+      });
     return () => {
       alive = false;
+      clearTimeout(retry);
     };
-  }, [app.relay, def, match]);
+  }, [app.relay, def, match, linkFailures]);
 
   // 初めて対戦する相手の名前と SNS の主張を読む
   useEffect(() => {
@@ -284,7 +292,13 @@ export function MatchRoom({ matchId }: { matchId: string }) {
   }
   if (!side || !opponent || !app.signer) return <p className="error">この対戦の参加者ではありません。</p>;
   const signer = app.signer;
-  if (!mySessionPk || !opponentSession || mySide === null) return <p className="loading">対戦を読み込み中…</p>;
+  if (!mySessionPk || !opponentSession || mySide === null) {
+    return (
+      <p className="loading" role="status">
+        {linkFailures > 0 && linked === null ? '申し込みを読み込めませんでした。読み込み直しています…' : '対戦を読み込み中…'}
+      </p>
+    );
+  }
   const sealSigner = sessionSignerFor(app.sessionSigners, mySessionPk);
 
   const guarded = async (f: () => Promise<void>) => {
