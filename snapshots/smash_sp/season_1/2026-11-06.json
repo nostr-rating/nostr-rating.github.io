@@ -1,0 +1,61 @@
+{
+  "config_sha256": "4db55f03b0110d8c456f953d620b2f26a73f08cef9333472734b604201750c5f",
+  "cutoff": 1793926535,
+  "excluded": [],
+  "game": "smash_sp",
+  "inputs": {
+    "event_count": 0,
+    "event_ids_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "kel_index": {
+    "sha256": "90a9ad10ac6c37a58ec263db41da5c9372ec339bbd14923fd12842799d100b99",
+    "size": 190
+  },
+  "kind": "rolling",
+  "parts": {
+    "accounts": {
+      "5": {
+        "release": "snapshot-smash_sp-season_1-2026-11-03",
+        "sha256": "ad574ba4a940b8def3f6df6562481dc6ada2568212f7dfde9f582e3474fe1771",
+        "size": 296
+      },
+      "c": {
+        "release": "snapshot-smash_sp-season_1-2026-11-03",
+        "sha256": "63c315acd60dcca9a541fe73a295d31644a28fca8da895fd85948a1f3c8505f3",
+        "size": 284
+      }
+    },
+    "ids": {
+      "release": "snapshot-smash_sp-season_1-2026-11-05",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "size": 3
+    },
+    "kels": {
+      "5": {
+        "release": "snapshot-smash_sp-season_1-2026-11-03",
+        "sha256": "86c4878a038152135a9efa3dbe7b96a205b0dcda2cc317743b28c0fea7b4bbff",
+        "size": 787
+      },
+      "c": {
+        "release": "snapshot-smash_sp-season_1-2026-11-03",
+        "sha256": "6e5eeb779059e1ecfa06b74bcb0c600e77f82bf5078461d8b5f721247b240582",
+        "size": 924
+      }
+    },
+    "matches": {
+      "release": "snapshot-smash_sp-season_1-2026-11-05",
+      "sha256": "be5e8a4d3e6916af4e8816dfcb3c4cf011cdd9695ac91eb944af5395b9441f34",
+      "size": 15
+    },
+    "players": {
+      "release": "snapshot-smash_sp-season_1-2026-11-05",
+      "sha256": "9a58254ba7773cd787ac63a6be0ba42ef7a52343a3c7dc3e7e3197904d3279c5",
+      "size": 1469
+    },
+    "seasons": {}
+  },
+  "previous": "snapshots/smash_sp/season_1/2026-11-05.json",
+  "previous_sha256": "d801070c89913ca8d1a2c7bfd4ca63b906595ed595f8576e5781ddf8d7a41472",
+  "schema_version": 3,
+  "season": 1
+}
