@@ -1,0 +1,61 @@
+{
+  "config_sha256": "66c7474c63cf9115e7a30964b200dbd86c39ce778eb1e81e749606d3fdff68a2",
+  "cutoff": 1794094463,
+  "excluded": [],
+  "game": "chess",
+  "inputs": {
+    "event_count": 0,
+    "event_ids_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "kel_index": {
+    "sha256": "90a9ad10ac6c37a58ec263db41da5c9372ec339bbd14923fd12842799d100b99",
+    "size": 190
+  },
+  "kind": "rolling",
+  "parts": {
+    "accounts": {
+      "5": {
+        "release": "snapshot-chess-season_1-2026-11-03",
+        "sha256": "ad574ba4a940b8def3f6df6562481dc6ada2568212f7dfde9f582e3474fe1771",
+        "size": 296
+      },
+      "c": {
+        "release": "snapshot-chess-season_1-2026-11-03",
+        "sha256": "63c315acd60dcca9a541fe73a295d31644a28fca8da895fd85948a1f3c8505f3",
+        "size": 284
+      }
+    },
+    "ids": {
+      "release": "snapshot-chess-season_1-2026-11-05",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "size": 3
+    },
+    "kels": {
+      "5": {
+        "release": "snapshot-chess-season_1-2026-11-03",
+        "sha256": "86c4878a038152135a9efa3dbe7b96a205b0dcda2cc317743b28c0fea7b4bbff",
+        "size": 787
+      },
+      "c": {
+        "release": "snapshot-chess-season_1-2026-11-03",
+        "sha256": "6e5eeb779059e1ecfa06b74bcb0c600e77f82bf5078461d8b5f721247b240582",
+        "size": 924
+      }
+    },
+    "matches": {
+      "release": "snapshot-chess-season_1-2026-11-05",
+      "sha256": "be5e8a4d3e6916af4e8816dfcb3c4cf011cdd9695ac91eb944af5395b9441f34",
+      "size": 15
+    },
+    "players": {
+      "release": "snapshot-chess-season_1-2026-11-03",
+      "sha256": "85cfc04b0056288708e30cd4b7481d06cdecda6f25e3d18ce554f2346857ece7",
+      "size": 1422
+    },
+    "seasons": {}
+  },
+  "previous": "snapshots/chess/season_1/2026-11-07.json",
+  "previous_sha256": "0f7b5d3e540dbbb312315157d2d22a5bca4ea3493f5c08d6cef656595ad4c636",
+  "schema_version": 3,
+  "season": 1
+}
