@@ -1,0 +1,71 @@
+{
+  "config_sha256": "66c7474c63cf9115e7a30964b200dbd86c39ce778eb1e81e749606d3fdff68a2",
+  "cutoff": 1794448339,
+  "excluded": [],
+  "game": "chess",
+  "inputs": {
+    "event_count": 0,
+    "event_ids_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "kel_index": {
+    "sha256": "604bc94208381c7cb6f1e0ebd57eb38e3d5fe4cd2628bbca325e0319e66f6fd6",
+    "size": 284
+  },
+  "kind": "rolling",
+  "parts": {
+    "accounts": {
+      "2": {
+        "release": "snapshot-chess-season_1-2026-11-10",
+        "sha256": "57407edc78917f537a28907eb98b5df2e219f1179c5da955d3b00ac56030a766",
+        "size": 213
+      },
+      "5": {
+        "release": "snapshot-chess-season_1-2026-11-03",
+        "sha256": "ad574ba4a940b8def3f6df6562481dc6ada2568212f7dfde9f582e3474fe1771",
+        "size": 296
+      },
+      "c": {
+        "release": "snapshot-chess-season_1-2026-11-03",
+        "sha256": "63c315acd60dcca9a541fe73a295d31644a28fca8da895fd85948a1f3c8505f3",
+        "size": 284
+      }
+    },
+    "ids": {
+      "release": "snapshot-chess-season_1-2026-11-12",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "size": 3
+    },
+    "kels": {
+      "2": {
+        "release": "snapshot-chess-season_1-2026-11-10",
+        "sha256": "391af3373affe77c15a0b3a5eb14a29eeb05ac8ef8f108baf06b364bf3ba25d5",
+        "size": 790
+      },
+      "5": {
+        "release": "snapshot-chess-season_1-2026-11-03",
+        "sha256": "86c4878a038152135a9efa3dbe7b96a205b0dcda2cc317743b28c0fea7b4bbff",
+        "size": 787
+      },
+      "c": {
+        "release": "snapshot-chess-season_1-2026-11-03",
+        "sha256": "6e5eeb779059e1ecfa06b74bcb0c600e77f82bf5078461d8b5f721247b240582",
+        "size": 924
+      }
+    },
+    "matches": {
+      "release": "snapshot-chess-season_1-2026-11-05",
+      "sha256": "be5e8a4d3e6916af4e8816dfcb3c4cf011cdd9695ac91eb944af5395b9441f34",
+      "size": 15
+    },
+    "players": {
+      "release": "snapshot-chess-season_1-2026-11-03",
+      "sha256": "85cfc04b0056288708e30cd4b7481d06cdecda6f25e3d18ce554f2346857ece7",
+      "size": 1422
+    },
+    "seasons": {}
+  },
+  "previous": "snapshots/chess/season_1/2026-11-11.json",
+  "previous_sha256": "18d6d8e373689125b1f7b7d128d11f413c25a16e707f42294809e87615a333b2",
+  "schema_version": 3,
+  "season": 1
+}
